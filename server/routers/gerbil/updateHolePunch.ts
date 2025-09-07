@@ -20,6 +20,7 @@ import { validateNewtSessionToken } from "@server/auth/sessions/newt";
 import { validateOlmSessionToken } from "@server/auth/sessions/olm";
 import axios from "axios";
 import { checkExitNodeOrg } from "@server/lib/exitNodes";
+import { helpers as metricsHelpers } from "@server/observability/metrics";
 
 // Define Zod schema for request validation
 const updateHolePunchSchema = z.object({
@@ -95,6 +96,32 @@ export async function updateHolePunch(
             token,
             exitNode
         );
+
+        // Metrics: treat this as reconnect/handshake signal
+        try {
+            const nowSec = Date.now() / 1000;
+            const tsSec = (timestamp || Date.now()) / 1000;
+            const latency = Math.max(0, nowSec - tsSec);
+
+            if (olmId) {
+                // For OLM, we don't have a single site; count per destination
+                for (const d of destinations) {
+                    // Unable to map destination to site_id directly here; increment reconnect global
+                    metricsHelpers.incTunnelReconnect(exitNode.exitNodeId, "wireguard", "hole_punch");
+                }
+            } else if (newtId) {
+                // We updated a single site above; record metrics
+                // Fetch site id to label metrics
+                const [newtRow] = await db.select().from(newts).where(eq(newts.newtId, newtId));
+                if (newtRow?.siteId) {
+                    metricsHelpers.incTunnelReconnect(newtRow.siteId, "newt", "hole_punch");
+                    metricsHelpers.recordHandshakeLatency(newtRow.siteId, "newt", latency);
+                    metricsHelpers.incWgHandshake(newtRow.siteId, "success");
+                }
+            }
+        } catch (_) {
+            // ignore metrics errors
+        }
 
         logger.debug(
             `Returning ${destinations.length} peer destinations for olmId: ${olmId} or newtId: ${newtId}: ${JSON.stringify(destinations, null, 2)}`

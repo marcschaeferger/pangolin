@@ -12,12 +12,18 @@ import config from "@server/lib/config";
 import { setHostMeta } from "@server/lib/hostMeta";
 import { initTelemetryClient } from "./lib/telemetry.js";
 import { TraefikConfigManager } from "./lib/traefikConfig.js";
+import { startOtel } from "./observability/otel";
+import { helpers as metricsHelpers, startObservablePollers } from "./observability/metrics";
 
 async function startServers() {
     await setHostMeta();
 
     await config.initServer();
     await runSetupFunctions();
+
+    await startOtel();
+    await startObservablePollers();
+    metricsHelpers.incRestart();
 
     initTelemetryClient();
 

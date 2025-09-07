@@ -1,0 +1,81 @@
+name: pangolin-metrics
+services:
+  pangolin:
+    build:
+      context: .
+      dockerfile: Dockerfile.metrics
+    container_name: pangolin-metrics
+    restart: unless-stopped
+    user: "0:0" # run as root per project rules
+    read_only: false
+    environment:
+      - NODE_ENV=production
+      - ENVIRONMENT=prod
+      - PANGOLIN_OTEL_PROM_ENABLE=true
+      - PANGOLIN_OTEL_PROM_PORT=8081
+      - PANGOLIN_OTEL_PROM_PATH=/metrics
+      - PANGOLIN_OTEL_OTLP_ENABLE=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=pangolin
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=pangolin,service.version=${APP_VERSION:-0.0.0},deployment.environment=dev
+    ports:
+      - "3000:3000"     # external API (Next/Express)
+      - "3001:3001"     # internal API (existing config)
+      - "8081:8081"     # Prometheus metrics (OTel PromExporter)
+    volumes:
+      - ./config:/app/config
+    depends_on:
+      - otel-collector
+#  postgresdb:
+#    image: postgres:17-alpine
+#    container_name: postgresdb
+#    restart: unless-stopped
+#    environment:
+#      - POSTGRES_DB=pangolin
+#      - POSTGRES_USER=pangolin
+#      - POSTGRES_PASSWORD=pangolin
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - ./config/db:/var/lib/postgresql/data
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: pangolin-metrics-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"     # OTLP gRPC
+      - "8889:8889"     # Collector Prometheus exporter endpoint (scrape target)
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: pangolin-metrics-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: pangolin-metrics-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3005:3000"
+    depends_on:
+      - prometheus
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+
+networks:
+  default:
+    driver: bridge
+

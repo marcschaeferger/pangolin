@@ -1,0 +1,35 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'pangolin'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['pangolin:8081']
+
+processors:
+  batch:
+  resource:
+    attributes:
+      - key: service.name
+        action: upsert
+        value: pangolin
+
+exporters:
+  prometheus:
+    endpoint: ":8889"
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [prometheus, debug]
+
