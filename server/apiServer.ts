@@ -17,6 +17,7 @@ import createHttpError from "http-errors";
 import HttpCode from "./types/HttpCode";
 import requestTimeoutMiddleware from "./middlewares/requestTimeout";
 import { createStore } from "./lib/rateLimitStore";
+import { helpers as metricsHelpers } from "./observability/metrics";
 
 const dev = config.isDev;
 const externalPort = config.getRawConfig().server.external_port;
@@ -58,6 +59,40 @@ export function createApiServer() {
 
     apiServer.use(cookieParser());
     apiServer.use(express.json());
+
+    // Metrics middleware for UI/API requests
+    apiServer.use((req, res, next) => {
+        const startHr = process.hrtime.bigint();
+        const method = req.method;
+        // Keep endpoint label low-cardinality: use first 2 segments
+        const endpoint = (req.path || "/")
+            .split("?")[0]
+            .split("/")
+            .slice(0, 3)
+            .join("/") || "/";
+
+        res.on("finish", () => {
+            try {
+                const endHr = process.hrtime.bigint();
+                const durSec = Number(endHr - startHr) / 1e9;
+                const status = res.statusCode;
+
+                metricsHelpers.recordUiRequest(method, endpoint, status);
+                metricsHelpers.recordUiRequestDuration(durSec, method, endpoint);
+
+                const cl = res.getHeader("content-length");
+                if (cl) {
+                    const size = Number(cl);
+                    if (!Number.isNaN(size)) {
+                        metricsHelpers.recordBackendResponse(size, { backend: "api", status: String(status) });
+                    }
+                }
+            } catch (_) {
+                // swallow metrics errors
+            }
+        });
+        next();
+    });
 
     // Add request timeout middleware
     apiServer.use(requestTimeoutMiddleware(60000)); // 60 second timeout

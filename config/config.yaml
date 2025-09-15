@@ -1,0 +1,39 @@
+app:
+  dashboard_url: "http://localhost:3000"
+  log_level: "info"
+  save_logs: false
+  telemetry:
+    anonymous_usage: false
+server:
+  external_port: 3000
+  internal_port: 3001
+  next_port: 3002
+  trust_proxy: 1
+  session_cookie_name: "p_session_token"
+  resource_access_token_param: "p_token"
+  resource_access_token_headers:
+    id: "P-Access-Token-Id"
+    token: "P-Access-Token"
+  resource_session_request_param: "resource_session_request_param"
+  dashboard_session_length_hours: 24
+  resource_session_length_hours: 24
+  secret: "changemechangeme"
+domains:
+  local:
+    base_domain: "example.com"
+    cert_resolver: "letsencrypt"
+    prefer_wildcard_cert: false
+traefik:
+  http_entrypoint: "web"
+  https_entrypoint: "websecure"
+  prefer_wildcard_cert: false
+  file_mode: false
+
+gerbil:
+  base_endpoint: "http://pangolin:3003"
+  start_port: 51820
+  use_subdomain: false
+
+flags:
+  enable_clients: true
+

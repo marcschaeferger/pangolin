@@ -355,6 +355,8 @@ export default function Page() {
     }
 
     async function onSubmit() {
+                    setShowSnippets(true);
+                    router.refresh();
         setCreateLoading(true);
 
         const baseData = baseForm.getValues();

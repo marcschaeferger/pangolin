@@ -7,6 +7,7 @@ import createHttpError from "http-errors";
 import HttpCode from "@server/types/HttpCode";
 import response from "@server/lib/response";
 import { checkExitNodeOrg } from "@server/lib/exitNodes";
+import { helpers as metricsHelpers } from "@server/observability/metrics";
 
 // Track sites that are already offline to avoid unnecessary queries
 const offlineSites = new Set<string>();
@@ -86,7 +87,8 @@ export async function updateSiteBandwidth(
                         online: sites.online,
                         orgId: sites.orgId,
                         siteId: sites.siteId,
-                        lastBandwidthUpdate: sites.lastBandwidthUpdate
+                        lastBandwidthUpdate: sites.lastBandwidthUpdate,
+                        type: sites.type
                     });
 
                 if (exitNodeId) {
@@ -115,6 +117,19 @@ export async function updateSiteBandwidth(
                 // Add 10 seconds of uptime for each active site
                 const currentOrgUptime = orgUptimeMap.get(site.orgId) || 0;
                 orgUptimeMap.set(site.orgId, currentOrgUptime + 10 / 60); // Store in minutes and jut add 10 seconds
+
+                // Metrics: per-site bandwidth and tunnel bytes
+                try {
+                    const transport = (site as any).type || "unknown";
+                    if (peer.bytesIn > 0) {
+                        metricsHelpers.addSiteBandwidth(site.siteId, "in", transport, peer.bytesIn);
+                    }
+                    if (peer.bytesOut > 0) {
+                        metricsHelpers.addSiteBandwidth(site.siteId, "out", transport, peer.bytesOut);
+                    }
+                } catch (_) {
+                    // ignore metrics errors
+                }
             }
         }
 
