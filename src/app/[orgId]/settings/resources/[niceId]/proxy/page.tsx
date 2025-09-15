@@ -71,7 +71,9 @@ import {
     Heart,
     Check,
     CircleCheck,
-    CircleX
+    CircleX,
+    ArrowRight,
+    MoveRight
 } from "lucide-react";
 import { ContainersSelector } from "@app/components/ContainersSelector";
 import { useTranslations } from "next-intl";
@@ -95,13 +97,48 @@ import {
 } from "@app/components/ui/command";
 import { Badge } from "@app/components/ui/badge";
 import { parseHostTarget } from "@app/lib/parseHostTarget";
+import { HeadersInput } from "@app/components/HeadersInput";
 
 const addTargetSchema = z.object({
     ip: z.string().refine(isTargetValid),
     method: z.string().nullable(),
     port: z.coerce.number().int().positive(),
-    siteId: z.number().int().positive()
-});
+    siteId: z.number().int().positive(),
+    path: z.string().optional().nullable(),
+    pathMatchType: z.enum(["exact", "prefix", "regex"]).optional().nullable()
+}).refine(
+    (data) => {
+        // If path is provided, pathMatchType must be provided
+        if (data.path && !data.pathMatchType) {
+            return false;
+        }
+        // If pathMatchType is provided, path must be provided
+        if (data.pathMatchType && !data.path) {
+            return false;
+        }
+        // Validate path based on pathMatchType
+        if (data.path && data.pathMatchType) {
+            switch (data.pathMatchType) {
+                case "exact":
+                case "prefix":
+                    // Path should start with /
+                    return data.path.startsWith("/");
+                case "regex":
+                    // Validate regex
+                    try {
+                        new RegExp(data.path);
+                        return true;
+                    } catch {
+                        return false;
+                    }
+            }
+        }
+        return true;
+    },
+    {
+        message: "Invalid path configuration"
+    }
+);
 
 const targetsSettingsSchema = z.object({
     stickySession: z.boolean()
@@ -129,7 +166,9 @@ export default function ReverseProxyTargets(props: {
     const [targets, setTargets] = useState<LocalTarget[]>([]);
     const [targetsToRemove, setTargetsToRemove] = useState<number[]>([]);
     const [sites, setSites] = useState<ListSitesResponse["sites"]>([]);
-    const [dockerStates, setDockerStates] = useState<Map<number, DockerState>>(new Map());
+    const [dockerStates, setDockerStates] = useState<Map<number, DockerState>>(
+        new Map()
+    );
 
     const initializeDockerForSite = async (siteId: number) => {
         if (dockerStates.has(siteId)) {
@@ -139,14 +178,14 @@ export default function ReverseProxyTargets(props: {
         const dockerManager = new DockerManager(api, siteId);
         const dockerState = await dockerManager.initializeDocker();
 
-        setDockerStates(prev => new Map(prev.set(siteId, dockerState)));
+        setDockerStates((prev) => new Map(prev.set(siteId, dockerState)));
     };
 
     const refreshContainersForSite = async (siteId: number) => {
         const dockerManager = new DockerManager(api, siteId);
         const containers = await dockerManager.fetchContainers();
 
-        setDockerStates(prev => {
+        setDockerStates((prev) => {
             const newMap = new Map(prev);
             const existingState = newMap.get(siteId);
             if (existingState) {
@@ -157,11 +196,13 @@ export default function ReverseProxyTargets(props: {
     };
 
     const getDockerStateForSite = (siteId: number): DockerState => {
-        return dockerStates.get(siteId) || {
-            isEnabled: false,
-            isAvailable: false,
-            containers: []
-        };
+        return (
+            dockerStates.get(siteId) || {
+                isEnabled: false,
+                isAvailable: false,
+                containers: []
+            }
+        );
     };
 
     const [httpsTlsLoading, setHttpsTlsLoading] = useState(false);
@@ -185,7 +226,8 @@ export default function ReverseProxyTargets(props: {
                 {
                     message: t("proxyErrorInvalidHeader")
                 }
-            )
+            ),
+        headers: z.string().optional()
     });
 
     const tlsSettingsSchema = z.object({
@@ -215,7 +257,9 @@ export default function ReverseProxyTargets(props: {
         defaultValues: {
             ip: "",
             method: resource.http ? "http" : null,
-            port: "" as any as number
+            port: "" as any as number,
+            path: null,
+            pathMatchType: null
         } as z.infer<typeof addTargetSchema>
     });
 
@@ -241,7 +285,8 @@ export default function ReverseProxyTargets(props: {
     const proxySettingsForm = useForm<ProxySettingsValues>({
         resolver: zodResolver(proxySettingsSchema),
         defaultValues: {
-            setHostHeader: resource.setHostHeader || ""
+            setHostHeader: resource.setHostHeader || "",
+            headers: resource.headers || ""
         }
     });
 
@@ -256,7 +301,7 @@ export default function ReverseProxyTargets(props: {
         const fetchTargets = async () => {
             try {
                 const res = await api.get<AxiosResponse<ListTargetsResponse>>(
-                    `/resource/${params.resourceId}/targets`
+                    `/resource/${resource.resourceId}/targets`
                 );
 
                 if (res.status === 200) {
@@ -298,7 +343,9 @@ export default function ReverseProxyTargets(props: {
                 setSites(res.data.data.sites);
 
                 // Initialize Docker for newt sites
-                const newtSites = res.data.data.sites.filter(site => site.type === "newt");
+                const newtSites = res.data.data.sites.filter(
+                    (site) => site.type === "newt"
+                );
                 for (const site of newtSites) {
                     initializeDockerForSite(site.siteId);
                 }
@@ -387,6 +434,8 @@ export default function ReverseProxyTargets(props: {
 
         const newTarget: LocalTarget = {
             ...data,
+            path: data.path || null,
+            pathMatchType: data.pathMatchType || null,
             siteType: site?.type || null,
             enabled: true,
             targetId: new Date().getTime(),
@@ -398,7 +447,9 @@ export default function ReverseProxyTargets(props: {
         addTargetForm.reset({
             ip: "",
             method: resource.http ? "http" : null,
-            port: "" as any as number
+            port: "" as any as number,
+            path: null,
+            pathMatchType: null
         });
     }
 
@@ -418,11 +469,11 @@ export default function ReverseProxyTargets(props: {
             targets.map((target) =>
                 target.targetId === targetId
                     ? {
-                        ...target,
-                        ...data,
-                        updated: true,
-                        siteType: site?.type || null
-                    }
+                          ...target,
+                          ...data,
+                          updated: true,
+                          siteType: site?.type || null
+                      }
                     : target
             )
         );
@@ -441,13 +492,15 @@ export default function ReverseProxyTargets(props: {
                     port: target.port,
                     method: target.method,
                     enabled: target.enabled,
-                    siteId: target.siteId
+                    siteId: target.siteId,
+                    path: target.path,
+                    pathMatchType: target.pathMatchType
                 };
 
                 if (target.new) {
                     const res = await api.put<
                         AxiosResponse<CreateTargetResponse>
-                    >(`/resource/${params.resourceId}/target`, data);
+                    >(`/resource/${resource.resourceId}/target`, data);
                     target.targetId = res.data.data.targetId;
                     target.new = false;
                 } else if (target.updated) {
@@ -471,11 +524,12 @@ export default function ReverseProxyTargets(props: {
                     stickySession: stickySessionData.stickySession,
                     ssl: tlsData.ssl,
                     tlsServerName: tlsData.tlsServerName || null,
-                    setHostHeader: proxyData.setHostHeader || null
+                    setHostHeader: proxyData.setHostHeader || null,
+                    headers: proxyData.headers || null
                 };
 
                 // Single API call to update all settings
-                await api.post(`/resource/${params.resourceId}`, payload);
+                await api.post(`/resource/${resource.resourceId}`, payload);
 
                 // Update local resource context
                 updateResource({
@@ -483,7 +537,8 @@ export default function ReverseProxyTargets(props: {
                     stickySession: stickySessionData.stickySession,
                     ssl: tlsData.ssl,
                     tlsServerName: tlsData.tlsServerName || null,
-                    setHostHeader: proxyData.setHostHeader || null
+                    setHostHeader: proxyData.setHostHeader || null,
+                    headers: proxyData.headers || null
                 });
             }
 
@@ -512,6 +567,89 @@ export default function ReverseProxyTargets(props: {
     }
 
     const columns: ColumnDef<LocalTarget>[] = [
+        {
+            accessorKey: "path",
+            header: t("matchPath"),
+            cell: ({ row }) => {
+                const [showPathInput, setShowPathInput] = useState(
+                    !!(row.original.path || row.original.pathMatchType)
+                );
+                
+                if (!showPathInput) {
+                    return (
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowPathInput(true)}
+                        >
+                           + {t("matchPath")} 
+                        </Button>
+                    );
+                }
+
+                return (
+                    <div className="flex gap-2 min-w-[200px] items-center">
+                        <Select
+                            defaultValue={row.original.pathMatchType || "exact"}
+                            onValueChange={(value) =>
+                                updateTarget(row.original.targetId, {
+                                    ...row.original,
+                                    pathMatchType: value as "exact" | "prefix" | "regex"
+                                })
+                            }
+                        >
+                            <SelectTrigger className="w-25">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="exact">Exact</SelectItem>
+                                <SelectItem value="prefix">Prefix</SelectItem>
+                                <SelectItem value="regex">Regex</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Input
+                            placeholder={
+                                row.original.pathMatchType === "regex" 
+                                    ? "^/api/.*" 
+                                    : "/path"
+                            }
+                            defaultValue={row.original.path || ""}
+                            className="flex-1 min-w-[150px]"
+                            onBlur={(e) => {
+                                const value = e.target.value.trim();
+                                if (!value) {
+                                    setShowPathInput(false);
+                                    updateTarget(row.original.targetId, {
+                                        ...row.original,
+                                        path: null,
+                                        pathMatchType: null
+                                    });
+                                } else {
+                                    updateTarget(row.original.targetId, {
+                                        ...row.original,
+                                        path: value
+                                    });
+                                }
+                            }}
+                        />
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowPathInput(false);
+                                updateTarget(row.original.targetId, {
+                                    ...row.original,
+                                    path: null,
+                                    pathMatchType: null
+                                });
+                            }}
+                        >
+                            ×
+                        </Button>
+
+                        <MoveRight className="ml-4 h-4 w-4" />
+                    </div>
+                );
+            }
+        },
         {
             accessorKey: "siteId",
             header: t("site"),
@@ -546,7 +684,7 @@ export default function ReverseProxyTargets(props: {
                                     className={cn(
                                         "justify-between flex-1",
                                         !row.original.siteId &&
-                                        "text-muted-foreground"
+                                            "text-muted-foreground"
                                     )}
                                 >
                                     {row.original.siteId
@@ -597,49 +735,59 @@ export default function ReverseProxyTargets(props: {
                                 </Command>
                             </PopoverContent>
                         </Popover>
-                        {selectedSite && selectedSite.type === "newt" && (() => {
-                            const dockerState = getDockerStateForSite(selectedSite.siteId);
-                            return (
-                                <ContainersSelector
-                                    site={selectedSite}
-                                    containers={dockerState.containers}
-                                    isAvailable={dockerState.isAvailable}
-                                    onContainerSelect={handleContainerSelectForTarget}
-                                    onRefresh={() => refreshContainersForSite(selectedSite.siteId)}
-                                />
-                            );
-                        })()}
+                        {selectedSite &&
+                            selectedSite.type === "newt" &&
+                            (() => {
+                                const dockerState = getDockerStateForSite(
+                                    selectedSite.siteId
+                                );
+                                return (
+                                    <ContainersSelector
+                                        site={selectedSite}
+                                        containers={dockerState.containers}
+                                        isAvailable={dockerState.isAvailable}
+                                        onContainerSelect={
+                                            handleContainerSelectForTarget
+                                        }
+                                        onRefresh={() =>
+                                            refreshContainersForSite(
+                                                selectedSite.siteId
+                                            )
+                                        }
+                                    />
+                                );
+                            })()}
                     </div>
                 );
             }
         },
         ...(resource.http
             ? [
-                {
-                    accessorKey: "method",
-                    header: t("method"),
-                    cell: ({ row }: { row: Row<LocalTarget> }) => (
-                        <Select
-                            defaultValue={row.original.method ?? ""}
-                            onValueChange={(value) =>
-                                updateTarget(row.original.targetId, {
-                                    ...row.original,
-                                    method: value
-                                })
-                            }
-                        >
-                            <SelectTrigger>
-                                {row.original.method}
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="http">http</SelectItem>
-                                <SelectItem value="https">https</SelectItem>
-                                <SelectItem value="h2c">h2c</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    )
-                }
-            ]
+                  {
+                      accessorKey: "method",
+                      header: t("method"),
+                      cell: ({ row }: { row: Row<LocalTarget> }) => (
+                          <Select
+                              defaultValue={row.original.method ?? ""}
+                              onValueChange={(value) =>
+                                  updateTarget(row.original.targetId, {
+                                      ...row.original,
+                                      method: value
+                                  })
+                              }
+                          >
+                              <SelectTrigger>
+                                  {row.original.method}
+                              </SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="http">http</SelectItem>
+                                  <SelectItem value="https">https</SelectItem>
+                                  <SelectItem value="h2c">h2c</SelectItem>
+                              </SelectContent>
+                          </Select>
+                      )
+                  }
+              ]
             : []),
         {
             accessorKey: "ip",
@@ -658,9 +806,13 @@ export default function ReverseProxyTargets(props: {
                             if (parsed) {
                                 updateTarget(row.original.targetId, {
                                     ...row.original,
-                                    method: hasProtocol ? parsed.protocol : row.original.method,
+                                    method: hasProtocol
+                                        ? parsed.protocol
+                                        : row.original.method,
                                     ip: parsed.host,
-                                    port: hasPort ? parsed.port : row.original.port
+                                    port: hasPort
+                                        ? parsed.port
+                                        : row.original.port
                                 });
                             } else {
                                 updateTarget(row.original.targetId, {
@@ -807,21 +959,21 @@ export default function ReverseProxyTargets(props: {
                                                                     className={cn(
                                                                         "justify-between flex-1",
                                                                         !field.value &&
-                                                                        "text-muted-foreground"
+                                                                            "text-muted-foreground"
                                                                     )}
                                                                 >
                                                                     {field.value
                                                                         ? sites.find(
-                                                                            (
-                                                                                site
-                                                                            ) =>
-                                                                                site.siteId ===
-                                                                                field.value
-                                                                        )
-                                                                            ?.name
+                                                                              (
+                                                                                  site
+                                                                              ) =>
+                                                                                  site.siteId ===
+                                                                                  field.value
+                                                                          )
+                                                                              ?.name
                                                                         : t(
-                                                                            "siteSelect"
-                                                                        )}
+                                                                              "siteSelect"
+                                                                          )}
                                                                     <CaretSortIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                                                 </Button>
                                                             </FormControl>
@@ -887,18 +1039,35 @@ export default function ReverseProxyTargets(props: {
                                                                 );
                                                             return selectedSite &&
                                                                 selectedSite.type ===
-                                                                "newt" ? (() => {
-                                                                    const dockerState = getDockerStateForSite(selectedSite.siteId);
-                                                                    return (
-                                                                        <ContainersSelector
-                                                                            site={selectedSite}
-                                                                            containers={dockerState.containers}
-                                                                            isAvailable={dockerState.isAvailable}
-                                                                            onContainerSelect={handleContainerSelect}
-                                                                            onRefresh={() => refreshContainersForSite(selectedSite.siteId)}
-                                                                        />
-                                                                    );
-                                                                })() : null;
+                                                                    "newt"
+                                                                ? (() => {
+                                                                      const dockerState =
+                                                                          getDockerStateForSite(
+                                                                              selectedSite.siteId
+                                                                          );
+                                                                      return (
+                                                                          <ContainersSelector
+                                                                              site={
+                                                                                  selectedSite
+                                                                              }
+                                                                              containers={
+                                                                                  dockerState.containers
+                                                                              }
+                                                                              isAvailable={
+                                                                                  dockerState.isAvailable
+                                                                              }
+                                                                              onContainerSelect={
+                                                                                  handleContainerSelect
+                                                                              }
+                                                                              onRefresh={() =>
+                                                                                  refreshContainersForSite(
+                                                                                      selectedSite.siteId
+                                                                                  )
+                                                                              }
+                                                                          />
+                                                                      );
+                                                                  })()
+                                                                : null;
                                                         })()}
                                                 </div>
                                                 <FormMessage />
@@ -964,25 +1133,59 @@ export default function ReverseProxyTargets(props: {
                                         name="ip"
                                         render={({ field }) => (
                                             <FormItem className="relative">
-                                                <FormLabel>{t("targetAddr")}</FormLabel>
+                                                <FormLabel>
+                                                    {t("targetAddr")}
+                                                </FormLabel>
                                                 <FormControl>
                                                     <Input
                                                         id="ip"
                                                         {...field}
                                                         onBlur={(e) => {
-                                                            const input = e.target.value.trim();
-                                                            const hasProtocol = /^(https?|h2c):\/\//.test(input);
-                                                            const hasPort = /:\d+(?:\/|$)/.test(input);
+                                                            const input =
+                                                                e.target.value.trim();
+                                                            const hasProtocol =
+                                                                /^(https?|h2c):\/\//.test(
+                                                                    input
+                                                                );
+                                                            const hasPort =
+                                                                /:\d+(?:\/|$)/.test(
+                                                                    input
+                                                                );
 
-                                                            if (hasProtocol || hasPort) {
-                                                                const parsed = parseHostTarget(input);
+                                                            if (
+                                                                hasProtocol ||
+                                                                hasPort
+                                                            ) {
+                                                                const parsed =
+                                                                    parseHostTarget(
+                                                                        input
+                                                                    );
                                                                 if (parsed) {
-                                                                    if (hasProtocol || !addTargetForm.getValues("method")) {
-                                                                        addTargetForm.setValue("method", parsed.protocol);
+                                                                    if (
+                                                                        hasProtocol ||
+                                                                        !addTargetForm.getValues(
+                                                                            "method"
+                                                                        )
+                                                                    ) {
+                                                                        addTargetForm.setValue(
+                                                                            "method",
+                                                                            parsed.protocol
+                                                                        );
                                                                     }
-                                                                    addTargetForm.setValue("ip", parsed.host);
-                                                                    if (hasPort || !addTargetForm.getValues("port")) {
-                                                                        addTargetForm.setValue("port", parsed.port);
+                                                                    addTargetForm.setValue(
+                                                                        "ip",
+                                                                        parsed.host
+                                                                    );
+                                                                    if (
+                                                                        hasPort ||
+                                                                        !addTargetForm.getValues(
+                                                                            "port"
+                                                                        )
+                                                                    ) {
+                                                                        addTargetForm.setValue(
+                                                                            "port",
+                                                                            parsed.port
+                                                                        );
                                                                     }
                                                                 }
                                                             } else {
@@ -1091,12 +1294,12 @@ export default function ReverseProxyTargets(props: {
                                                                 {header.isPlaceholder
                                                                     ? null
                                                                     : flexRender(
-                                                                        header
-                                                                            .column
-                                                                            .columnDef
-                                                                            .header,
-                                                                        header.getContext()
-                                                                    )}
+                                                                          header
+                                                                              .column
+                                                                              .columnDef
+                                                                              .header,
+                                                                          header.getContext()
+                                                                      )}
                                                             </TableHead>
                                                         )
                                                     )}
@@ -1250,6 +1453,36 @@ export default function ReverseProxyTargets(props: {
                                                 <FormDescription>
                                                     {t(
                                                         "proxyCustomHeaderDescription"
+                                                    )}
+                                                </FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={proxySettingsForm.control}
+                                        name="headers"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-base font-semibold">
+                                                    {t("customHeaders")}
+                                                </FormLabel>
+                                                <FormControl>
+                                                    <HeadersInput
+                                                        value={
+                                                            field.value || ""
+                                                        }
+                                                        onChange={(value) => {
+                                                            field.onChange(
+                                                                value
+                                                            );
+                                                        }}
+                                                        rows={4}
+                                                    />
+                                                </FormControl>
+                                                <FormDescription>
+                                                    {t(
+                                                        "customHeadersDescription"
                                                     )}
                                                 </FormDescription>
                                                 <FormMessage />

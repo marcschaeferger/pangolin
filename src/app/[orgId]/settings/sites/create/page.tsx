@@ -42,7 +42,10 @@ import {
     FaFreebsd,
     FaWindows
 } from "react-icons/fa";
-import { SiNixos } from "react-icons/si";
+import { 
+    SiNixos,
+    SiKubernetes
+} from "react-icons/si";
 import { Checkbox, CheckboxWithLabel } from "@app/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@app/components/ui/alert";
 import { generateKeypair } from "../[niceId]/wireguardConfig";
@@ -76,6 +79,7 @@ type Commands = {
     freebsd: Record<string, string[]>;
     windows: Record<string, string[]>;
     docker: Record<string, string[]>;
+    kubernetes: Record<string, string[]>;
     podman: Record<string, string[]>;
     nixos: Record<string, string[]>;
 };
@@ -83,6 +87,7 @@ type Commands = {
 const platforms = [
     "linux",
     "docker",
+    "kubernetes",
     "podman",
     "mac",
     "windows",
@@ -277,6 +282,20 @@ PersistentKeepalive = 5`;
                     `docker run -dit fosrl/newt --id ${id} --secret ${secret} --endpoint ${endpoint}${acceptClientsFlag}`
                 ]
             },
+            kubernetes: {
+                "Helm Chart": [
+                    `helm repo add fossorial https://charts.fossorial.com`,
+                    `helm repo update fossorial`,
+                    `helm install newt fossorial/newt \\
+    --create-namespace \\
+    --set env.NEWT_ID=${id} \\
+    --set env.NEWT_SECRET=${secret} \\
+    --set env.PANGOLIN_ENDPOINT=${endpoint}`
+                ],
+                "Manifest/Kustomize": [
+                   `coming soon...`
+                ]
+            },
             podman: {
                 "Podman Quadlet": [
                     `[Unit]
@@ -324,6 +343,8 @@ WantedBy=default.target`
                 return ["x64"];
             case "docker":
                 return ["Docker Compose", "Docker Run"];
+            case "kubernetes":
+                return ["Helm Chart", "Manifest/Kustomize"];
             case "podman":
                 return ["Podman Quadlet", "Podman Run"];
             case "freebsd":
@@ -345,6 +366,8 @@ WantedBy=default.target`
                 return "macOS";
             case "docker":
                 return "Docker";
+            case "kubernetes":
+                return "Kubernetes";
             case "podman":
                 return "Podman";
             case "freebsd":
@@ -391,6 +414,8 @@ WantedBy=default.target`
                 return <FaApple className="h-4 w-4 mr-2" />;
             case "docker":
                 return <FaDocker className="h-4 w-4 mr-2" />;
+            case "kubernetes":
+                return <SiKubernetes className="h-4 w-4 mr-2" />;
             case "podman":
                 return <FaCubes className="h-4 w-4 mr-2" />;
             case "freebsd":

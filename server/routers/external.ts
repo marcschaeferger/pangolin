@@ -345,6 +345,12 @@ authenticated.get(
     verifyUserHasAction(ActionsEnum.getResource),
     resource.getResource
 );
+authenticated.get(
+    "/org/:orgId/resource/:niceId",
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.getResource),
+    resource.getResource
+);
 authenticated.post(
     "/resource/:resourceId",
     verifyResourceAccess,
@@ -964,7 +970,7 @@ authRouter.post(
         windowMs: 15 * 60 * 1000,
         max: 15,
         keyGenerator: (req) =>
-            `requestEmailVerificationCode:${req.body.email || ipKeyGenerator(req.ip || "")}`,
+            `requestEmailVerificationCode:${req.user?.email || ipKeyGenerator(req.ip || "")}`,
         handler: (req, res, next) => {
             const message = `You can only request an email verification code ${15} times every ${15} minutes. Please try again later.`;
             return next(createHttpError(HttpCode.TOO_MANY_REQUESTS, message));

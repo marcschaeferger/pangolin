@@ -77,7 +77,7 @@ export const resources = sqliteTable("resources", {
             onDelete: "cascade"
         })
         .notNull(),
-    niceId: text("niceId"), // TODO: SHOULD THIS BE NULLABLE?
+    niceId: text("niceId").notNull(),
     name: text("name").notNull(),
     subdomain: text("subdomain"),
     fullDomain: text("fullDomain"),
@@ -107,7 +107,8 @@ export const resources = sqliteTable("resources", {
     enableProxy: integer("enableProxy", { mode: "boolean" }).default(true),
     skipToIdpId: integer("skipToIdpId").references(() => idp.idpId, {
         onDelete: "cascade"
-    })
+    }),
+    headers: text("headers"), // comma-separated list of headers to add to the request
 });
 
 export const targets = sqliteTable("targets", {
@@ -126,7 +127,9 @@ export const targets = sqliteTable("targets", {
     method: text("method"),
     port: integer("port").notNull(),
     internalPort: integer("internalPort"),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true)
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    path: text("path"),
+    pathMatchType: text("pathMatchType"), // exact, prefix, regex
 });
 
 export const exitNodes = sqliteTable("exitNodes", {
@@ -140,7 +143,8 @@ export const exitNodes = sqliteTable("exitNodes", {
     maxConnections: integer("maxConnections"),
     online: integer("online", { mode: "boolean" }).notNull().default(false),
     lastPing: integer("lastPing"),
-    type: text("type").default("gerbil") // gerbil, remoteExitNode
+    type: text("type").default("gerbil"), // gerbil, remoteExitNode
+    region: text("region")
 });
 
 export const siteResources = sqliteTable("siteResources", {
@@ -154,6 +158,7 @@ export const siteResources = sqliteTable("siteResources", {
     orgId: text("orgId")
         .notNull()
         .references(() => orgs.orgId, { onDelete: "cascade" }),
+    niceId: text("niceId").notNull(),
     name: text("name").notNull(),
     protocol: text("protocol").notNull(),
     proxyPort: integer("proxyPort").notNull(),
