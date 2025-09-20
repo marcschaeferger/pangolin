@@ -69,7 +69,7 @@
         "cors": "2.8.5",
         "crypto-js": "^4.2.0",
         "drizzle-orm": "0.44.4",
-        "eslint": "9.33.0",
+        "eslint": "9.34.0",
         "eslint-config-next": "15.4.6",
         "express": "5.1.0",
         "express-rate-limit": "8.0.1",
