@@ -5,6 +5,7 @@ import { ClientRow } from "../../../../components/ClientsTable";
 import SettingsSectionTitle from "@app/components/SettingsSectionTitle";
 import { ListClientsResponse } from "@server/routers/client";
 import ClientsTable from "../../../../components/ClientsTable";
+import { getTranslations } from "next-intl/server";
 
 type ClientsPageProps = {
     params: Promise<{ orgId: string }>;
@@ -13,6 +14,8 @@ type ClientsPageProps = {
 export const dynamic = "force-dynamic";
 
 export default async function ClientsPage(props: ClientsPageProps) {
+    const t = await getTranslations();
+
     const params = await props.params;
     let clients: ListClientsResponse["clients"] = [];
     try {
@@ -41,15 +44,17 @@ export default async function ClientsPage(props: ClientsPageProps) {
             mbIn: formatSize(client.megabytesIn || 0),
             mbOut: formatSize(client.megabytesOut || 0),
             orgId: params.orgId,
-            online: client.online
+            online: client.online,
+            olmVersion: client.olmVersion || undefined,
+            olmUpdateAvailable: client.olmUpdateAvailable || false,
         };
     });
 
     return (
         <>
             <SettingsSectionTitle
-                title="Manage Clients (beta)"
-                description="Clients are devices that can connect to your sites"
+                title={t("manageClients")}
+                description={t("manageClientsDescription")}
             />
 
             <ClientsTable clients={clientRows} orgId={params.orgId} />

@@ -22,7 +22,7 @@ import {
     CardTitle
 } from "@app/components/ui/card";
 import { Alert, AlertDescription } from "@app/components/ui/alert";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { LockIcon, FingerprintIcon } from "lucide-react";
 import { createApiClient } from "@app/lib/api";
 import {
@@ -73,6 +73,8 @@ export default function LoginForm({
 
     const { env } = useEnvContext();
     const api = createApiClient({ env });
+
+    const { resourceGuid } = useParams();
 
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -235,7 +237,8 @@ export default function LoginForm({
             const response = await loginProxy({
                 email,
                 password,
-                code
+                code,
+                resourceGuid: resourceGuid as string
             });
 
             try {
@@ -407,7 +410,7 @@ export default function LoginForm({
 
                                 <div className="text-center">
                                     <Link
-                                        href={`${env.app.dashboardUrl}/auth/reset-password${form.getValues().email ? `?email=${form.getValues().email}` : ""}`}
+                                        href={`${env.app.dashboardUrl}/auth/reset-password${form.getValues().email ? `?email=${encodeURIComponent(form.getValues().email)}` : ""}`}
                                         className="text-sm text-muted-foreground"
                                     >
                                         {t("passwordForgot")}

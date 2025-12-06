@@ -1,21 +1,23 @@
 import { SidebarNavItem } from "@app/components/SidebarNav";
 import { build } from "@server/build";
 import {
-    Home,
     Settings,
     Users,
     Link as LinkIcon,
     Waypoints,
     Combine,
     Fingerprint,
-    Workflow,
     KeyRound,
     TicketCheck,
     User,
     Globe, // Added from 'dev' branch
     MonitorUp, // Added from 'dev' branch
     Server,
-    Zap
+    ReceiptText,
+    CreditCard,
+    Logs,
+    SquareMousePointer,
+    ScanEye
 } from "lucide-react";
 
 export type SidebarNavSection = {
@@ -54,7 +56,8 @@ export const orgNavSections = (
                       {
                           title: "sidebarClients",
                           href: "/{orgId}/settings/clients",
-                          icon: <MonitorUp className="h-4 w-4" />
+                          icon: <MonitorUp className="h-4 w-4" />,
+                          isBeta: true
                       }
                   ]
                 : []),
@@ -63,7 +66,8 @@ export const orgNavSections = (
                       {
                           title: "sidebarRemoteExitNodes",
                           href: "/{orgId}/settings/remote-exit-nodes",
-                          icon: <Server className="h-4 w-4" />
+                          icon: <Server className="h-4 w-4" />,
+                          showEE: true
                       }
                   ]
                 : []),
@@ -71,6 +75,11 @@ export const orgNavSections = (
                 title: "sidebarDomains",
                 href: "/{orgId}/settings/domains",
                 icon: <Globe className="h-4 w-4" />
+            },
+            {
+                title: "sidebarBluePrints",
+                href: "/{orgId}/settings/blueprints",
+                icon: <ReceiptText className="h-4 w-4" />
             }
         ]
     },
@@ -97,7 +106,8 @@ export const orgNavSections = (
                       {
                           title: "sidebarIdentityProviders",
                           href: "/{orgId}/settings/idp",
-                          icon: <Fingerprint className="h-4 w-4" />
+                          icon: <Fingerprint className="h-4 w-4" />,
+                          showEE: true
                       }
                   ]
                 : []),
@@ -106,6 +116,30 @@ export const orgNavSections = (
                 href: "/{orgId}/settings/share-links",
                 icon: <LinkIcon className="h-4 w-4" />
             }
+        ]
+    },
+    {
+        heading: "Analytics",
+        items: [
+            {
+                title: "sidebarLogsRequest",
+                href: "/{orgId}/settings/logs/request",
+                icon: <SquareMousePointer className="h-4 w-4" />
+            },
+            ...(build != "oss"
+                ? [
+                      {
+                          title: "sidebarLogsAccess",
+                          href: "/{orgId}/settings/logs/access",
+                          icon: <ScanEye className="h-4 w-4" />
+                      },
+                      {
+                          title: "sidebarLogsAction",
+                          href: "/{orgId}/settings/logs/action",
+                          icon: <Logs className="h-4 w-4" />
+                      }
+                  ]
+                : [])
         ]
     },
     {
@@ -121,6 +155,15 @@ export const orgNavSections = (
                       {
                           title: "sidebarBilling",
                           href: "/{orgId}/settings/billing",
+                          icon: <CreditCard className="h-4 w-4" />
+                      }
+                  ]
+                : []),
+            ...(build == "saas"
+                ? [
+                      {
+                          title: "sidebarEnterpriseLicenses",
+                          href: "/{orgId}/settings/license",
                           icon: <TicketCheck className="h-4 w-4" />
                       }
                   ]
@@ -138,15 +181,6 @@ export const adminNavSections: SidebarNavSection[] = [
     {
         heading: "Admin",
         items: [
-            ...(build == "oss"
-                ? [
-                      {
-                          title: "managedSelfhosted",
-                          href: "/admin/managed",
-                          icon: <Zap className="h-4 w-4" />
-                      }
-                  ]
-                : []),
             {
                 title: "sidebarAllUsers",
                 href: "/admin/users",

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { db, Domain, domains, OrgDomains, orgDomains } from "@server/db";
+import { db, Domain, domains, OrgDomains, orgDomains, dnsRecords } from "@server/db";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
@@ -9,8 +9,8 @@ import { fromError } from "zod-validation-error";
 import { subdomainSchema } from "@server/lib/schemas";
 import { generateId } from "@server/auth/sessions/app";
 import { eq, and } from "drizzle-orm";
-import { usageService } from "@server/lib/private/billing/usageService";
-import { FeatureId } from "@server/lib/private/billing";
+import { usageService } from "@server/lib/billing/usageService";
+import { FeatureId } from "@server/lib/billing";
 import { isSecondLevelDomain, isValidDomain } from "@server/lib/validators";
 import { build } from "@server/build";
 import config from "@server/lib/config";
@@ -24,9 +24,12 @@ const paramsSchema = z
 const bodySchema = z
     .object({
         type: z.enum(["ns", "cname", "wildcard"]),
-        baseDomain: subdomainSchema
+        baseDomain: subdomainSchema,
+        certResolver: z.string().optional().nullable(),
+        preferWildcardCert: z.boolean().optional().nullable() // optional, only for wildcard
     })
     .strict();
+
 
 export type CreateDomainResponse = {
     domainId: string;
@@ -34,6 +37,8 @@ export type CreateDomainResponse = {
     cnameRecords?: { baseDomain: string; value: string }[];
     aRecords?: { baseDomain: string; value: string }[];
     txtRecords?: { baseDomain: string; value: string }[];
+    certResolver?: string | null;
+    preferWildcardCert?: boolean | null;
 };
 
 // Helper to check if a domain is a subdomain or equal to another domain
@@ -71,7 +76,7 @@ export async function createOrgDomain(
         }
 
         const { orgId } = parsedParams.data;
-        const { type, baseDomain } = parsedBody.data;
+        const { type, baseDomain, certResolver, preferWildcardCert } = parsedBody.data;
 
         if (build == "oss") {
             if (type !== "wildcard") {
@@ -82,7 +87,7 @@ export async function createOrgDomain(
                     )
                 );
             }
-        } else if (build == "enterprise" || build == "saas") {
+        } else if (build == "saas") {
             if (type !== "ns" && type !== "cname") {
                 return next(
                     createHttpError(
@@ -92,6 +97,7 @@ export async function createOrgDomain(
                 );
             }
         }
+        // allow wildacard, cname, and ns in enterprise
 
         // Validate organization exists
         if (!isValidDomain(baseDomain)) {
@@ -104,7 +110,7 @@ export async function createOrgDomain(
             // many providers dont allow cname for this. Lets prevent it for the user for now
             return next(
                 createHttpError(
-                    HttpCode.BAD_REQUEST, 
+                    HttpCode.BAD_REQUEST,
                     "You cannot create a CNAME record on a root domain. RFC 1912 § 2.4 prohibits CNAME records at the zone apex. Please use a subdomain."
                 )
             );
@@ -253,7 +259,9 @@ export async function createOrgDomain(
                     domainId,
                     baseDomain,
                     type,
-                    verified: build == "oss" ? true : false
+                    verified: type === "wildcard" ? true : false,
+                    certResolver: certResolver || null,
+                    preferWildcardCert: preferWildcardCert || false
                 })
                 .returning();
 
@@ -268,9 +276,23 @@ export async function createOrgDomain(
                 })
                 .returning();
 
+            // Prepare DNS records to insert
+            const recordsToInsert = [];
+
             // TODO: This needs to be cross region and not hardcoded
             if (type === "ns") {
                 nsRecords = config.getRawConfig().dns.nameservers as string[];
+                
+                // Save NS records to database
+                for (const nsValue of nsRecords) {
+                    recordsToInsert.push({
+                        domainId,
+                        recordType: "NS",
+                        baseDomain: baseDomain,
+                        value: nsValue,
+                        verified: false
+                    });
+                }
             } else if (type === "cname") {
                 cnameRecords = [
                     {
@@ -282,6 +304,17 @@ export async function createOrgDomain(
                         baseDomain: `_acme-challenge.${baseDomain}`
                     }
                 ];
+                
+                // Save CNAME records to database
+                for (const cnameRecord of cnameRecords) {
+                    recordsToInsert.push({
+                        domainId,
+                        recordType: "CNAME",
+                        baseDomain: cnameRecord.baseDomain,
+                        value: cnameRecord.value,
+                        verified: false
+                    });
+                }
             } else if (type === "wildcard") {
                 aRecords = [
                     {
@@ -293,6 +326,22 @@ export async function createOrgDomain(
                         baseDomain: `${baseDomain}`
                     }
                 ];
+                
+                // Save A records to database
+                for (const aRecord of aRecords) {
+                    recordsToInsert.push({
+                        domainId,
+                        recordType: "A",
+                        baseDomain: aRecord.baseDomain,
+                        value: aRecord.value,
+                        verified: true
+                    });
+                }
+            }
+
+            // Insert all DNS records in batch
+            if (recordsToInsert.length > 0) {
+                await trx.insert(dnsRecords).values(recordsToInsert);
             }
 
             numOrgDomains = await trx
@@ -324,7 +373,9 @@ export async function createOrgDomain(
                 cnameRecords,
                 txtRecords,
                 nsRecords,
-                aRecords
+                aRecords,
+                certResolver: returned.certResolver,
+                preferWildcardCert: returned.preferWildcardCert
             },
             success: true,
             error: false,

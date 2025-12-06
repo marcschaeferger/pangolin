@@ -15,13 +15,15 @@ import AccessToken from "@app/components/AccessToken";
 import { pullEnv } from "@app/lib/pullEnv";
 import { LoginFormIDP } from "@app/components/LoginForm";
 import { ListIdpsResponse } from "@server/routers/idp";
-import { ListOrgIdpsResponse } from "@server/routers/private/orgIdp";
+import { ListOrgIdpsResponse } from "@server/routers/orgIdp/types";
 import AutoLoginHandler from "@app/components/AutoLoginHandler";
 import { build } from "@server/build";
 import { headers } from "next/headers";
-import { GetLoginPageResponse } from "@server/routers/private/loginPage";
-import { GetOrgTierResponse } from "@server/routers/private/billing";
-import { TierId } from "@server/lib/private/billing/tiers";
+import { GetLoginPageResponse } from "@server/routers/loginPage/types";
+import { GetOrgTierResponse } from "@server/routers/billing/types";
+import { TierId } from "@server/lib/billing/tiers";
+import { CheckOrgUserAccessResponse } from "@server/routers/org";
+import OrgPolicyRequired from "@app/components/OrgPolicyRequired";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +75,10 @@ export default async function ResourceAuthPage(props: {
             subscriptionStatus = subRes.data.data;
         } catch {}
     }
-    const subscribed = subscriptionStatus?.tier === TierId.STANDARD;
+    const subscribed =
+        build === "enterprise"
+            ? true
+            : subscriptionStatus?.tier === TierId.STANDARD;
 
     const allHeaders = await headers();
     const host = allHeaders.get("host");
@@ -133,6 +138,34 @@ export default async function ResourceAuthPage(props: {
         );
     }
 
+    const cookie = await authCookieHeader();
+
+    // Check org policy compliance before proceeding
+    let orgPolicyCheck: CheckOrgUserAccessResponse | null = null;
+    if (user && authInfo.orgId) {
+        try {
+            const policyRes = await internal.get<
+                AxiosResponse<CheckOrgUserAccessResponse>
+            >(`/org/${authInfo.orgId}/user/${user.userId}/check`, cookie);
+
+            orgPolicyCheck = policyRes.data.data;
+        } catch (e) {
+            console.error(formatAxiosError(e));
+        }
+    }
+
+    // If user is not compliant with org policies, show policy requirements
+    if (orgPolicyCheck && !orgPolicyCheck.allowed && orgPolicyCheck.policies) {
+        return (
+            <div className="w-full max-w-md">
+                <OrgPolicyRequired
+                    orgId={authInfo.orgId}
+                    policies={orgPolicyCheck.policies}
+                />
+            </div>
+        );
+    }
+
     if (!hasAuth) {
         // no authentication so always go straight to the resource
         redirect(redirectUrl);
@@ -148,7 +181,7 @@ export default async function ResourceAuthPage(props: {
             >(
                 `/resource/${authInfo.resourceId}/get-exchange-token`,
                 {},
-                await authCookieHeader()
+                cookie
             );
 
             if (res.data.data.requestToken) {
@@ -207,7 +240,12 @@ export default async function ResourceAuthPage(props: {
         })) as LoginFormIDP[];
     }
 
-    if (authInfo.skipToIdpId && authInfo.skipToIdpId !== null) {
+    if (
+        !userIsUnauthorized &&
+        isSSOOnly &&
+        authInfo.skipToIdpId &&
+        authInfo.skipToIdpId !== null
+    ) {
         const idp = loginIdps.find((idp) => idp.idpId === authInfo.skipToIdpId);
         if (idp) {
             return (

@@ -35,11 +35,12 @@ function createDb() {
     }
 
     // Create connection pools instead of individual connections
+    const poolConfig = config.postgres.pool;
     const primaryPool = new Pool({
         connectionString,
-        max: 20,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 5000,
+        max: poolConfig?.max_connections || 20,
+        idleTimeoutMillis: poolConfig?.idle_timeout_ms || 30000,
+        connectionTimeoutMillis: poolConfig?.connection_timeout_ms || 5000,
     });
 
     const replicas = [];
@@ -50,9 +51,9 @@ function createDb() {
         for (const conn of replicaConnections) {
             const replicaPool = new Pool({
                 connectionString: conn.connection_string,
-                max: 10,
-                idleTimeoutMillis: 30000,
-                connectionTimeoutMillis: 5000,
+                max: poolConfig?.max_replica_connections || 20,
+                idleTimeoutMillis: poolConfig?.idle_timeout_ms || 30000,
+                connectionTimeoutMillis: poolConfig?.connection_timeout_ms || 5000,
             });
             replicas.push(DrizzlePostgres(replicaPool));
         }

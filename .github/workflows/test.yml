@@ -1,5 +1,8 @@
 name: Run Tests
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     branches:
@@ -11,9 +14,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: '22'
 
@@ -34,6 +37,9 @@ jobs:
 
       - name: Apply database migrations
         run: npm run db:sqlite:push
+
+      - name: Test with tsc
+        run: npx tsc --noEmit
 
       - name: Start app in background
         run: nohup npm run dev &

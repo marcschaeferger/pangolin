@@ -74,7 +74,11 @@ import {
     CircleX,
     ArrowRight,
     Plus,
-    MoveRight
+    MoveRight,
+    ArrowUp,
+    Info,
+    ArrowDown,
+    AlertTriangle
 } from "lucide-react";
 import { ContainersSelector } from "@app/components/ContainersSelector";
 import { useTranslations } from "next-intl";
@@ -106,13 +110,23 @@ import {
     PathRewriteModal
 } from "@app/components/PathMatchRenameModal";
 import { Badge } from "@app/components/ui/badge";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger
+} from "@app/components/ui/tooltip";
+import { Alert, AlertDescription } from "@app/components/ui/alert";
 
 const addTargetSchema = z
     .object({
         ip: z.string().refine(isTargetValid),
         method: z.string().nullable(),
         port: z.coerce.number().int().positive(),
-        siteId: z.number().int().positive(),
+        siteId: z
+            .number()
+            .int()
+            .positive({ message: "You must select a site for a target." }),
         path: z.string().optional().nullable(),
         pathMatchType: z
             .enum(["exact", "prefix", "regex"])
@@ -122,7 +136,8 @@ const addTargetSchema = z
         rewritePathType: z
             .enum(["exact", "prefix", "regex", "stripPrefix"])
             .optional()
-            .nullable()
+            .nullable(),
+        priority: z.number().int().min(1).max(1000).optional()
     })
     .refine(
         (data) => {
@@ -192,6 +207,7 @@ export default function ReverseProxyTargets(props: {
 }) {
     const params = use(props.params);
     const t = useTranslations();
+    const { env } = useEnvContext();
 
     const { resource, updateResource } = useResourceContext();
 
@@ -245,6 +261,13 @@ export default function ReverseProxyTargets(props: {
 
     const [pageLoading, setPageLoading] = useState(true);
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+    const [isAdvancedMode, setIsAdvancedMode] = useState(() => {
+        if (typeof window !== "undefined") {
+            const saved = localStorage.getItem("proxy-advanced-mode");
+            return saved === "true";
+        }
+        return false;
+    });
     const [healthCheckDialogOpen, setHealthCheckDialogOpen] = useState(false);
     const [selectedTargetForHealthCheck, setSelectedTargetForHealthCheck] =
         useState<LocalTarget | null>(null);
@@ -267,7 +290,9 @@ export default function ReverseProxyTargets(props: {
             ),
         headers: z
             .array(z.object({ name: z.string(), value: z.string() }))
-            .nullable()
+            .nullable(),
+        proxyProtocol: z.boolean().optional(),
+        proxyProtocolVersion: z.number().int().min(1).max(2).optional()
     });
 
     const tlsSettingsSchema = z.object({
@@ -292,30 +317,6 @@ export default function ReverseProxyTargets(props: {
     type TlsSettingsValues = z.infer<typeof tlsSettingsSchema>;
     type TargetsSettingsValues = z.infer<typeof targetsSettingsSchema>;
 
-    const addTargetForm = useForm({
-        resolver: zodResolver(addTargetSchema),
-        defaultValues: {
-            ip: "",
-            method: resource.http ? "http" : null,
-            port: "" as any as number,
-            path: null,
-            pathMatchType: null,
-            rewritePath: null,
-            rewritePathType: null
-        } as z.infer<typeof addTargetSchema>
-    });
-
-    const watchedIp = addTargetForm.watch("ip");
-    const watchedPort = addTargetForm.watch("port");
-    const watchedSiteId = addTargetForm.watch("siteId");
-
-    const handleContainerSelect = (hostname: string, port?: number) => {
-        addTargetForm.setValue("ip", hostname);
-        if (port) {
-            addTargetForm.setValue("port", port);
-        }
-    };
-
     const tlsSettingsForm = useForm({
         resolver: zodResolver(tlsSettingsSchema),
         defaultValues: {
@@ -328,7 +329,9 @@ export default function ReverseProxyTargets(props: {
         resolver: zodResolver(proxySettingsSchema),
         defaultValues: {
             setHostHeader: resource.setHostHeader || "",
-            headers: resource.headers
+            headers: resource.headers,
+            proxyProtocol: resource.proxyProtocol || false,
+            proxyProtocolVersion: resource.proxyProtocolVersion || 1
         }
     });
 
@@ -392,13 +395,7 @@ export default function ReverseProxyTargets(props: {
                     initializeDockerForSite(site.siteId);
                 }
 
-                // If there's only one site, set it as the default in the form
-                if (res.data.data.sites.length) {
-                    addTargetForm.setValue(
-                        "siteId",
-                        res.data.data.sites[0].siteId
-                    );
-                }
+                // Sites loaded successfully
             }
         };
         fetchSites();
@@ -427,25 +424,148 @@ export default function ReverseProxyTargets(props: {
         // fetchSite();
     }, []);
 
-    async function addTarget(data: z.infer<typeof addTargetSchema>) {
-        // Check if target with same IP, port and method already exists
-        const isDuplicate = targets.some(
-            (target) =>
-                target.ip === data.ip &&
-                target.port === data.port &&
-                target.method === data.method &&
-                target.siteId === data.siteId
-        );
+    // Save advanced mode preference to localStorage
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            localStorage.setItem(
+                "proxy-advanced-mode",
+                isAdvancedMode.toString()
+            );
+        }
+    }, [isAdvancedMode]);
 
-        if (isDuplicate) {
+    function addNewTarget() {
+        const isHttp = resource.http;
+
+        const newTarget: LocalTarget = {
+            targetId: -Date.now(), // Use negative timestamp as temporary ID
+            ip: "",
+            method: isHttp ? "http" : null,
+            port: 0,
+            siteId: sites.length > 0 ? sites[0].siteId : 0,
+            path: isHttp ? null : null,
+            pathMatchType: isHttp ? null : null,
+            rewritePath: isHttp ? null : null,
+            rewritePathType: isHttp ? null : null,
+            priority: isHttp ? 100 : 100,
+            enabled: true,
+            resourceId: resource.resourceId,
+            hcEnabled: false,
+            hcPath: null,
+            hcMethod: null,
+            hcInterval: null,
+            hcTimeout: null,
+            hcHeaders: null,
+            hcScheme: null,
+            hcHostname: null,
+            hcPort: null,
+            hcFollowRedirects: null,
+            hcHealth: "unknown",
+            hcStatus: null,
+            hcMode: null,
+            hcUnhealthyInterval: null,
+            siteType: sites.length > 0 ? sites[0].type : null,
+            new: true,
+            updated: false
+        };
+
+        setTargets((prev) => [...prev, newTarget]);
+    }
+
+    async function saveNewTarget(target: LocalTarget) {
+        // Validate the target
+        if (!isTargetValid(target.ip)) {
             toast({
                 variant: "destructive",
-                title: t("targetErrorDuplicate"),
-                description: t("targetErrorDuplicateDescription")
+                title: t("targetErrorInvalidIp"),
+                description: t("targetErrorInvalidIpDescription")
             });
             return;
         }
 
+        if (!target.port || target.port <= 0) {
+            toast({
+                variant: "destructive",
+                title: t("targetErrorInvalidPort"),
+                description: t("targetErrorInvalidPortDescription")
+            });
+            return;
+        }
+
+        if (!target.siteId) {
+            toast({
+                variant: "destructive",
+                title: t("targetErrorNoSite"),
+                description: t("targetErrorNoSiteDescription")
+            });
+            return;
+        }
+
+        try {
+            setTargetsLoading(true);
+
+            const data: any = {
+                resourceId: resource.resourceId,
+                siteId: target.siteId,
+                ip: target.ip,
+                method: target.method,
+                port: target.port,
+                enabled: target.enabled,
+                hcEnabled: target.hcEnabled,
+                hcPath: target.hcPath,
+                hcInterval: target.hcInterval,
+                hcTimeout: target.hcTimeout
+            };
+
+            // Only include path-related fields for HTTP resources
+            if (resource.http) {
+                data.path = target.path;
+                data.pathMatchType = target.pathMatchType;
+                data.rewritePath = target.rewritePath;
+                data.rewritePathType = target.rewritePathType;
+                data.priority = target.priority;
+            }
+
+            const response = await api.post<
+                AxiosResponse<CreateTargetResponse>
+            >(`/target`, data);
+
+            if (response.status === 200) {
+                // Update the target with the new ID and remove the new flag
+                setTargets((prev) =>
+                    prev.map((t) =>
+                        t.targetId === target.targetId
+                            ? {
+                                ...t,
+                                targetId: response.data.data.targetId,
+                                new: false,
+                                updated: false
+                            }
+                            : t
+                    )
+                );
+
+                toast({
+                    title: t("targetCreated"),
+                    description: t("targetCreatedDescription")
+                });
+            }
+        } catch (err) {
+            console.error(err);
+            toast({
+                variant: "destructive",
+                title: t("targetErrorCreate"),
+                description: formatAxiosError(
+                    err,
+                    t("targetErrorCreateDescription")
+                )
+            });
+        } finally {
+            setTargetsLoading(false);
+        }
+    }
+
+    async function addTarget(data: z.infer<typeof addTargetSchema>) {
         // if (site && site.type == "wireguard" && site.subnet) {
         //     // make sure that the target IP is within the site subnet
         //     const targetIp = data.ip;
@@ -473,18 +593,20 @@ export default function ReverseProxyTargets(props: {
         // }
 
         const site = sites.find((site) => site.siteId === data.siteId);
+        const isHttp = resource.http;
 
         const newTarget: LocalTarget = {
             ...data,
-            path: data.path || null,
-            pathMatchType: data.pathMatchType || null,
-            rewritePath: data.rewritePath || null,
-            rewritePathType: data.rewritePathType || null,
+            path: isHttp ? (data.path || null) : null,
+            pathMatchType: isHttp ? (data.pathMatchType || null) : null,
+            rewritePath: isHttp ? (data.rewritePath || null) : null,
+            rewritePathType: isHttp ? (data.rewritePathType || null) : null,
             siteType: site?.type || null,
             enabled: true,
             targetId: new Date().getTime(),
             new: true,
             resourceId: resource.resourceId,
+            priority: isHttp ? (data.priority || 100) : 100,
             hcEnabled: false,
             hcPath: null,
             hcMethod: null,
@@ -502,15 +624,6 @@ export default function ReverseProxyTargets(props: {
         };
 
         setTargets([...targets, newTarget]);
-        addTargetForm.reset({
-            ip: "",
-            method: resource.http ? "http" : null,
-            port: "" as any as number,
-            path: null,
-            pathMatchType: null,
-            rewritePath: null,
-            rewritePathType: null
-        });
     }
 
     const removeTarget = (targetId: number) => {
@@ -529,11 +642,11 @@ export default function ReverseProxyTargets(props: {
             targets.map((target) =>
                 target.targetId === targetId
                     ? {
-                          ...target,
-                          ...data,
-                          updated: true,
-                          siteType: site?.type || null
-                      }
+                        ...target,
+                        ...data,
+                        updated: true,
+                        siteType: site ? site.type : target.siteType
+                    }
                     : target
             )
         );
@@ -544,10 +657,10 @@ export default function ReverseProxyTargets(props: {
             targets.map((target) =>
                 target.targetId === targetId
                     ? {
-                          ...target,
-                          ...config,
-                          updated: true
-                      }
+                        ...target,
+                        ...config,
+                        updated: true
+                    }
                     : target
             )
         );
@@ -560,14 +673,36 @@ export default function ReverseProxyTargets(props: {
     };
 
     async function saveAllSettings() {
+        // Validate that no targets have blank IPs or invalid ports
+        const targetsWithInvalidFields = targets.filter(
+            (target) =>
+                !target.ip ||
+                target.ip.trim() === "" ||
+                !target.port ||
+                target.port <= 0 ||
+                isNaN(target.port)
+        );
+        if (targetsWithInvalidFields.length > 0) {
+            toast({
+                variant: "destructive",
+                title: t("targetErrorInvalidIp"),
+                description: t("targetErrorInvalidIpDescription")
+            });
+            return;
+        }
+
         try {
             setTargetsLoading(true);
             setHttpsTlsLoading(true);
             setProxySettingsLoading(true);
 
+            for (const targetId of targetsToRemove) {
+                await api.delete(`/target/${targetId}`);
+            }
+
             // Save targets
             for (const target of targets) {
-                const data = {
+                const data: any = {
                     ip: target.ip,
                     port: target.port,
                     method: target.method,
@@ -583,12 +718,17 @@ export default function ReverseProxyTargets(props: {
                     hcHeaders: target.hcHeaders || null,
                     hcFollowRedirects: target.hcFollowRedirects || null,
                     hcMethod: target.hcMethod || null,
-                    hcStatus: target.hcStatus || null,
-                    path: target.path,
-                    pathMatchType: target.pathMatchType,
-                    rewritePath: target.rewritePath,
-                    rewritePathType: target.rewritePathType
+                    hcStatus: target.hcStatus || null
                 };
+
+                // Only include path-related fields for HTTP resources
+                if (resource.http) {
+                    data.path = target.path;
+                    data.pathMatchType = target.pathMatchType;
+                    data.rewritePath = target.rewritePath;
+                    data.rewritePathType = target.rewritePathType;
+                    data.priority = target.priority;
+                }
 
                 if (target.new) {
                     const res = await api.put<
@@ -600,10 +740,6 @@ export default function ReverseProxyTargets(props: {
                     await api.post(`/target/${target.targetId}`, data);
                     target.updated = false;
                 }
-            }
-
-            for (const targetId of targetsToRemove) {
-                await api.delete(`/target/${targetId}`);
             }
 
             if (resource.http) {
@@ -633,6 +769,22 @@ export default function ReverseProxyTargets(props: {
                     setHostHeader: proxyData.setHostHeader || null,
                     headers: proxyData.headers || null
                 });
+            } else {
+                // For TCP/UDP resources, save proxy protocol settings
+                const proxyData = proxySettingsForm.getValues();
+
+                const payload = {
+                    proxyProtocol: proxyData.proxyProtocol || false,
+                    proxyProtocolVersion: proxyData.proxyProtocolVersion || 1
+                };
+
+                await api.post(`/resource/${resource.resourceId}`, payload);
+
+                updateResource({
+                    ...resource,
+                    proxyProtocol: proxyData.proxyProtocol || false,
+                    proxyProtocolVersion: proxyData.proxyProtocolVersion || 1
+                });
             }
 
             toast({
@@ -659,372 +811,58 @@ export default function ReverseProxyTargets(props: {
         }
     }
 
-    const columns: ColumnDef<LocalTarget>[] = [
-        {
-            accessorKey: "path",
-            header: t("matchPath"),
+    const getColumns = (): ColumnDef<LocalTarget>[] => {
+        const baseColumns: ColumnDef<LocalTarget>[] = [];
+        const isHttp = resource.http;
+
+        const priorityColumn: ColumnDef<LocalTarget> = {
+            id: "priority",
+            header: () => (
+                <div className="flex items-center gap-2">
+                    {t("priority")}
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger>
+                                <Info className="h-4 w-4 text-muted-foreground" />
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                                <p>{t("priorityDescription")}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+            ),
             cell: ({ row }) => {
-                const hasPathMatch = !!(
-                    row.original.path || row.original.pathMatchType
-                );
-
-                return hasPathMatch ? (
-                    <div className="flex items-center gap-1">
-                        <PathMatchModal
-                            value={{
-                                path: row.original.path,
-                                pathMatchType: row.original.pathMatchType
-                            }}
-                            onChange={(config) =>
-                                updateTarget(row.original.targetId, config)
-                            }
-                            trigger={
-                                <Button
-                                    variant="outline"
-                                    className="flex items-center gap-2 p-2 max-w-md w-full text-left cursor-pointer"
-                                >
-                                    <PathMatchDisplay
-                                        value={{
-                                            path: row.original.path,
-                                            pathMatchType:
-                                                row.original.pathMatchType
-                                        }}
-                                    />
-                                </Button>
-                            }
-                        />
-                        <Button
-                            variant="text"
-                            size="sm"
-                            className="px-1"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                updateTarget(row.original.targetId, {
-                                    ...row.original,
-                                    path: null,
-                                    pathMatchType: null,
-                                    rewritePath: null,
-                                    rewritePathType: null
-                                });
-                            }}
-                        >
-                            ×
-                        </Button>
-
-                        {/* <MoveRight className="ml-1 h-4 w-4" /> */}
-                    </div>
-                ) : (
-                    <PathMatchModal
-                        value={{
-                            path: row.original.path,
-                            pathMatchType: row.original.pathMatchType
-                        }}
-                        onChange={(config) =>
-                            updateTarget(row.original.targetId, config)
-                        }
-                        trigger={
-                            <Button variant="outline">
-                                <Plus className="h-4 w-4 mr-2" />
-                                {t("matchPath")}
-                            </Button>
-                        }
-                    />
-                );
-            }
-        },
-        {
-            accessorKey: "siteId",
-            header: t("site"),
-            cell: ({ row }) => {
-                const selectedSite = sites.find(
-                    (site) => site.siteId === row.original.siteId
-                );
-
-                const handleContainerSelectForTarget = (
-                    hostname: string,
-                    port?: number
-                ) => {
-                    updateTarget(row.original.targetId, {
-                        ...row.original,
-                        ip: hostname
-                    });
-                    if (port) {
-                        updateTarget(row.original.targetId, {
-                            ...row.original,
-                            port: port
-                        });
-                    }
-                };
-
                 return (
-                    <div className="flex gap-2 items-center">
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    className={cn(
-                                        "justify-between flex-1",
-                                        !row.original.siteId &&
-                                            "text-muted-foreground"
-                                    )}
-                                >
-                                    {row.original.siteId
-                                        ? selectedSite?.name
-                                        : t("siteSelect")}
-                                    <CaretSortIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="p-0">
-                                <Command>
-                                    <CommandInput
-                                        placeholder={t("siteSearch")}
-                                    />
-                                    <CommandList>
-                                        <CommandEmpty>
-                                            {t("siteNotFound")}
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                            {sites.map((site) => (
-                                                <CommandItem
-                                                    value={`${site.siteId}:${site.name}:${site.niceId}`}
-                                                    key={site.siteId}
-                                                    onSelect={() => {
-                                                        updateTarget(
-                                                            row.original
-                                                                .targetId,
-                                                            {
-                                                                siteId: site.siteId
-                                                            }
-                                                        );
-                                                    }}
-                                                >
-                                                    <CheckIcon
-                                                        className={cn(
-                                                            "mr-2 h-4 w-4",
-                                                            site.siteId ===
-                                                                row.original
-                                                                    .siteId
-                                                                ? "opacity-100"
-                                                                : "opacity-0"
-                                                        )}
-                                                    />
-                                                    {site.name}
-                                                </CommandItem>
-                                            ))}
-                                        </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
-                        {selectedSite &&
-                            selectedSite.type === "newt" &&
-                            (() => {
-                                const dockerState = getDockerStateForSite(
-                                    selectedSite.siteId
-                                );
-                                return (
-                                    <ContainersSelector
-                                        site={selectedSite}
-                                        containers={dockerState.containers}
-                                        isAvailable={dockerState.isAvailable}
-                                        onContainerSelect={
-                                            handleContainerSelectForTarget
-                                        }
-                                        onRefresh={() =>
-                                            refreshContainersForSite(
-                                                selectedSite.siteId
-                                            )
-                                        }
-                                    />
-                                );
-                            })()}
-                    </div>
-                );
-            }
-        },
-        ...(resource.http
-            ? [
-                  {
-                      accessorKey: "method",
-                      header: t("method"),
-                      cell: ({ row }: { row: Row<LocalTarget> }) => (
-                          <Select
-                              defaultValue={row.original.method ?? ""}
-                              onValueChange={(value) =>
-                                  updateTarget(row.original.targetId, {
-                                      ...row.original,
-                                      method: value
-                                  })
-                              }
-                          >
-                              <SelectTrigger>
-                                  {row.original.method}
-                              </SelectTrigger>
-                              <SelectContent>
-                                  <SelectItem value="http">http</SelectItem>
-                                  <SelectItem value="https">https</SelectItem>
-                                  <SelectItem value="h2c">h2c</SelectItem>
-                              </SelectContent>
-                          </Select>
-                      )
-                  }
-              ]
-            : []),
-        {
-            accessorKey: "ip",
-            header: t("targetAddr"),
-            cell: ({ row }) => (
-                <Input
-                    defaultValue={row.original.ip}
-                    className="min-w-[150px]"
-                    onBlur={(e) => {
-                        const input = e.target.value.trim();
-                        const hasProtocol = /^(https?|h2c):\/\//.test(input);
-                        const hasPort = /:\d+(?:\/|$)/.test(input);
-
-                        if (hasProtocol || hasPort) {
-                            const parsed = parseHostTarget(input);
-                            if (parsed) {
-                                updateTarget(row.original.targetId, {
-                                    ...row.original,
-                                    method: hasProtocol
-                                        ? parsed.protocol
-                                        : row.original.method,
-                                    ip: parsed.host,
-                                    port: hasPort
-                                        ? parsed.port
-                                        : row.original.port
-                                });
-                            } else {
-                                updateTarget(row.original.targetId, {
-                                    ...row.original,
-                                    ip: input
-                                });
-                            }
-                        } else {
-                            updateTarget(row.original.targetId, {
-                                ...row.original,
-                                ip: input
-                            });
-                        }
-                    }}
-                />
-            )
-        },
-        {
-            accessorKey: "port",
-            header: t("targetPort"),
-            cell: ({ row }) => (
-                <Input
-                    type="number"
-                    defaultValue={row.original.port}
-                    className="min-w-[100px]"
-                    onBlur={(e) =>
-                        updateTarget(row.original.targetId, {
-                            ...row.original,
-                            port: parseInt(e.target.value, 10)
-                        })
-                    }
-                />
-            )
-        },
-        {
-            accessorKey: "rewritePath",
-            header: t("rewritePath"),
-            cell: ({ row }) => {
-                const hasRewritePath = !!(
-                    row.original.rewritePath || row.original.rewritePathType
-                );
-                const noPathMatch =
-                    !row.original.path && !row.original.pathMatchType;
-
-                return hasRewritePath && !noPathMatch ? (
-                    <div className="flex items-center gap-1">
-                        {/* <MoveRight className="mr-2 h-4 w-4" /> */}
-                        <PathRewriteModal
-                            value={{
-                                rewritePath: row.original.rewritePath,
-                                rewritePathType: row.original.rewritePathType
+                    <div className="flex items-center justify-center w-full">
+                        <Input
+                            type="number"
+                            min="1"
+                            max="1000"
+                            onClick={(e) => e.currentTarget.focus()}
+                            defaultValue={row.original.priority || 100}
+                            className="w-full max-w-20"
+                            onBlur={(e) => {
+                                const value = parseInt(e.target.value, 10);
+                                if (value >= 1 && value <= 1000) {
+                                    updateTarget(row.original.targetId, {
+                                        ...row.original,
+                                        priority: value
+                                    });
+                                }
                             }}
-                            onChange={(config) =>
-                                updateTarget(row.original.targetId, config)
-                            }
-                            trigger={
-                                <Button
-                                    variant="outline"
-                                    className="flex items-center gap-2 p-2 max-w-md w-full text-left cursor-pointer"
-                                    disabled={noPathMatch}
-                                >
-                                    <PathRewriteDisplay
-                                        value={{
-                                            rewritePath:
-                                                row.original.rewritePath,
-                                            rewritePathType:
-                                                row.original.rewritePathType
-                                        }}
-                                    />
-                                </Button>
-                            }
                         />
-                        <Button
-                            size="sm"
-                            variant="text"
-                            className="px-1"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                updateTarget(row.original.targetId, {
-                                    ...row.original,
-                                    rewritePath: null,
-                                    rewritePathType: null
-                                });
-                            }}
-                        >
-                            ×
-                        </Button>
                     </div>
-                ) : (
-                    <PathRewriteModal
-                        value={{
-                            rewritePath: row.original.rewritePath,
-                            rewritePathType: row.original.rewritePathType
-                        }}
-                        onChange={(config) =>
-                            updateTarget(row.original.targetId, config)
-                        }
-                        trigger={
-                            <Button variant="outline" disabled={noPathMatch}>
-                                <Plus className="h-4 w-4 mr-2" />
-                                {t("rewritePath")}
-                            </Button>
-                        }
-                        disabled={noPathMatch}
-                    />
                 );
-            }
-        },
+            },
+            size: 120,
+            minSize: 100,
+            maxSize: 150
+        };
 
-        // {
-        //     accessorKey: "protocol",
-        //     header: t('targetProtocol'),
-        //     cell: ({ row }) => (
-        //         <Select
-        //             defaultValue={row.original.protocol!}
-        //             onValueChange={(value) =>
-        //                 updateTarget(row.original.targetId, { protocol: value })
-        //             }
-        //         >
-        //             <SelectTrigger>{row.original.protocol}</SelectTrigger>
-        //             <SelectContent>
-        //                 <SelectItem value="TCP">TCP</SelectItem>
-        //                 <SelectItem value="UDP">UDP</SelectItem>
-        //             </SelectContent>
-        //         </Select>
-        //     ),
-        //         },
-        {
+        const healthCheckColumn: ColumnDef<LocalTarget> = {
             accessorKey: "healthCheck",
-            header: t("healthCheck"),
+            header: () => (<span className="p-3">{t("healthCheck")}</span>),
             cell: ({ row }) => {
                 const status = row.original.hcHealth || "unknown";
                 const isEnabled = row.original.hcEnabled;
@@ -1066,74 +904,445 @@ export default function ReverseProxyTargets(props: {
                 };
 
                 return (
-                    <>
+                    <div className="flex items-center justify-center w-full">
                         {row.original.siteType === "newt" ? (
-                            <div className="flex items-center space-x-1">
+                            <Button
+                                variant="outline"
+                                className="flex items-center justify-between gap-2 p-2 w-full text-left cursor-pointer"
+                                onClick={() =>
+                                    openHealthCheckDialog(row.original)
+                                }
+                            >
                                 <Badge variant={getStatusColor(status)}>
                                     <div className="flex items-center gap-1">
                                         {getStatusIcon(status)}
                                         {getStatusText(status)}
                                     </div>
                                 </Badge>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() =>
-                                        openHealthCheckDialog(row.original)
-                                    }
-                                    className="h-6 w-6 p-0"
-                                >
-                                    <Settings className="h-3 w-3" />
-                                </Button>
-                            </div>
+                                <Settings className="h-4 w-4" />
+                            </Button>
                         ) : (
-                            <span className="text-sm text-muted-foreground">
-                                {t("healthCheckNotAvailable")}
-                            </span>
+                            <span>-</span>
                         )}
-                    </>
-                );
-            }
-        },
-        {
-            accessorKey: "enabled",
-            header: t("enabled"),
-            cell: ({ row }) => (
-                <Switch
-                    defaultChecked={row.original.enabled}
-                    onCheckedChange={(val) =>
-                        updateTarget(row.original.targetId, {
-                            ...row.original,
-                            enabled: val
-                        })
-                    }
-                />
-            )
-        },
-        {
-            id: "actions",
-            cell: ({ row }) => (
-                <>
-                    <div className="flex items-center justify-end space-x-2">
-                        {/* <Dot
-                            className={
-                                row.original.new || row.original.updated
-                                    ? "opacity-100"
-                                    : "opacity-0"
-                            }
-                        /> */}
-
-                        <Button
-                            variant="outline"
-                            onClick={() => removeTarget(row.original.targetId)}
-                        >
-                            {t("delete")}
-                        </Button>
                     </div>
-                </>
-            )
+                );
+            },
+            size: 200,
+            minSize: 180,
+            maxSize: 250
+        };
+
+        const matchPathColumn: ColumnDef<LocalTarget> = {
+            accessorKey: "path",
+            header: () => (<span className="p-3">{t("matchPath")}</span>),
+            cell: ({ row }) => {
+                const hasPathMatch = !!(
+                    row.original.path || row.original.pathMatchType
+                );
+
+                return (
+                    <div className="flex items-center justify-center w-full">
+                        {hasPathMatch ? (
+                            <PathMatchModal
+                                value={{
+                                    path: row.original.path,
+                                    pathMatchType: row.original.pathMatchType
+                                }}
+                                onChange={(config) =>
+                                    updateTarget(row.original.targetId, config)
+                                }
+                                trigger={
+                                    <Button
+                                        variant="outline"
+                                        className="flex items-center gap-2 p-2 w-full text-left cursor-pointer max-w-[200px]"
+                                    >
+                                        <PathMatchDisplay
+                                            value={{
+                                                path: row.original.path,
+                                                pathMatchType:
+                                                    row.original.pathMatchType
+                                            }}
+                                        />
+                                    </Button>
+                                }
+                            />
+                        ) : (
+                            <PathMatchModal
+                                value={{
+                                    path: row.original.path,
+                                    pathMatchType: row.original.pathMatchType
+                                }}
+                                onChange={(config) =>
+                                    updateTarget(row.original.targetId, config)
+                                }
+                                trigger={
+                                    <Button
+                                        variant="outline"
+                                        className="w-full max-w-[200px]"
+                                    >
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        {t("matchPath")}
+                                    </Button>
+                                }
+                            />
+                        )}
+                    </div>
+                );
+            },
+            size: 200,
+            minSize: 180,
+            maxSize: 200
+        };
+
+        const addressColumn: ColumnDef<LocalTarget> = {
+            accessorKey: "address",
+            header: () => (<span className="p-3">{t("address")}</span>),
+            cell: ({ row }) => {
+                const selectedSite = sites.find(
+                    (site) => site.siteId === row.original.siteId
+                );
+
+                const handleContainerSelectForTarget = (
+                    hostname: string,
+                    port?: number
+                ) => {
+                    updateTarget(row.original.targetId, {
+                        ...row.original,
+                        ip: hostname,
+                        ...(port && { port: port })
+                    });
+                };
+
+                return (
+                    <div className="flex items-center w-full">
+                        <div className="flex items-center w-full justify-start py-0 space-x-2 px-0 cursor-default border border-input rounded-md">
+                            {selectedSite &&
+                                selectedSite.type === "newt" &&
+                                (() => {
+                                    const dockerState = getDockerStateForSite(
+                                        selectedSite.siteId
+                                    );
+                                    return (
+                                        <ContainersSelector
+                                            site={selectedSite}
+                                            containers={dockerState.containers}
+                                            isAvailable={
+                                                dockerState.isAvailable
+                                            }
+                                            onContainerSelect={
+                                                handleContainerSelectForTarget
+                                            }
+                                            onRefresh={() =>
+                                                refreshContainersForSite(
+                                                    selectedSite.siteId
+                                                )
+                                            }
+                                        />
+                                    );
+                                })()}
+
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        role="combobox"
+                                        className={cn(
+                                            "w-[180px] justify-between text-sm border-r pr-4 rounded-none h-8 hover:bg-transparent",
+                                            !row.original.siteId &&
+                                            "text-muted-foreground"
+                                        )}
+                                    >
+                                        <span className="truncate max-w-[150px]">
+                                            {row.original.siteId
+                                                ? selectedSite?.name
+                                                : t("siteSelect")}
+                                        </span>
+                                        <CaretSortIcon className="ml-2h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="p-0 w-[180px]">
+                                    <Command>
+                                        <CommandInput
+                                            placeholder={t("siteSearch")}
+                                        />
+                                        <CommandList>
+                                            <CommandEmpty>
+                                                {t("siteNotFound")}
+                                            </CommandEmpty>
+                                            <CommandGroup>
+                                                {sites.map((site) => (
+                                                    <CommandItem
+                                                        key={site.siteId}
+                                                        value={`${site.siteId}:${site.name}`}
+                                                        onSelect={() =>
+                                                            updateTarget(
+                                                                row.original
+                                                                    .targetId,
+                                                                {
+                                                                    siteId: site.siteId
+                                                                }
+                                                            )
+                                                        }
+                                                    >
+                                                        <CheckIcon
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                site.siteId ===
+                                                                    row.original
+                                                                        .siteId
+                                                                    ? "opacity-100"
+                                                                    : "opacity-0"
+                                                            )}
+                                                        />
+                                                        {site.name}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
+
+                            {resource.http && (
+                                <Select
+                                    defaultValue={row.original.method ?? "http"}
+                                    onValueChange={(value) =>
+                                        updateTarget(row.original.targetId, {
+                                            ...row.original,
+                                            method: value
+                                        })
+                                    }
+                                >
+                                    <SelectTrigger className="h-8 px-2 w-[70px] text-sm font-normal border-none bg-transparent shadow-none focus:ring-0 focus:outline-none focus-visible:ring-0 data-[state=open]:bg-transparent">
+                                        {row.original.method || "http"}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="http">http</SelectItem>
+                                        <SelectItem value="https">https</SelectItem>
+                                        <SelectItem value="h2c">h2c</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )}
+
+                            {resource.http && (
+                                <div className="flex items-center justify-center bg-muted px-2 h-9">
+                                    {"://"}
+                                </div>
+                            )}
+
+                            <Input
+                                defaultValue={row.original.ip}
+                                placeholder="IP / Hostname"
+                                className="flex-1 min-w-[120px] pl-0 border-none placeholder-gray-400"
+                                onBlur={(e) => {
+                                    const input = e.target.value.trim();
+                                    const hasProtocol =
+                                        /^(https?|h2c):\/\//.test(input);
+                                    const hasPort = /:\d+(?:\/|$)/.test(input);
+
+                                    if (hasProtocol || hasPort) {
+                                        const parsed = parseHostTarget(input);
+                                        if (parsed) {
+                                            updateTarget(
+                                                row.original.targetId,
+                                                {
+                                                    ...row.original,
+                                                    method: hasProtocol
+                                                        ? parsed.protocol
+                                                        : row.original.method,
+                                                    ip: parsed.host,
+                                                    port: hasPort
+                                                        ? parsed.port
+                                                        : row.original.port
+                                                }
+                                            );
+                                        } else {
+                                            updateTarget(
+                                                row.original.targetId,
+                                                {
+                                                    ...row.original,
+                                                    ip: input
+                                                }
+                                            );
+                                        }
+                                    } else {
+                                        updateTarget(row.original.targetId, {
+                                            ...row.original,
+                                            ip: input
+                                        });
+                                    }
+                                }}
+                            />
+                            <div className="flex items-center justify-center bg-muted px-2 h-9">
+                                {":"}
+                            </div>
+                            <Input
+                                placeholder="Port"
+                                defaultValue={
+                                    row.original.port === 0
+                                        ? ""
+                                        : row.original.port
+                                }
+                                className="w-[75px] pl-0 border-none placeholder-gray-400"
+                                onBlur={(e) => {
+                                    const value = parseInt(e.target.value, 10);
+                                    if (!isNaN(value) && value > 0) {
+                                        updateTarget(row.original.targetId, {
+                                            ...row.original,
+                                            port: value
+                                        });
+                                    } else {
+                                        updateTarget(row.original.targetId, {
+                                            ...row.original,
+                                            port: 0
+                                        });
+                                    }
+                                }}
+                            />
+                        </div>
+                    </div>
+                );
+            },
+            size: 400,
+            minSize: 350,
+            maxSize: 500
+        };
+
+        const rewritePathColumn: ColumnDef<LocalTarget> = {
+            accessorKey: "rewritePath",
+            header: () => (<span className="p-3">{t("rewritePath")}</span>),
+            cell: ({ row }) => {
+                const hasRewritePath = !!(
+                    row.original.rewritePath || row.original.rewritePathType
+                );
+                const noPathMatch =
+                    !row.original.path && !row.original.pathMatchType;
+
+                return (
+                    <div className="flex items-center justify-center w-full">
+                        {hasRewritePath && !noPathMatch ? (
+                            <PathRewriteModal
+                                value={{
+                                    rewritePath: row.original.rewritePath,
+                                    rewritePathType:
+                                        row.original.rewritePathType
+                                }}
+                                onChange={(config) =>
+                                    updateTarget(row.original.targetId, config)
+                                }
+                                trigger={
+                                    <Button
+                                        variant="outline"
+                                        className="flex items-center gap-2 p-2 w-full text-left cursor-pointer max-w-[200px]"
+                                        disabled={noPathMatch}
+                                    >
+                                        <PathRewriteDisplay
+                                            value={{
+                                                rewritePath:
+                                                    row.original.rewritePath,
+                                                rewritePathType:
+                                                    row.original.rewritePathType
+                                            }}
+                                        />
+                                    </Button>
+                                }
+                            />
+                        ) : (
+                            <PathRewriteModal
+                                value={{
+                                    rewritePath: row.original.rewritePath,
+                                    rewritePathType:
+                                        row.original.rewritePathType
+                                }}
+                                onChange={(config) =>
+                                    updateTarget(row.original.targetId, config)
+                                }
+                                trigger={
+                                    <Button
+                                        variant="outline"
+                                        disabled={noPathMatch}
+                                        className="w-full max-w-[200px]"
+                                    >
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        {t("rewritePath")}
+                                    </Button>
+                                }
+                                disabled={noPathMatch}
+                            />
+                        )}
+                    </div>
+                );
+            },
+            size: 200,
+            minSize: 180,
+            maxSize: 200
+        };
+
+        const enabledColumn: ColumnDef<LocalTarget> = {
+            accessorKey: "enabled",
+            header: () => (<span className="p-3">{t("enabled")}</span>),
+            cell: ({ row }) => (
+                <div className="flex items-center justify-center w-full">
+                    <Switch
+                        defaultChecked={row.original.enabled}
+                        onCheckedChange={(val) =>
+                            updateTarget(row.original.targetId, {
+                                ...row.original,
+                                enabled: val
+                            })
+                        }
+                    />
+                </div>
+            ),
+            size: 100,
+            minSize: 80,
+            maxSize: 120
+        };
+
+        const actionsColumn: ColumnDef<LocalTarget> = {
+            id: "actions",
+            header: () => (<span className="p-3">{t("actions")}</span>),
+            cell: ({ row }) => (
+                <div className="flex items-center w-full">
+                    <Button
+                        variant="outline"
+                        onClick={() => removeTarget(row.original.targetId)}
+                    >
+                        {t("delete")}
+                    </Button>
+                </div>
+            ),
+            size: 100,
+            minSize: 80,
+            maxSize: 120
+        };
+
+        if (isAdvancedMode) {
+            const columns = [
+                addressColumn,
+                healthCheckColumn,
+                enabledColumn,
+                actionsColumn
+            ];
+
+            // Only include path-related columns for HTTP resources
+            if (isHttp) {
+                columns.unshift(matchPathColumn);
+                columns.splice(3, 0, rewritePathColumn, priorityColumn);
+            }
+
+            return columns;
+        } else {
+            return [
+                addressColumn,
+                healthCheckColumn,
+                enabledColumn,
+                actionsColumn
+            ];
         }
-    ];
+    };
+
+    const columns = getColumns();
 
     const table = useReactTable({
         data: targets,
@@ -1164,352 +1373,9 @@ export default function ReverseProxyTargets(props: {
                     </SettingsSectionDescription>
                 </SettingsSectionHeader>
                 <SettingsSectionBody>
-                    <div className="p-4 border rounded-md">
-                        <Form {...addTargetForm}>
-                            <form
-                                onSubmit={addTargetForm.handleSubmit(addTarget)}
-                                className="space-y-4"
-                            >
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 items-start">
-                                    <FormField
-                                        control={addTargetForm.control}
-                                        name="siteId"
-                                        render={({ field }) => (
-                                            <FormItem className="flex flex-col">
-                                                <FormLabel>
-                                                    {t("site")}
-                                                </FormLabel>
-                                                <div className="flex gap-2">
-                                                    <Popover>
-                                                        <PopoverTrigger asChild>
-                                                            <FormControl>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    role="combobox"
-                                                                    className={cn(
-                                                                        "justify-between flex-1",
-                                                                        !field.value &&
-                                                                            "text-muted-foreground"
-                                                                    )}
-                                                                >
-                                                                    {field.value
-                                                                        ? sites.find(
-                                                                              (
-                                                                                  site
-                                                                              ) =>
-                                                                                  site.siteId ===
-                                                                                  field.value
-                                                                          )
-                                                                              ?.name
-                                                                        : t(
-                                                                              "siteSelect"
-                                                                          )}
-                                                                    <CaretSortIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                                                </Button>
-                                                            </FormControl>
-                                                        </PopoverTrigger>
-                                                        <PopoverContent className="p-0">
-                                                            <Command>
-                                                                <CommandInput
-                                                                    placeholder={t(
-                                                                        "siteSearch"
-                                                                    )}
-                                                                />
-                                                                <CommandList>
-                                                                    <CommandEmpty>
-                                                                        {t(
-                                                                            "siteNotFound"
-                                                                        )}
-                                                                    </CommandEmpty>
-                                                                    <CommandGroup>
-                                                                        {sites.map(
-                                                                            (
-                                                                                site
-                                                                            ) => (
-                                                                                <CommandItem
-                                                                                    value={`${site.siteId}:${site.name}:${site.niceId}`}
-                                                                                    key={
-                                                                                        site.siteId
-                                                                                    }
-                                                                                    onSelect={() => {
-                                                                                        addTargetForm.setValue(
-                                                                                            "siteId",
-                                                                                            site.siteId
-                                                                                        );
-                                                                                    }}
-                                                                                >
-                                                                                    <CheckIcon
-                                                                                        className={cn(
-                                                                                            "mr-2 h-4 w-4",
-                                                                                            site.siteId ===
-                                                                                                field.value
-                                                                                                ? "opacity-100"
-                                                                                                : "opacity-0"
-                                                                                        )}
-                                                                                    />
-                                                                                    {
-                                                                                        site.name
-                                                                                    }
-                                                                                </CommandItem>
-                                                                            )
-                                                                        )}
-                                                                    </CommandGroup>
-                                                                </CommandList>
-                                                            </Command>
-                                                        </PopoverContent>
-                                                    </Popover>
-
-                                                    {field.value &&
-                                                        (() => {
-                                                            const selectedSite =
-                                                                sites.find(
-                                                                    (site) =>
-                                                                        site.siteId ===
-                                                                        field.value
-                                                                );
-                                                            return selectedSite &&
-                                                                selectedSite.type ===
-                                                                    "newt"
-                                                                ? (() => {
-                                                                      const dockerState =
-                                                                          getDockerStateForSite(
-                                                                              selectedSite.siteId
-                                                                          );
-                                                                      return (
-                                                                          <ContainersSelector
-                                                                              site={
-                                                                                  selectedSite
-                                                                              }
-                                                                              containers={
-                                                                                  dockerState.containers
-                                                                              }
-                                                                              isAvailable={
-                                                                                  dockerState.isAvailable
-                                                                              }
-                                                                              onContainerSelect={
-                                                                                  handleContainerSelect
-                                                                              }
-                                                                              onRefresh={() =>
-                                                                                  refreshContainersForSite(
-                                                                                      selectedSite.siteId
-                                                                                  )
-                                                                              }
-                                                                          />
-                                                                      );
-                                                                  })()
-                                                                : null;
-                                                        })()}
-                                                </div>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    {resource.http && (
-                                        <FormField
-                                            control={addTargetForm.control}
-                                            name="method"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>
-                                                        {t("method")}
-                                                    </FormLabel>
-                                                    <FormControl>
-                                                        <Select
-                                                            value={
-                                                                field.value ||
-                                                                undefined
-                                                            }
-                                                            onValueChange={(
-                                                                value
-                                                            ) => {
-                                                                addTargetForm.setValue(
-                                                                    "method",
-                                                                    value
-                                                                );
-                                                            }}
-                                                        >
-                                                            <SelectTrigger
-                                                                id="method"
-                                                                className="w-full"
-                                                            >
-                                                                <SelectValue
-                                                                    placeholder={t(
-                                                                        "methodSelect"
-                                                                    )}
-                                                                />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                <SelectItem value="http">
-                                                                    http
-                                                                </SelectItem>
-                                                                <SelectItem value="https">
-                                                                    https
-                                                                </SelectItem>
-                                                                <SelectItem value="h2c">
-                                                                    h2c
-                                                                </SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                    )}
-
-                                    <FormField
-                                        control={addTargetForm.control}
-                                        name="ip"
-                                        render={({ field }) => (
-                                            <FormItem className="relative">
-                                                <FormLabel>
-                                                    {t("targetAddr")}
-                                                </FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        id="ip"
-                                                        {...field}
-                                                        onBlur={(e) => {
-                                                            const input =
-                                                                e.target.value.trim();
-                                                            const hasProtocol =
-                                                                /^(https?|h2c):\/\//.test(
-                                                                    input
-                                                                );
-                                                            const hasPort =
-                                                                /:\d+(?:\/|$)/.test(
-                                                                    input
-                                                                );
-
-                                                            if (
-                                                                hasProtocol ||
-                                                                hasPort
-                                                            ) {
-                                                                const parsed =
-                                                                    parseHostTarget(
-                                                                        input
-                                                                    );
-                                                                if (parsed) {
-                                                                    if (
-                                                                        hasProtocol ||
-                                                                        !addTargetForm.getValues(
-                                                                            "method"
-                                                                        )
-                                                                    ) {
-                                                                        addTargetForm.setValue(
-                                                                            "method",
-                                                                            parsed.protocol
-                                                                        );
-                                                                    }
-                                                                    addTargetForm.setValue(
-                                                                        "ip",
-                                                                        parsed.host
-                                                                    );
-                                                                    if (
-                                                                        hasPort ||
-                                                                        !addTargetForm.getValues(
-                                                                            "port"
-                                                                        )
-                                                                    ) {
-                                                                        addTargetForm.setValue(
-                                                                            "port",
-                                                                            parsed.port
-                                                                        );
-                                                                    }
-                                                                }
-                                                            } else {
-                                                                field.onBlur();
-                                                            }
-                                                        }}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                    <FormField
-                                        control={addTargetForm.control}
-                                        name="port"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>
-                                                    {t("targetPort")}
-                                                </FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        id="port"
-                                                        type="number"
-                                                        {...field}
-                                                        required
-                                                    />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                    <Button
-                                        type="submit"
-                                        variant="secondary"
-                                        className="mt-6"
-                                        disabled={!(watchedIp && watchedPort)}
-                                    >
-                                        {t("targetSubmit")}
-                                    </Button>
-                                </div>
-                            </form>
-                        </Form>
-                    </div>
-
                     {targets.length > 0 ? (
                         <>
-                            <h6 className="font-semibold">
-                                {t("targetsList")}
-                            </h6>
-                            <SettingsSectionForm>
-                                <Form {...targetsSettingsForm}>
-                                    <form
-                                        onSubmit={targetsSettingsForm.handleSubmit(
-                                            saveAllSettings
-                                        )}
-                                        className="space-y-4"
-                                        id="targets-settings-form"
-                                    >
-                                        <FormField
-                                            control={
-                                                targetsSettingsForm.control
-                                            }
-                                            name="stickySession"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormControl>
-                                                        <SwitchInput
-                                                            id="sticky-toggle"
-                                                            label={t(
-                                                                "targetStickySessions"
-                                                            )}
-                                                            description={t(
-                                                                "targetStickySessionsDescription"
-                                                            )}
-                                                            defaultChecked={
-                                                                field.value
-                                                            }
-                                                            onCheckedChange={(
-                                                                val
-                                                            ) => {
-                                                                field.onChange(
-                                                                    val
-                                                                );
-                                                            }}
-                                                        />
-                                                    </FormControl>
-                                                </FormItem>
-                                            )}
-                                        />
-                                    </form>
-                                </Form>
-                            </SettingsSectionForm>
-                            <div className="">
+                            <div className="overflow-x-auto">
                                 <Table>
                                     <TableHeader>
                                         {table
@@ -1524,12 +1390,12 @@ export default function ReverseProxyTargets(props: {
                                                                 {header.isPlaceholder
                                                                     ? null
                                                                     : flexRender(
-                                                                          header
-                                                                              .column
-                                                                              .columnDef
-                                                                              .header,
-                                                                          header.getContext()
-                                                                      )}
+                                                                        header
+                                                                            .column
+                                                                            .columnDef
+                                                                            .header,
+                                                                        header.getContext()
+                                                                    )}
                                                             </TableHead>
                                                         )
                                                     )}
@@ -1577,12 +1443,40 @@ export default function ReverseProxyTargets(props: {
                                     {/* </TableCaption> */}
                                 </Table>
                             </div>
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center justify-between w-full gap-2">
+                                    <Button
+                                        onClick={addNewTarget}
+                                        variant="outline"
+                                    >
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        {t("addTarget")}
+                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                        <Switch
+                                            id="advanced-mode-toggle"
+                                            checked={isAdvancedMode}
+                                            onCheckedChange={setIsAdvancedMode}
+                                        />
+                                        <label
+                                            htmlFor="advanced-mode-toggle"
+                                            className="text-sm"
+                                        >
+                                            {t("advancedMode")}
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
                         </>
                     ) : (
-                        <div className="text-center py-8">
-                            <p className="text-muted-foreground">
+                        <div className="text-center py-8 border-2 border-dashed border-muted rounded-lg p-4">
+                            <p className="text-muted-foreground mb-4">
                                 {t("targetNoOne")}
                             </p>
+                            <Button onClick={addNewTarget} variant="outline">
+                                <Plus className="h-4 w-4 mr-2" />
+                                {t("addTarget")}
+                            </Button>
                         </div>
                     )}
                 </SettingsSectionBody>
@@ -1608,7 +1502,7 @@ export default function ReverseProxyTargets(props: {
                                     className="space-y-4"
                                     id="tls-settings-form"
                                 >
-                                    {build == "oss" && (
+                                    {!env.flags.usePangolinDns && (
                                         <FormField
                                             control={tlsSettingsForm.control}
                                             name="ssl"
@@ -1619,6 +1513,9 @@ export default function ReverseProxyTargets(props: {
                                                             id="ssl-toggle"
                                                             label={t(
                                                                 "proxyEnableSSL"
+                                                            )}
+                                                            description={t(
+                                                                "proxyEnableSSLDescription"
                                                             )}
                                                             defaultChecked={
                                                                 field.value
@@ -1661,6 +1558,46 @@ export default function ReverseProxyTargets(props: {
                         </SettingsSectionForm>
 
                         <SettingsSectionForm>
+                            <Form {...targetsSettingsForm}>
+                                <form
+                                    onSubmit={targetsSettingsForm.handleSubmit(
+                                        saveAllSettings
+                                    )}
+                                    className="space-y-4"
+                                    id="targets-settings-form"
+                                >
+                                    <FormField
+                                        control={targetsSettingsForm.control}
+                                        name="stickySession"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormControl>
+                                                    <SwitchInput
+                                                        id="sticky-toggle"
+                                                        label={t(
+                                                            "targetStickySessions"
+                                                        )}
+                                                        description={t(
+                                                            "targetStickySessionsDescription"
+                                                        )}
+                                                        defaultChecked={
+                                                            field.value
+                                                        }
+                                                        onCheckedChange={(
+                                                            val
+                                                        ) => {
+                                                            field.onChange(val);
+                                                        }}
+                                                    />
+                                                </FormControl>
+                                            </FormItem>
+                                        )}
+                                    />
+                                </form>
+                            </Form>
+                        </SettingsSectionForm>
+
+                        <SettingsSectionForm>
                             <Form {...proxySettingsForm}>
                                 <form
                                     onSubmit={proxySettingsForm.handleSubmit(
@@ -1694,7 +1631,7 @@ export default function ReverseProxyTargets(props: {
                                         name="headers"
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel className="text-base font-semibold">
+                                                <FormLabel>
                                                     {t("customHeaders")}
                                                 </FormLabel>
                                                 <FormControl>
@@ -1717,6 +1654,102 @@ export default function ReverseProxyTargets(props: {
                                             </FormItem>
                                         )}
                                     />
+                                </form>
+                            </Form>
+                        </SettingsSectionForm>
+                    </SettingsSectionBody>
+                </SettingsSection>
+            )}
+
+            {!resource.http && resource.protocol == "tcp" && (
+                <SettingsSection>
+                    <SettingsSectionHeader>
+                        <SettingsSectionTitle>
+                            {t("proxyProtocol")}
+                        </SettingsSectionTitle>
+                        <SettingsSectionDescription>
+                            {t("proxyProtocolDescription")}
+                        </SettingsSectionDescription>
+                    </SettingsSectionHeader>
+                    <SettingsSectionBody>
+                        <SettingsSectionForm>
+                            <Form {...proxySettingsForm}>
+                                <form
+                                    onSubmit={proxySettingsForm.handleSubmit(
+                                        saveAllSettings
+                                    )}
+                                    className="space-y-4"
+                                    id="proxy-protocol-settings-form"
+                                >
+                                    <FormField
+                                        control={proxySettingsForm.control}
+                                        name="proxyProtocol"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormControl>
+                                                    <SwitchInput
+                                                        id="proxy-protocol-toggle"
+                                                        label={t(
+                                                            "enableProxyProtocol"
+                                                        )}
+                                                        description={t(
+                                                            "proxyProtocolInfo"
+                                                        )}
+                                                        defaultChecked={
+                                                            field.value || false
+                                                        }
+                                                        onCheckedChange={(val) => {
+                                                            field.onChange(val);
+                                                        }}
+                                                    />
+                                                </FormControl>
+                                            </FormItem>
+                                        )}
+                                    />
+
+                                    {proxySettingsForm.watch("proxyProtocol") && (
+                                        <>
+                                            <FormField
+                                                control={proxySettingsForm.control}
+                                                name="proxyProtocolVersion"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>{t("proxyProtocolVersion")}</FormLabel>
+                                                        <FormControl>
+                                                            <Select
+                                                                value={String(field.value || 1)}
+                                                                onValueChange={(value) =>
+                                                                    field.onChange(parseInt(value, 10))
+                                                                }
+                                                            >
+                                                                <SelectTrigger>
+                                                                    <SelectValue placeholder="Select version" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="1">
+                                                                        {t("version1")}
+                                                                    </SelectItem>
+                                                                    <SelectItem value="2">
+                                                                        {t("version2")}
+                                                                    </SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </FormControl>
+                                                        <FormDescription>
+                                                            {t("versionDescription")}
+                                                        </FormDescription>
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <Alert>
+                                                <AlertTriangle className="h-4 w-4" />
+                                                <AlertDescription>
+                                                    <strong>{t("warning")}:</strong> {t("proxyProtocolWarning")}
+                                                </AlertDescription>
+                                            </Alert>
+                                        </>
+                                    )}
                                 </form>
                             </Form>
                         </SettingsSectionForm>
