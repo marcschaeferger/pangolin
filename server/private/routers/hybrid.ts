@@ -227,6 +227,8 @@ export type UserSessionWithUser = {
 export const hybridRouter = Router();
 hybridRouter.use(verifySessionRemoteExitNodeMiddleware);
 
+// TODO: ADD RATE LIMITING TO THESE ROUTES AS NEEDED BASED ON USAGE PATTERNS
+
 hybridRouter.get(
     "/general-config",
     async (req: Request, res: Response, next: NextFunction) => {
@@ -1217,7 +1219,7 @@ hybridRouter.post(
 );
 
 const geoIpLookupParamsSchema = z.object({
-    ip: z.string().ip()
+    ip: z.union([z.ipv4(), z.ipv6()])
 });
 hybridRouter.get(
     "/geoip/:ip",
@@ -1770,7 +1772,12 @@ hybridRouter.post(
                     tls: logEntry.tls
                 }));
 
-            await db.insert(requestAuditLog).values(logEntries);
+            // batch them into inserts of 100 to avoid exceeding parameter limits
+            const batchSize = 100;
+            for (let i = 0; i < logEntries.length; i += batchSize) {
+                const batch = logEntries.slice(i, i + batchSize);
+                await db.insert(requestAuditLog).values(batch);
+            }
 
             return response(res, {
                 data: null,
