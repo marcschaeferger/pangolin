@@ -170,12 +170,8 @@ export async function updateTarget(
         );
 
         if (foundTarget) {
-            return next(
-                createHttpError(
-                    HttpCode.BAD_REQUEST,
-                    `Target with IP ${targetData.ip}, port ${targetData.port}, and method ${targetData.method} already exists on the same site.`
-                )
-            );
+            // log a warning
+            logger.warn(`Target with IP ${targetData.ip}, port ${targetData.port}, method ${targetData.method} already exists for resource ID ${target.resourceId}`);
         }
 
         const { internalPort, targetIps } = await pickPort(site.siteId!, db);
@@ -212,6 +208,12 @@ export async function updateTarget(
             hcHeaders = JSON.stringify(parsedBody.data.hcHeaders);
         }
 
+        // When health check is disabled, reset hcHealth to "unknown"
+        // to prevent previously unhealthy targets from being excluded
+        const hcHealthValue = (parsedBody.data.hcEnabled === false || parsedBody.data.hcEnabled === null) 
+            ? "unknown" 
+            : undefined;
+
         const [updatedHc] = await db
             .update(targetHealthCheck)
             .set({
@@ -227,7 +229,8 @@ export async function updateTarget(
                 hcHeaders: hcHeaders,
                 hcFollowRedirects: parsedBody.data.hcFollowRedirects,
                 hcMethod: parsedBody.data.hcMethod,
-                hcStatus: parsedBody.data.hcStatus
+                hcStatus: parsedBody.data.hcStatus,
+                ...(hcHealthValue !== undefined && { hcHealth: hcHealthValue })
             })
             .where(eq(targetHealthCheck.targetId, targetId))
             .returning();
