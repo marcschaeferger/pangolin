@@ -151,7 +151,7 @@ class MetricsService {
             unit: '{sites}'
         });
         this.siteActiveSites.addCallback((observableResult) => {
-            for (const [region, count] of this.observableData.siteActiveSites.entries()) {
+            for (const [region, count] of Array.from(this.observableData.siteActiveSites.entries())) {
                 observableResult.observe(count, { region });
             }
         });
@@ -162,7 +162,7 @@ class MetricsService {
             unit: '{0|1}'
         });
         this.siteOnline.addCallback((observableResult) => {
-            for (const [key, data] of this.observableData.siteOnline.entries()) {
+            for (const [key, data] of Array.from(this.observableData.siteOnline.entries())) {
                 observableResult.observe(data.value, {
                     site_id: data.siteId,
                     transport: data.transport
@@ -214,7 +214,7 @@ class MetricsService {
             unit: '{connections}'
         });
         this.resourceActiveConnections.addCallback((observableResult) => {
-            for (const [key, data] of this.observableData.resourceActiveConnections.entries()) {
+            for (const [key, data] of Array.from(this.observableData.resourceActiveConnections.entries())) {
                 observableResult.observe(data.value, {
                     site_id: data.siteId,
                     resource_id: data.resourceId,
@@ -243,7 +243,7 @@ class MetricsService {
             unit: '{0|1}'
         });
         this.tunnelUp.addCallback((observableResult) => {
-            for (const [key, data] of this.observableData.tunnelUp.entries()) {
+            for (const [key, data] of Array.from(this.observableData.tunnelUp.entries())) {
                 observableResult.observe(data.value, {
                     site_id: data.siteId,
                     transport: data.transport
@@ -285,7 +285,7 @@ class MetricsService {
             unit: '{0|1}'
         });
         this.backendHealthStatus.addCallback((observableResult) => {
-            for (const [key, data] of this.observableData.backendHealthStatus.entries()) {
+            for (const [key, data] of Array.from(this.observableData.backendHealthStatus.entries())) {
                 observableResult.observe(data.value, {
                     backend: data.backend,
                     site_id: data.siteId
@@ -325,7 +325,7 @@ class MetricsService {
             unit: '{users}'
         });
         this.authActiveUsers.addCallback((observableResult) => {
-            for (const [key, data] of this.observableData.authActiveUsers.entries()) {
+            for (const [key, data] of Array.from(this.observableData.authActiveUsers.entries())) {
                 observableResult.observe(data.value, {
                     site_id: data.siteId,
                     auth_method: data.authMethod
@@ -400,7 +400,7 @@ class MetricsService {
             unit: 'd'
         });
         this.certificatesExpiryDays.addCallback((observableResult) => {
-            for (const [key, data] of this.observableData.certificatesExpiryDays.entries()) {
+            for (const [key, data] of Array.from(this.observableData.certificatesExpiryDays.entries())) {
                 observableResult.observe(data.value, {
                     site_id: data.siteId,
                     resource_id: data.resourceId
@@ -422,7 +422,7 @@ class MetricsService {
             unit: '{connections}'
         });
         this.wsActiveConnections.addCallback((observableResult) => {
-            for (const [siteId, count] of this.observableData.wsActiveConnections.entries()) {
+            for (const [siteId, count] of Array.from(this.observableData.wsActiveConnections.entries())) {
                 observableResult.observe(count, { site_id: siteId });
             }
         });
@@ -467,7 +467,7 @@ class MetricsService {
             unit: 'd'
         });
         this.acmeCertExpiryDays.addCallback((observableResult) => {
-            for (const [domain, days] of this.observableData.acmeCertExpiryDays.entries()) {
+            for (const [domain, days] of Array.from(this.observableData.acmeCertExpiryDays.entries())) {
                 observableResult.observe(days, { domain });
             }
         });
@@ -480,7 +480,7 @@ class MetricsService {
             unit: '{connections}'
         });
         this.dbPoolConnections.addCallback((observableResult) => {
-            for (const [state, count] of this.observableData.dbPoolConnections.entries()) {
+            for (const [state, count] of Array.from(this.observableData.dbPoolConnections.entries())) {
                 observableResult.observe(count, { state });
             }
         });
@@ -519,7 +519,7 @@ class MetricsService {
             unit: '{jobs}'
         });
         this.backgroundQueueDepth.addCallback((observableResult) => {
-            for (const [jobType, depth] of this.observableData.backgroundQueueDepth.entries()) {
+            for (const [jobType, depth] of Array.from(this.observableData.backgroundQueueDepth.entries())) {
                 observableResult.observe(depth, { job_type: jobType });
             }
         });
