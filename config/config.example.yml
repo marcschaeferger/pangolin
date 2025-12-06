@@ -19,6 +19,10 @@ orgs:
   block_size: 24
   subnet_group: 100.90.137.0/20
 
+metrics:
+  enabled: true
+  port: 9464
+
 flags:
   require_email_verification: false
   disable_signup_without_invite: true

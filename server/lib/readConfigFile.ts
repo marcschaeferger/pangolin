@@ -319,7 +319,17 @@ export const configSchema = z
                 cname_extension: z.string().optional().default("cname.pangolin.net")
             })
             .optional()
-            .default({})
+            .default({}),
+        metrics: z
+            .object({
+                port: portSchema.optional().default(9464),
+                enabled: z.boolean().optional().default(true)
+            })
+            .optional()
+            .default({
+                port: 9464,
+                enabled: true
+            })
     })
     .refine(
         (data) => {

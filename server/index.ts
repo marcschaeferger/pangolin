@@ -17,6 +17,7 @@ import {
 import config from "@server/lib/config";
 import { setHostMeta } from "@server/lib/hostMeta";
 import { initTelemetryClient } from "@server/lib/telemetry";
+import { initMetricsService, recordRestart } from "@server/lib/metrics";
 import { TraefikConfigManager } from "@server/lib/traefik/TraefikConfigManager";
 import { initCleanup } from "#dynamic/cleanup";
 import license from "#dynamic/license/license";
@@ -36,6 +37,15 @@ async function startServers() {
     await fetchServerIp();
 
     initTelemetryClient();
+
+    // Initialize OpenTelemetry metrics
+    const metricsConfig = config.getRawConfig().metrics;
+    if (metricsConfig?.enabled !== false) {
+        const metricsPort = metricsConfig?.port || 9464;
+        initMetricsService(metricsPort);
+        // Record this as a server start/restart
+        recordRestart();
+    }
 
     initLogCleanupInterval();
 
