@@ -43,6 +43,25 @@ export default function ApiKeysTable({ apiKeys }: ApiKeyTableProps) {
 
     const t = useTranslations();
 
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const refreshData = async () => {
+        console.log("Data refreshed");
+        setIsRefreshing(true);
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            router.refresh();
+        } catch (error) {
+            toast({
+                title: t("error"),
+                description: t("refreshError"),
+                variant: "destructive"
+            });
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
     const deleteSite = (apiKeyId: string) => {
         api.delete(`/api-key/${apiKeyId}`)
             .catch((e) => {
@@ -158,19 +177,14 @@ export default function ApiKeysTable({ apiKeys }: ApiKeyTableProps) {
                         setSelected(null);
                     }}
                     dialog={
-                        <div className="space-y-4">
+                        <div>
                             <p>
-                                {t("apiKeysQuestionRemove", {
-                                    selectedApiKey:
-                                        selected?.name || selected?.id
-                                })}
+                                {t("apiKeysQuestionRemove")}
                             </p>
 
                             <p>
-                                <b>{t("apiKeysMessageRemove")}</b>
+                                {t("apiKeysMessageRemove")}
                             </p>
-
-                            <p>{t("apiKeysMessageConfirm")}</p>
                         </div>
                     }
                     buttonText={t("apiKeysDeleteConfirm")}
@@ -186,6 +200,8 @@ export default function ApiKeysTable({ apiKeys }: ApiKeyTableProps) {
                 addApiKey={() => {
                     router.push(`/admin/api-keys/create`);
                 }}
+                onRefresh={refreshData}
+                isRefreshing={isRefreshing}
             />
         </>
     );

@@ -6,7 +6,15 @@ import { OrgSelector } from "@app/components/OrgSelector";
 import { cn } from "@app/lib/cn";
 import { ListUserOrgsResponse } from "@server/routers/org";
 import SupporterStatus from "@app/components/SupporterStatus";
-import { ExternalLink, Server, BookOpenText, Zap } from "lucide-react";
+import {
+    ExternalLink,
+    Server,
+    BookOpenText,
+    Zap,
+    CreditCard,
+    FileText,
+    TicketCheck
+} from "lucide-react";
 import { FaDiscord, FaGithub } from "react-icons/fa";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -22,6 +30,8 @@ import {
     TooltipTrigger
 } from "@app/components/ui/tooltip";
 import { build } from "@server/build";
+import SidebarLicenseButton from "./SidebarLicenseButton";
+import { SidebarSupportButton } from "./SidebarSupportButton";
 
 interface LayoutSidebarProps {
     orgId?: string;
@@ -58,6 +68,9 @@ export function LayoutSidebar({
     }, [isSidebarCollapsed]);
 
     function loadFooterLinks(): { text: string; href?: string }[] | undefined {
+        if (!isUnlocked()) {
+            return undefined;
+        }
         if (env.branding.footer) {
             try {
                 return JSON.parse(env.branding.footer);
@@ -119,8 +132,25 @@ export function LayoutSidebar({
                     />
                 </div>
             </div>
+
             <div className="p-4 space-y-4 shrink-0">
-                <SupporterStatus isCollapsed={isSidebarCollapsed} />
+                {build === "enterprise" && (
+                    <div className="mb-3">
+                        <SidebarLicenseButton
+                            isCollapsed={isSidebarCollapsed}
+                        />
+                    </div>
+                )}
+                {build === "oss" && (
+                    <div className="mb-3">
+                        <SupporterStatus isCollapsed={isSidebarCollapsed} />
+                    </div>
+                )}
+                {build === "saas" && (
+                    <div className="mb-3">
+                        <SidebarSupportButton isCollapsed={isSidebarCollapsed} />
+                    </div>
+                )}
                 {!isSidebarCollapsed && (
                     <div className="space-y-2">
                         {loadFooterLinks() ? (
@@ -159,9 +189,11 @@ export function LayoutSidebar({
                                         rel="noopener noreferrer"
                                         className="flex items-center justify-center gap-1"
                                     >
-                                        {!isUnlocked()
+                                        {build === "oss"
                                             ? t("communityEdition")
-                                            : t("commercialEdition")}
+                                            : build === "enterprise"
+                                              ? t("enterpriseEdition")
+                                              : "Pangolin Cloud"}
                                         <FaGithub size={12} />
                                     </Link>
                                 </div>

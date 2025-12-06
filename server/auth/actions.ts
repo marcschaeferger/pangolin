@@ -4,7 +4,6 @@ import { userActions, roleActions, userOrgs } from "@server/db";
 import { and, eq } from "drizzle-orm";
 import createHttpError from "http-errors";
 import HttpCode from "@server/types/HttpCode";
-import { sendUsageNotification } from "@server/routers/org";
 
 export enum ActionsEnum {
     createOrgUser = "createOrgUser",
@@ -82,6 +81,9 @@ export enum ActionsEnum {
     listClients = "listClients",
     getClient = "getClient",
     listOrgDomains = "listOrgDomains",
+    getDomain = "getDomain",
+    updateOrgDomain = "updateOrgDomain",
+    getDNSRecords = "getDNSRecords",
     createNewt = "createNewt",
     createIdp = "createIdp",
     updateIdp = "updateIdp",
@@ -117,7 +119,11 @@ export enum ActionsEnum {
     updateLoginPage = "updateLoginPage",
     getLoginPage = "getLoginPage",
     deleteLoginPage = "deleteLoginPage",
-    applyBlueprint = "applyBlueprint"
+    listBlueprints = "listBlueprints",
+    getBlueprint = "getBlueprint",
+    applyBlueprint = "applyBlueprint",
+    viewLogs = "viewLogs",
+    exportLogs = "exportLogs"
 }
 
 export async function checkUserActionPermission(
@@ -194,7 +200,6 @@ export async function checkUserActionPermission(
             .limit(1);
 
         return roleActionPermission.length > 0;
-
     } catch (error) {
         console.error("Error checking user action permission:", error);
         throw createHttpError(

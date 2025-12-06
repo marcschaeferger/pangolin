@@ -25,6 +25,9 @@ import { toast } from "@app/hooks/useToast";
 import { formatAxiosError } from "@app/lib/api";
 import { createApiClient } from "@app/lib/api";
 import { useEnvContext } from "@app/hooks/useEnvContext";
+import { useTranslations } from "next-intl";
+import { Badge } from "./ui/badge";
+import { InfoPopup } from "./ui/info-popup";
 
 export type ClientRow = {
     id: number;
@@ -35,6 +38,8 @@ export type ClientRow = {
     mbOut: string;
     orgId: string;
     online: boolean;
+    olmVersion?: string;
+    olmUpdateAvailable: boolean;
 };
 
 type ClientTableProps = {
@@ -53,6 +58,25 @@ export default function ClientsTable({ clients, orgId }: ClientTableProps) {
     const [rows, setRows] = useState<ClientRow[]>(clients);
 
     const api = createApiClient(useEnvContext());
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const t = useTranslations();
+
+    const refreshData = async () => {
+        console.log("Data refreshed");
+        setIsRefreshing(true);
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            router.refresh();
+        } catch (error) {
+            toast({
+                title: t("error"),
+                description: t("refreshError"),
+                variant: "destructive"
+            });
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
 
     const deleteClient = (clientId: number) => {
         api.delete(`/client/${clientId}`)
@@ -185,6 +209,45 @@ export default function ClientsTable({ clients, orgId }: ClientTableProps) {
             }
         },
         {
+            accessorKey: "client",
+            header: ({ column }) => {
+                return (
+                    <Button
+                        variant="ghost"
+                        onClick={() =>
+                            column.toggleSorting(column.getIsSorted() === "asc")
+                        }
+                    >
+                        {t("client")}
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                    </Button>
+                );
+            },
+            cell: ({ row }) => {
+                const originalRow = row.original;
+
+                return (
+                    <div className="flex items-center space-x-1">
+                        <Badge variant="secondary">
+                            <div className="flex items-center space-x-2">
+                                <span>Olm</span>
+                                {originalRow.olmVersion && (
+                                    <span className="text-xs text-gray-500">
+                                        v{originalRow.olmVersion}
+                                    </span>
+                                )}
+                            </div>
+                        </Badge>
+                        {originalRow.olmUpdateAvailable && (
+                            <InfoPopup
+                                info={t("olmUpdateAvailableInfo")}
+                            />
+                        )}
+                    </div>
+                );
+            }
+        },
+        {
             accessorKey: "subnet",
             header: ({ column }) => {
                 return (
@@ -207,32 +270,32 @@ export default function ClientsTable({ clients, orgId }: ClientTableProps) {
                 return (
                     <div className="flex items-center justify-end">
 
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                                <span className="sr-only">Open menu</span>
-                                <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            {/* <Link */}
-                            {/*     className="block w-full" */}
-                            {/*     href={`/${clientRow.orgId}/settings/sites/${clientRow.nice}`} */}
-                            {/* > */}
-                            {/*     <DropdownMenuItem> */}
-                            {/*         View settings */}
-                            {/*     </DropdownMenuItem> */}
-                            {/* </Link> */}
-                            <DropdownMenuItem
-                                onClick={() => {
-                                    setSelectedClient(clientRow);
-                                    setIsDeleteModalOpen(true);
-                                }}
-                            >
-                                <span className="text-red-500">Delete</span>
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <span className="sr-only">Open menu</span>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                {/* <Link */}
+                                {/*     className="block w-full" */}
+                                {/*     href={`/${clientRow.orgId}/settings/sites/${clientRow.nice}`} */}
+                                {/* > */}
+                                {/*     <DropdownMenuItem> */}
+                                {/*         View settings */}
+                                {/*     </DropdownMenuItem> */}
+                                {/* </Link> */}
+                                <DropdownMenuItem
+                                    onClick={() => {
+                                        setSelectedClient(clientRow);
+                                        setIsDeleteModalOpen(true);
+                                    }}
+                                >
+                                    <span className="text-red-500">Delete</span>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                         <Link
                             href={`/${clientRow.orgId}/settings/clients/${clientRow.id}`}
                         >
@@ -257,25 +320,12 @@ export default function ClientsTable({ clients, orgId }: ClientTableProps) {
                         setSelectedClient(null);
                     }}
                     dialog={
-                        <div className="space-y-4">
+                        <div>
                             <p>
-                                Are you sure you want to remove the client{" "}
-                                <b>
-                                    {selectedClient?.name || selectedClient?.id}
-                                </b>{" "}
-                                from the site and organization?
+                                {t("deleteClientQuestion")}
                             </p>
-
                             <p>
-                                <b>
-                                    Once removed, the client will no longer be
-                                    able to connect to the site.{" "}
-                                </b>
-                            </p>
-
-                            <p>
-                                To confirm, please type the name of the client
-                                below.
+                                {t("clientMessageRemove")}
                             </p>
                         </div>
                     }
@@ -292,6 +342,8 @@ export default function ClientsTable({ clients, orgId }: ClientTableProps) {
                 addClient={() => {
                     router.push(`/${orgId}/settings/clients/create`);
                 }}
+                onRefresh={refreshData}
+                isRefreshing={isRefreshing}
             />
         </>
     );

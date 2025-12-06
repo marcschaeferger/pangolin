@@ -3,7 +3,7 @@ import logger from "@server/logger";
 import HttpCode from "@server/types/HttpCode";
 import config from "@server/lib/config";
 import { build } from "@server/build";
-import { getTraefikConfig } from "@server/lib/traefik";
+import { getTraefikConfig } from "#dynamic/lib/traefik";
 import { getCurrentExitNodeId } from "@server/lib/exitNodes";
 
 const badgerMiddlewareName = "badger";
@@ -21,7 +21,8 @@ export async function traefikConfigProvider(
             currentExitNodeId,
             config.getRawConfig().traefik.site_types,
             build == "oss", // filter out the namespace domains in open source
-            build != "oss" // generate the login pages on the cloud and hybrid
+            build != "oss", // generate the login pages on the cloud and and enterprise,
+            config.getRawConfig().traefik.allow_raw_resources
         );
 
         if (traefikConfig?.http?.middlewares) {

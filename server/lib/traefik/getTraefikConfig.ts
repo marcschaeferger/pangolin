@@ -1,9 +1,18 @@
-import { db, exitNodes, targetHealthCheck } from "@server/db";
-import { and, eq, inArray, or, isNull, ne, isNotNull } from "drizzle-orm";
+import { db, targetHealthCheck, domains } from "@server/db";
+import {
+    and,
+    eq,
+    inArray,
+    or,
+    isNull,
+    ne,
+    isNotNull,
+    desc,
+    sql
+} from "drizzle-orm";
 import logger from "@server/logger";
 import config from "@server/lib/config";
-import { orgs, resources, sites, Target, targets } from "@server/db";
-import { build } from "@server/build";
+import { resources, sites, Target, targets } from "@server/db";
 import createPathRewriteMiddleware from "./middleware";
 import { sanitize, validatePathRewriteConfig } from "./utils";
 
@@ -14,7 +23,8 @@ export async function getTraefikConfig(
     exitNodeId: number,
     siteTypes: string[],
     filterOutNamespaceDomains = false,
-    generateLoginPageRouters = false
+    generateLoginPageRouters = false,
+    allowRawResources = true
 ): Promise<any> {
     // Define extended target type with site information
     type TargetWithSite = Target & {
@@ -47,6 +57,8 @@ export async function getTraefikConfig(
             setHostHeader: resources.setHostHeader,
             enableProxy: resources.enableProxy,
             headers: resources.headers,
+            proxyProtocol: resources.proxyProtocol,
+            proxyProtocolVersion: resources.proxyProtocolVersion,
             // Target fields
             targetId: targets.targetId,
             targetEnabled: targets.enabled,
@@ -59,16 +71,22 @@ export async function getTraefikConfig(
             pathMatchType: targets.pathMatchType,
             rewritePath: targets.rewritePath,
             rewritePathType: targets.rewritePathType,
+            priority: targets.priority,
+
             // Site fields
             siteId: sites.siteId,
             siteType: sites.type,
             siteOnline: sites.online,
             subnet: sites.subnet,
-            exitNodeId: sites.exitNodeId
+            exitNodeId: sites.exitNodeId,
+            // Domain cert resolver fields
+            domainCertResolver: domains.certResolver,
+            preferWildcardCert: domains.preferWildcardCert
         })
         .from(sites)
         .innerJoin(targets, eq(targets.siteId, sites.siteId))
         .innerJoin(resources, eq(resources.resourceId, targets.resourceId))
+        .leftJoin(domains, eq(domains.domainId, resources.domainId))
         .leftJoin(
             targetHealthCheck,
             eq(targetHealthCheck.targetId, targets.targetId)
@@ -77,17 +95,25 @@ export async function getTraefikConfig(
             and(
                 eq(targets.enabled, true),
                 eq(resources.enabled, true),
-                or(eq(sites.exitNodeId, exitNodeId), isNull(sites.exitNodeId)),
+                or(
+                    eq(sites.exitNodeId, exitNodeId),
+                    and(
+                        isNull(sites.exitNodeId),
+                        sql`(${siteTypes.includes("local") ? 1 : 0} = 1)`, // only allow local sites if "local" is in siteTypes
+                        eq(sites.type, "local")
+                    )
+                ),
                 or(
                     ne(targetHealthCheck.hcHealth, "unhealthy"), // Exclude unhealthy targets
                     isNull(targetHealthCheck.hcHealth) // Include targets with no health check record
                 ),
                 inArray(sites.type, siteTypes),
-                config.getRawConfig().traefik.allow_raw_resources
+                allowRawResources
                     ? isNotNull(resources.http) // ignore the http check if allow_raw_resources is true
                     : eq(resources.http, true)
             )
-        );
+        )
+        .orderBy(desc(targets.priority), targets.targetId); // stable ordering
 
     // Group by resource and include targets with their unique site data
     const resourcesMap = new Map();
@@ -99,9 +125,15 @@ export async function getTraefikConfig(
         const pathMatchType = row.pathMatchType || "";
         const rewritePath = row.rewritePath || "";
         const rewritePathType = row.rewritePathType || "";
+        const priority = row.priority ?? 100;
 
         // Create a unique key combining resourceId, path config, and rewrite config
-        const pathKey = [targetPath, pathMatchType, rewritePath, rewritePathType]
+        const pathKey = [
+            targetPath,
+            pathMatchType,
+            rewritePath,
+            rewritePathType
+        ]
             .filter(Boolean)
             .join("-");
         const mapKey = [resourceId, pathKey].filter(Boolean).join("-");
@@ -116,13 +148,15 @@ export async function getTraefikConfig(
             );
 
             if (!validation.isValid) {
-                logger.error(`Invalid path rewrite configuration for resource ${resourceId}: ${validation.error}`);
+                logger.error(
+                    `Invalid path rewrite configuration for resource ${resourceId}: ${validation.error}`
+                );
                 return;
             }
 
             resourcesMap.set(key, {
                 resourceId: row.resourceId,
-                name: resourceName, 
+                name: resourceName,
                 fullDomain: row.fullDomain,
                 ssl: row.ssl,
                 http: row.http,
@@ -137,10 +171,16 @@ export async function getTraefikConfig(
                 enableProxy: row.enableProxy,
                 targets: [],
                 headers: row.headers,
+                proxyProtocol: row.proxyProtocol,
+                proxyProtocolVersion: row.proxyProtocolVersion ?? 1,
                 path: row.path, // the targets will all have the same path
                 pathMatchType: row.pathMatchType, // the targets will all have the same pathMatchType
                 rewritePath: row.rewritePath,
-                rewritePathType: row.rewritePathType
+                rewritePathType: row.rewritePathType,
+                priority: priority,
+                // Store domain cert resolver fields
+                domainCertResolver: row.domainCertResolver,
+                preferWildcardCert: row.preferWildcardCert
             });
         }
 
@@ -153,8 +193,6 @@ export async function getTraefikConfig(
             port: row.port,
             internalPort: row.internalPort,
             enabled: row.targetEnabled,
-            rewritePath: row.rewritePath,
-            rewritePathType: row.rewritePathType,
             site: {
                 siteId: row.siteId,
                 type: row.siteType,
@@ -221,33 +259,44 @@ export async function getTraefikConfig(
                 wildCard = resource.fullDomain;
             }
 
-            const configDomain = config.getDomain(resource.domainId);
+            const globalDefaultResolver =
+                config.getRawConfig().traefik.cert_resolver;
+            const globalDefaultPreferWildcard =
+                config.getRawConfig().traefik.prefer_wildcard_cert;
 
-            let certResolver: string, preferWildcardCert: boolean;
-            if (!configDomain) {
-                certResolver = config.getRawConfig().traefik.cert_resolver;
-                preferWildcardCert =
-                    config.getRawConfig().traefik.prefer_wildcard_cert;
+            const domainCertResolver = resource.domainCertResolver;
+            const preferWildcardCert = resource.preferWildcardCert;
+
+            let resolverName: string | undefined;
+            let preferWildcard: boolean | undefined;
+            // Handle both letsencrypt & custom cases
+            if (domainCertResolver) {
+                resolverName = domainCertResolver.trim();
             } else {
-                certResolver = configDomain.cert_resolver;
-                preferWildcardCert = configDomain.prefer_wildcard_cert;
+                resolverName = globalDefaultResolver;
             }
 
-            let tls = {};
-            if (build == "oss") {
-                tls = {
-                    certResolver: certResolver,
-                    ...(preferWildcardCert
-                        ? {
-                            domains: [
-                                {
-                                    main: wildCard
-                                }
-                            ]
-                        }
-                        : {})
-                };
+            if (
+                preferWildcardCert !== undefined &&
+                preferWildcardCert !== null
+            ) {
+                preferWildcard = preferWildcardCert;
+            } else {
+                preferWildcard = globalDefaultPreferWildcard;
             }
+
+            const tls = {
+                certResolver: resolverName,
+                ...(preferWildcard
+                    ? {
+                          domains: [
+                              {
+                                  main: wildCard
+                              }
+                          ]
+                      }
+                    : {})
+            };
 
             const additionalMiddlewares =
                 config.getRawConfig().traefik.additional_middlewares || [];
@@ -258,11 +307,12 @@ export async function getTraefikConfig(
             ];
 
             // Handle path rewriting middleware
-            if (resource.rewritePath &&
-                resource.path &&
+            if (
+                resource.rewritePath !== null &&
+                resource.path !== null &&
                 resource.pathMatchType &&
-                resource.rewritePathType) {
-
+                resource.rewritePathType
+            ) {
                 // Create a unique middleware name
                 const rewriteMiddlewareName = `rewrite-r${resource.resourceId}-${key}`;
 
@@ -281,7 +331,10 @@ export async function getTraefikConfig(
                     }
 
                     // the middleware to the config
-                    Object.assign(config_output.http.middlewares, rewriteResult.middlewares);
+                    Object.assign(
+                        config_output.http.middlewares,
+                        rewriteResult.middlewares
+                    );
 
                     // middlewares to the router middleware chain
                     if (rewriteResult.chain) {
@@ -292,9 +345,13 @@ export async function getTraefikConfig(
                         routerMiddlewares.push(rewriteMiddlewareName);
                     }
 
-                    logger.debug(`Created path rewrite middleware ${rewriteMiddlewareName}: ${resource.pathMatchType}(${resource.path}) -> ${resource.rewritePathType}(${resource.rewritePath})`);
+                    logger.debug(
+                        `Created path rewrite middleware ${rewriteMiddlewareName}: ${resource.pathMatchType}(${resource.path}) -> ${resource.rewritePathType}(${resource.rewritePath})`
+                    );
                 } catch (error) {
-                    logger.error(`Failed to create path rewrite middleware for resource ${resource.resourceId}: ${error}`);
+                    logger.error(
+                        `Failed to create path rewrite middleware for resource ${resource.resourceId}: ${error}`
+                    );
                 }
             }
 
@@ -310,7 +367,9 @@ export async function getTraefikConfig(
                             value: string;
                         }[];
                     } catch (e) {
-                        logger.warn(`Failed to parse headers for resource ${resource.resourceId}: ${e}`);
+                        logger.warn(
+                            `Failed to parse headers for resource ${resource.resourceId}: ${e}`
+                        );
                     }
 
                     headersArr.forEach((header) => {
@@ -338,10 +397,30 @@ export async function getTraefikConfig(
 
             // Build routing rules
             let rule = `Host(\`${fullDomain}\`)`;
-            let priority = 100;
+
+            // priority logic
+            let priority: number;
+            if (resource.priority && resource.priority != 100) {
+                priority = resource.priority;
+            } else {
+                priority = 100;
+                if (resource.path && resource.pathMatchType) {
+                    priority += 10;
+                    if (resource.pathMatchType === "exact") {
+                        priority += 5;
+                    } else if (resource.pathMatchType === "prefix") {
+                        priority += 3;
+                    } else if (resource.pathMatchType === "regex") {
+                        priority += 2;
+                    }
+                    if (resource.path === "/") {
+                        priority = 1; // lowest for catch-all
+                    }
+                }
+            }
 
             if (resource.path && resource.pathMatchType) {
-                priority += 1;
+                // priority += 1;
                 // add path to rule based on match type
                 let path = resource.path;
                 // if the path doesn't start with a /, add it
@@ -456,14 +535,14 @@ export async function getTraefikConfig(
                     })(),
                     ...(resource.stickySession
                         ? {
-                            sticky: {
-                                cookie: {
-                                    name: "p_sticky", // TODO: make this configurable via config.yml like other cookies
-                                    secure: resource.ssl,
-                                    httpOnly: true
-                                }
-                            }
-                        }
+                              sticky: {
+                                  cookie: {
+                                      name: "p_sticky", // TODO: make this configurable via config.yml like other cookies
+                                      secure: resource.ssl,
+                                      httpOnly: true
+                                  }
+                              }
+                          }
                         : {})
                 }
             };
@@ -508,6 +587,8 @@ export async function getTraefikConfig(
                 service: serviceName,
                 ...(protocol === "tcp" ? { rule: "HostSNI(`*`)" } : {})
             };
+
+            const ppPrefix = config.getRawConfig().traefik.pp_transport_prefix;
 
             config_output[protocol].services[serviceName] = {
                 loadBalancer: {
@@ -562,15 +643,20 @@ export async function getTraefikConfig(
                                 }
                             });
                     })(),
+                    ...(resource.proxyProtocol && protocol == "tcp"
+                        ? {
+                              serversTransport: `${ppPrefix}${resource.proxyProtocolVersion || 1}@file` // TODO: does @file here cause issues?
+                          }
+                        : {}),
                     ...(resource.stickySession
                         ? {
-                            sticky: {
-                                ipStrategy: {
-                                    depth: 0,
-                                    sourcePort: true
-                                }
-                            }
-                        }
+                              sticky: {
+                                  ipStrategy: {
+                                      depth: 0,
+                                      sourcePort: true
+                                  }
+                              }
+                          }
                         : {})
                 }
             };
