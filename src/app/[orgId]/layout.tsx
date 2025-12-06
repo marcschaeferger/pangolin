@@ -1,18 +1,23 @@
-import { internal } from "@app/lib/api";
+import { formatAxiosError, internal } from "@app/lib/api";
 import { authCookieHeader } from "@app/lib/api/cookies";
-import ProfileIcon from "@app/components/ProfileIcon";
 import { verifySession } from "@app/lib/auth/verifySession";
-import UserProvider from "@app/providers/UserProvider";
-import { GetOrgResponse } from "@server/routers/org";
+import {
+    CheckOrgUserAccessResponse,
+    GetOrgResponse,
+    ListUserOrgsResponse
+} from "@server/routers/org";
 import { GetOrgUserResponse } from "@server/routers/user";
 import { AxiosResponse } from "axios";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import SetLastOrgCookie from "@app/components/SetLastOrgCookie";
-import PrivateSubscriptionStatusProvider from "@app/providers/PrivateSubscriptionStatusProvider";
-import { GetOrgSubscriptionResponse } from "@server/routers/private/billing/getOrgSubscription";
+import SubscriptionStatusProvider from "@app/providers/SubscriptionStatusProvider";
+import { GetOrgSubscriptionResponse } from "@server/routers/billing/types";
 import { pullEnv } from "@app/lib/pullEnv";
 import { build } from "@server/build";
+import OrgPolicyResult from "@app/components/OrgPolicyResult";
+import UserProvider from "@app/providers/UserProvider";
+import { Layout } from "@app/components/Layout";
 
 export default async function OrgLayout(props: {
     children: React.ReactNode;
@@ -34,29 +39,50 @@ export default async function OrgLayout(props: {
         redirect(`/`);
     }
 
+    let accessRes: CheckOrgUserAccessResponse | null = null;
     try {
-        const getOrgUser = cache(() =>
-            internal.get<AxiosResponse<GetOrgUserResponse>>(
-                `/org/${orgId}/user/${user.userId}`,
+        const checkOrgAccess = cache(() =>
+            internal.get<AxiosResponse<CheckOrgUserAccessResponse>>(
+                `/org/${orgId}/user/${user.userId}/check`,
                 cookie
             )
         );
-        const orgUser = await getOrgUser();
-    } catch {
+        const res = await checkOrgAccess();
+        accessRes = res.data.data;
+    } catch (e) {
         redirect(`/`);
     }
 
-    try {
-        const getOrg = cache(() =>
-            internal.get<AxiosResponse<GetOrgResponse>>(`/org/${orgId}`, cookie)
+    if (!accessRes?.allowed) {
+        // For non-admin users, show the member resources portal
+        let orgs: ListUserOrgsResponse["orgs"] = [];
+        try {
+            const getOrgs = cache(async () =>
+                internal.get<AxiosResponse<ListUserOrgsResponse>>(
+                    `/user/${user.userId}/orgs`,
+                    await authCookieHeader()
+                )
+            );
+            const res = await getOrgs();
+            if (res && res.data.data.orgs) {
+                orgs = res.data.data.orgs;
+            }
+        } catch (e) {}
+        return (
+            <UserProvider user={user}>
+                <Layout orgId={orgId} navItems={[]} orgs={orgs}>
+                    <OrgPolicyResult
+                        orgId={orgId}
+                        userId={user.userId}
+                        accessRes={accessRes}
+                    />
+                </Layout>
+            </UserProvider>
         );
-        await getOrg();
-    } catch {
-        redirect(`/`);
     }
 
     let subscriptionStatus = null;
-    if (build != "oss") {
+    if (build === "saas") {
         try {
             const getSubscription = cache(() =>
                 internal.get<AxiosResponse<GetOrgSubscriptionResponse>>(
@@ -73,13 +99,13 @@ export default async function OrgLayout(props: {
     }
 
     return (
-        <PrivateSubscriptionStatusProvider
+        <SubscriptionStatusProvider
             subscriptionStatus={subscriptionStatus}
             env={env.app.environment}
             sandbox_mode={env.app.sandbox_mode}
         >
             {props.children}
             <SetLastOrgCookie orgId={orgId} />
-        </PrivateSubscriptionStatusProvider>
+        </SubscriptionStatusProvider>
     );
 }

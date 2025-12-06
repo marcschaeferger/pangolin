@@ -1,9 +1,4 @@
-import NodeCache from "node-cache";
-import { sendToClient } from "../ws";
-
-export const dockerSocketCache = new NodeCache({
-    stdTTL: 3600 // seconds
-});
+import { sendToClient } from "#dynamic/routers/ws";
 
 export function fetchContainers(newtId: string) {
     const payload = {

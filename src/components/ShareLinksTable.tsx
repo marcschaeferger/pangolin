@@ -39,6 +39,7 @@ export type ShareLinkRow = {
     accessTokenId: string;
     resourceId: number;
     resourceName: string;
+    resourceNiceId: string;
     title: string | null;
     createdAt: number;
     expiresAt: number | null;
@@ -60,6 +61,25 @@ export default function ShareLinksTable({
 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [rows, setRows] = useState<ShareLinkRow[]>(shareLinks);
+
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const refreshData = async () => {
+        console.log("Data refreshed");
+        setIsRefreshing(true);
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            router.refresh();
+        } catch (error) {
+            toast({
+                title: t("error"),
+                description: t("refreshError"),
+                variant: "destructive"
+            });
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
 
     function formatLink(link: string) {
         return link.substring(0, 20) + "..." + link.substring(link.length - 20);
@@ -101,7 +121,7 @@ export default function ShareLinksTable({
             cell: ({ row }) => {
                 const r = row.original;
                 return (
-                    <Link href={`/${orgId}/settings/resources/${r.resourceId}`}>
+                    <Link href={`/${orgId}/settings/resources/${r.resourceNiceId}`}>
                         <Button variant="outline" size="sm">
                             {r.resourceName}
                             <ArrowUpRight className="ml-2 h-4 w-4" />
@@ -292,6 +312,8 @@ export default function ShareLinksTable({
                 createShareLink={() => {
                     setIsCreateModalOpen(true);
                 }}
+                onRefresh={refreshData}
+                isRefreshing={isRefreshing}
             />
         </>
     );

@@ -1,4 +1,4 @@
-import { db, loginPage, LoginPage, loginPageOrg } from "@server/db";
+import { db, loginPage, LoginPage, loginPageOrg, Org, orgs } from "@server/db";
 import {
     Resource,
     ResourcePassword,
@@ -17,16 +17,13 @@ import {
     users
 } from "@server/db";
 import { and, eq } from "drizzle-orm";
-import axios from "axios";
-import config from "@server/lib/config";
-import logger from "@server/logger";
-import { tokenManager } from "@server/lib/tokenManager";
 
 export type ResourceWithAuth = {
     resource: Resource | null;
     pincode: ResourcePincode | null;
     password: ResourcePassword | null;
     headerAuth: ResourceHeaderAuth | null;
+    org: Org;
 };
 
 export type UserSessionWithUser = {
@@ -40,30 +37,6 @@ export type UserSessionWithUser = {
 export async function getResourceByDomain(
     domain: string
 ): Promise<ResourceWithAuth | null> {
-    if (config.isManagedMode()) {
-        try {
-            const response = await axios.get(
-                `${config.getRawConfig().managed?.endpoint}/api/v1/hybrid/resource/domain/${domain}`,
-                await tokenManager.getAuthHeader()
-            );
-            return response.data.data;
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                logger.error("Error fetching config in verify session:", {
-                    message: error.message,
-                    code: error.code,
-                    status: error.response?.status,
-                    statusText: error.response?.statusText,
-                    url: error.config?.url,
-                    method: error.config?.method
-                });
-            } else {
-                logger.error("Error fetching config in verify session:", error);
-            }
-            return null;
-        }
-    }
-
     const [result] = await db
         .select()
         .from(resources)
@@ -79,6 +52,10 @@ export async function getResourceByDomain(
             resourceHeaderAuth,
             eq(resourceHeaderAuth.resourceId, resources.resourceId)
         )
+        .innerJoin(
+            orgs,
+            eq(orgs.orgId, resources.orgId)
+        )
         .where(eq(resources.fullDomain, domain))
         .limit(1);
 
@@ -90,7 +67,8 @@ export async function getResourceByDomain(
         resource: result.resources,
         pincode: result.resourcePincode,
         password: result.resourcePassword,
-        headerAuth: result.resourceHeaderAuth
+        headerAuth: result.resourceHeaderAuth,
+        org: result.orgs
     };
 }
 
@@ -100,30 +78,6 @@ export async function getResourceByDomain(
 export async function getUserSessionWithUser(
     userSessionId: string
 ): Promise<UserSessionWithUser | null> {
-    if (config.isManagedMode()) {
-        try {
-            const response = await axios.get(
-                `${config.getRawConfig().managed?.endpoint}/api/v1/hybrid/session/${userSessionId}`,
-                await tokenManager.getAuthHeader()
-            );
-            return response.data.data;
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                logger.error("Error fetching config in verify session:", {
-                    message: error.message,
-                    code: error.code,
-                    status: error.response?.status,
-                    statusText: error.response?.statusText,
-                    url: error.config?.url,
-                    method: error.config?.method
-                });
-            } else {
-                logger.error("Error fetching config in verify session:", error);
-            }
-            return null;
-        }
-    }
-
     const [res] = await db
         .select()
         .from(sessions)
@@ -144,30 +98,6 @@ export async function getUserSessionWithUser(
  * Get user organization role
  */
 export async function getUserOrgRole(userId: string, orgId: string) {
-    if (config.isManagedMode()) {
-        try {
-            const response = await axios.get(
-                `${config.getRawConfig().managed?.endpoint}/api/v1/hybrid/user/${userId}/org/${orgId}/role`,
-                await tokenManager.getAuthHeader()
-            );
-            return response.data.data;
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                logger.error("Error fetching config in verify session:", {
-                    message: error.message,
-                    code: error.code,
-                    status: error.response?.status,
-                    statusText: error.response?.statusText,
-                    url: error.config?.url,
-                    method: error.config?.method
-                });
-            } else {
-                logger.error("Error fetching config in verify session:", error);
-            }
-            return null;
-        }
-    }
-
     const userOrgRole = await db
         .select()
         .from(userOrgs)
@@ -184,30 +114,6 @@ export async function getRoleResourceAccess(
     resourceId: number,
     roleId: number
 ) {
-    if (config.isManagedMode()) {
-        try {
-            const response = await axios.get(
-                `${config.getRawConfig().managed?.endpoint}/api/v1/hybrid/role/${roleId}/resource/${resourceId}/access`,
-                await tokenManager.getAuthHeader()
-            );
-            return response.data.data;
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                logger.error("Error fetching config in verify session:", {
-                    message: error.message,
-                    code: error.code,
-                    status: error.response?.status,
-                    statusText: error.response?.statusText,
-                    url: error.config?.url,
-                    method: error.config?.method
-                });
-            } else {
-                logger.error("Error fetching config in verify session:", error);
-            }
-            return null;
-        }
-    }
-
     const roleResourceAccess = await db
         .select()
         .from(roleResources)
@@ -229,30 +135,6 @@ export async function getUserResourceAccess(
     userId: string,
     resourceId: number
 ) {
-    if (config.isManagedMode()) {
-        try {
-            const response = await axios.get(
-                `${config.getRawConfig().managed?.endpoint}/api/v1/hybrid/user/${userId}/resource/${resourceId}/access`,
-                await tokenManager.getAuthHeader()
-            );
-            return response.data.data;
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                logger.error("Error fetching config in verify session:", {
-                    message: error.message,
-                    code: error.code,
-                    status: error.response?.status,
-                    statusText: error.response?.statusText,
-                    url: error.config?.url,
-                    method: error.config?.method
-                });
-            } else {
-                logger.error("Error fetching config in verify session:", error);
-            }
-            return null;
-        }
-    }
-
     const userResourceAccess = await db
         .select()
         .from(userResources)
@@ -273,30 +155,6 @@ export async function getUserResourceAccess(
 export async function getResourceRules(
     resourceId: number
 ): Promise<ResourceRule[]> {
-    if (config.isManagedMode()) {
-        try {
-            const response = await axios.get(
-                `${config.getRawConfig().managed?.endpoint}/api/v1/hybrid/resource/${resourceId}/rules`,
-                await tokenManager.getAuthHeader()
-            );
-            return response.data.data;
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                logger.error("Error fetching config in verify session:", {
-                    message: error.message,
-                    code: error.code,
-                    status: error.response?.status,
-                    statusText: error.response?.statusText,
-                    url: error.config?.url,
-                    method: error.config?.method
-                });
-            } else {
-                logger.error("Error fetching config in verify session:", error);
-            }
-            return [];
-        }
-    }
-
     const rules = await db
         .select()
         .from(resourceRules)
@@ -311,30 +169,6 @@ export async function getResourceRules(
 export async function getOrgLoginPage(
     orgId: string
 ): Promise<LoginPage | null> {
-    if (config.isManagedMode()) {
-        try {
-            const response = await axios.get(
-                `${config.getRawConfig().managed?.endpoint}/api/v1/hybrid/org/${orgId}/login-page`,
-                await tokenManager.getAuthHeader()
-            );
-            return response.data.data;
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                logger.error("Error fetching config in verify session:", {
-                    message: error.message,
-                    code: error.code,
-                    status: error.response?.status,
-                    statusText: error.response?.statusText,
-                    url: error.config?.url,
-                    method: error.config?.method
-                });
-            } else {
-                logger.error("Error fetching config in verify session:", error);
-            }
-            return null;
-        }
-    }
-
     const [result] = await db
         .select()
         .from(loginPageOrg)

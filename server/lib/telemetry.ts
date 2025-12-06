@@ -9,6 +9,7 @@ import { APP_VERSION } from "./consts";
 import crypto from "crypto";
 import { UserType } from "@server/types/UserTypes";
 import { build } from "@server/build";
+import license from "@server/license/license";
 
 class TelemetryClient {
     private client: PostHog | null = null;
@@ -32,7 +33,7 @@ class TelemetryClient {
             this.client = new PostHog(
                 "phc_QYuATSSZt6onzssWcYJbXLzQwnunIpdGGDTYhzK3VjX",
                 {
-                    host: "https://digpangolin.com/relay-O7yI"
+                    host: "https://pangolin.net/relay-O7yI"
                 }
             );
 
@@ -47,11 +48,11 @@ class TelemetryClient {
             this.startAnalyticsInterval();
 
             logger.info(
-                "Pangolin now gathers anonymous usage data to help us better understand how the software is used and guide future improvements and feature development. You can find more details, including instructions for opting out of this anonymous data collection, at: https://docs.digpangolin.com/telemetry"
+                "Pangolin now gathers anonymous usage data to help us better understand how the software is used and guide future improvements and feature development. You can find more details, including instructions for opting out of this anonymous data collection, at: https://docs.pangolin.net/telemetry"
             );
         } else if (!this.enabled) {
             logger.info(
-                "Analytics usage statistics collection is disabled. If you enable this, you can help us make Pangolin better for everyone. Learn more at: https://docs.digpangolin.com/telemetry"
+                "Analytics usage statistics collection is disabled. If you enable this, you can help us make Pangolin better for everyone. Learn more at: https://docs.pangolin.net/telemetry"
             );
         }
     }
@@ -176,17 +177,33 @@ class TelemetryClient {
 
         const stats = await this.getSystemStats();
 
-        this.client.capture({
-            distinctId: hostMeta.hostMetaId,
-            event: "supporter_status",
-            properties: {
-                valid: stats.supporterStatus.valid,
-                tier: stats.supporterStatus.tier,
-                github_username: stats.supporterStatus.githubUsername
-                    ? this.anon(stats.supporterStatus.githubUsername)
-                    : "None"
-            }
-        });
+        if (build === "enterprise") {
+            const licenseStatus = await license.check();
+            const payload = {
+                distinctId: hostMeta.hostMetaId,
+                event: "enterprise_status",
+                properties: {
+                    is_host_licensed: licenseStatus.isHostLicensed,
+                    is_license_valid: licenseStatus.isLicenseValid,
+                    license_tier: licenseStatus.tier || "unknown"
+                }
+            };
+            logger.debug("Sending enterprise startup telemtry payload:", {
+                payload
+            });
+            // this.client.capture(payload);
+        }
+
+        if (build === "oss") {
+            this.client.capture({
+                distinctId: hostMeta.hostMetaId,
+                event: "supporter_status",
+                properties: {
+                    valid: stats.supporterStatus.valid,
+                    tier: stats.supporterStatus.tier
+                }
+            });
+        }
 
         this.client.capture({
             distinctId: hostMeta.hostMetaId,
@@ -197,21 +214,6 @@ class TelemetryClient {
                 install_timestamp: hostMeta.createdAt
             }
         });
-
-        for (const email of stats.adminUsers) {
-            // There should only be on admin user, but just in case
-            if (email) {
-                this.client.capture({
-                    distinctId: this.anon(email),
-                    event: "admin_user",
-                    properties: {
-                        host_id: hostMeta.hostMetaId,
-                        app_version: stats.appVersion,
-                        hashed_email: this.anon(email)
-                    }
-                });
-            }
-        }
     }
 
     private async collectAndSendAnalytics() {
@@ -242,19 +244,38 @@ class TelemetryClient {
                     num_clients: stats.numClients,
                     num_identity_providers: stats.numIdentityProviders,
                     num_sites_online: stats.numSitesOnline,
-                    resources: stats.resources.map((r) => ({
-                        name: this.anon(r.name),
-                        sso_enabled: r.sso,
-                        protocol: r.protocol,
-                        http_enabled: r.http
-                    })),
-                    sites: stats.sites.map((s) => ({
-                        site_name: this.anon(s.siteName),
-                        megabytes_in: s.megabytesIn,
-                        megabytes_out: s.megabytesOut,
-                        type: s.type,
-                        online: s.online
-                    })),
+                    num_resources_sso_enabled: stats.resources.filter(
+                        (r) => r.sso
+                    ).length,
+                    num_resources_non_http: stats.resources.filter(
+                        (r) => !r.http
+                    ).length,
+                    num_newt_sites: stats.sites.filter((s) => s.type === "newt")
+                        .length,
+                    num_local_sites: stats.sites.filter(
+                        (s) => s.type === "local"
+                    ).length,
+                    num_wg_sites: stats.sites.filter(
+                        (s) => s.type === "wireguard"
+                    ).length,
+                    avg_megabytes_in:
+                        stats.sites.length > 0
+                            ? Math.round(
+                                  stats.sites.reduce(
+                                      (sum, s) => sum + (s.megabytesIn ?? 0),
+                                      0
+                                  ) / stats.sites.length
+                              )
+                            : 0,
+                    avg_megabytes_out:
+                        stats.sites.length > 0
+                            ? Math.round(
+                                  stats.sites.reduce(
+                                      (sum, s) => sum + (s.megabytesOut ?? 0),
+                                      0
+                                  ) / stats.sites.length
+                              )
+                            : 0,
                     num_api_keys: stats.numApiKeys,
                     num_custom_roles: stats.numCustomRoles
                 }

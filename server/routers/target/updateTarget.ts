@@ -50,7 +50,8 @@ const updateTargetBodySchema = z
         path: z.string().optional().nullable(),
         pathMatchType: z.enum(["exact", "prefix", "regex"]).optional().nullable(),
         rewritePath: z.string().optional().nullable(),
-        rewritePathType: z.enum(["exact", "prefix", "regex", "stripPrefix"]).optional().nullable()
+        rewritePathType: z.enum(["exact", "prefix", "regex", "stripPrefix"]).optional().nullable(),
+        priority: z.number().int().min(1).max(1000).optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
@@ -169,12 +170,8 @@ export async function updateTarget(
         );
 
         if (foundTarget) {
-            return next(
-                createHttpError(
-                    HttpCode.BAD_REQUEST,
-                    `Target with IP ${targetData.ip}, port ${targetData.port}, and method ${targetData.method} already exists on the same site.`
-                )
-            );
+            // log a warning
+            logger.warn(`Target with IP ${targetData.ip}, port ${targetData.port}, method ${targetData.method} already exists for resource ID ${target.resourceId}`);
         }
 
         const { internalPort, targetIps } = await pickPort(site.siteId!, db);
@@ -198,7 +195,10 @@ export async function updateTarget(
                 internalPort,
                 enabled: parsedBody.data.enabled,
                 path: parsedBody.data.path,
-                pathMatchType: parsedBody.data.pathMatchType
+                pathMatchType: parsedBody.data.pathMatchType,
+                priority: parsedBody.data.priority,
+                rewritePath: parsedBody.data.rewritePath,
+                rewritePathType: parsedBody.data.rewritePathType
             })
             .where(eq(targets.targetId, targetId))
             .returning();
@@ -207,6 +207,12 @@ export async function updateTarget(
         if (parsedBody.data.hcHeaders) {
             hcHeaders = JSON.stringify(parsedBody.data.hcHeaders);
         }
+
+        // When health check is disabled, reset hcHealth to "unknown"
+        // to prevent previously unhealthy targets from being excluded
+        const hcHealthValue = (parsedBody.data.hcEnabled === false || parsedBody.data.hcEnabled === null) 
+            ? "unknown" 
+            : undefined;
 
         const [updatedHc] = await db
             .update(targetHealthCheck)
@@ -223,7 +229,8 @@ export async function updateTarget(
                 hcHeaders: hcHeaders,
                 hcFollowRedirects: parsedBody.data.hcFollowRedirects,
                 hcMethod: parsedBody.data.hcMethod,
-                hcStatus: parsedBody.data.hcStatus
+                hcStatus: parsedBody.data.hcStatus,
+                ...(hcHealthValue !== undefined && { hcHealth: hcHealthValue })
             })
             .where(eq(targetHealthCheck.targetId, targetId))
             .returning();
