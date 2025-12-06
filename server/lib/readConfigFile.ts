@@ -322,11 +322,7 @@ export const configSchema = z
             .default({}),
         metrics: z
             .object({
-                port: portSchema
-                    .optional()
-                    .default(9464)
-                    .transform(stoi)
-                    .pipe(portSchema.optional()),
+                port: portSchema.optional().default(9464),
                 enabled: z.boolean().optional().default(true)
             })
             .optional()
