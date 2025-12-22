@@ -39,6 +39,7 @@ import {
 } from "#dynamic/lib/checkOrgAccessPolicy";
 import { logRequestAudit } from "./logRequestAudit";
 import cache from "@server/lib/cache";
+import { REGIONS } from "@server/db/regions";
 
 const verifyResourceSessionSchema = z.object({
     sessions: z.record(z.string(), z.string()).optional(),
@@ -967,6 +968,12 @@ async function checkRules(
             (await isIpInAsn(ipAsn, rule.value))
         ) {
             return rule.action as any;
+        } else if (
+            clientIp &&
+            rule.match == "REGION" &&
+            (await isIpInRegion(ipCC, rule.value))
+        ) {
+            return rule.action as any;
         }
     }
 
@@ -1131,6 +1138,45 @@ async function isIpInAsn(
     );
 
     return match;
+}
+
+export async function isIpInRegion(
+    ipCountryCode: string | undefined,
+    checkRegionCode: string
+): Promise<boolean> {
+    if (!ipCountryCode) {
+        return false;
+    }
+
+    const upperCode = ipCountryCode.toUpperCase();
+
+    for (const region of REGIONS) {
+        // Check if it's a top-level region (continent)
+        if (region.id === checkRegionCode) {
+            for (const subregion of region.includes) {
+                if (subregion.countries.includes(upperCode)) {
+                    logger.debug(`Country ${upperCode} is in region ${region.id} (${region.name})`);
+                    return true;
+                }
+            }
+            logger.debug(`Country ${upperCode} is not in region ${region.id} (${region.name})`);
+            return false;
+        }
+
+        // Check subregions
+        for (const subregion of region.includes) {
+            if (subregion.id === checkRegionCode) {
+                if (subregion.countries.includes(upperCode)) {
+                    logger.debug(`Country ${upperCode} is in region ${subregion.id} (${subregion.name})`);
+                    return true;
+                }
+                logger.debug(`Country ${upperCode} is not in region ${subregion.id} (${subregion.name})`);
+                return false;
+            }
+        }
+    }
+
+    return false;
 }
 
 async function getAsnFromIp(ip: string): Promise<number | undefined> {
