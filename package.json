@@ -136,7 +136,7 @@
         "ws": "8.18.3",
         "yaml": "2.8.2",
         "yargs": "18.0.0",
-        "zod": "4.1.13",
+        "zod": "4.2.1",
         "zod-validation-error": "5.0.0"
     },
     "devDependencies": {
