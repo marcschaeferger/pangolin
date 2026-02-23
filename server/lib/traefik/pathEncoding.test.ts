@@ -1,5 +1,5 @@
-import { assertEquals } from "@test/assert";
-import { encodePath, sanitize } from "./utils";
+import { assertEquals } from "../../../test/assert";
+import { encodePath, sanitize } from "./pathUtils";
 
 function runTests() {
     console.log("Running path encoding tests...\n");
@@ -157,6 +157,72 @@ function runTests() {
             );
         }
         console.log("  PASS: encoded values are alphanumeric");
+    }
+
+    // Test 9: backward compatibility - Traefik names use sanitize, internal keys use encodePath
+    {
+        // Simulate the dual-key approach from getTraefikConfig
+        function makeKeys(
+            resourceId: number,
+            path: string | null,
+            pathMatchType: string | null
+        ) {
+            // Internal map key (collision-free grouping)
+            const encodedPath = encodePath(path);
+            const internalPathKey = [encodedPath, pathMatchType || ""]
+                .filter(Boolean)
+                .join("-");
+            const internalMapKey = [resourceId, internalPathKey]
+                .filter(Boolean)
+                .join("-");
+
+            // Traefik-facing key (backward-compatible naming)
+            const sanitizedPath = sanitize(path) || "";
+            const traefikPathKey = [sanitizedPath, pathMatchType || ""]
+                .filter(Boolean)
+                .join("-");
+            const traefikKey = sanitize(
+                [resourceId, traefikPathKey].filter(Boolean).join("-")
+            );
+
+            return { internalMapKey, traefikKey };
+        }
+
+        // /a/b and /a-b should have DIFFERENT internal keys (no collision)
+        const keysAB = makeKeys(1, "/a/b", "prefix");
+        const keysDash = makeKeys(1, "/a-b", "prefix");
+        assertEquals(
+            keysAB.internalMapKey !== keysDash.internalMapKey,
+            true,
+            "/a/b and /a-b must have different internal map keys"
+        );
+
+        // /a/b and /a-b produce the SAME Traefik key (backward compat — sanitize maps both to "a-b")
+        assertEquals(
+            keysAB.traefikKey,
+            keysDash.traefikKey,
+            "/a/b and /a-b should produce same Traefik key (sanitize behavior)"
+        );
+
+        // For a resource with no path, Traefik key should match the old behavior
+        const keysNoPath = makeKeys(42, null, null);
+        assertEquals(
+            keysNoPath.traefikKey,
+            "42",
+            "no-path resource should have resourceId-only Traefik key"
+        );
+
+        // Traefik key for /api prefix should match old sanitize-based output
+        const keysApi = makeKeys(1, "/api", "prefix");
+        assertEquals(
+            keysApi.traefikKey,
+            "1-api-prefix",
+            "Traefik key should match old sanitize-based format"
+        );
+
+        console.log(
+            "  PASS: backward compatibility - internal keys differ, Traefik names preserved"
+        );
     }
 
     console.log("\nAll path encoding tests passed!");

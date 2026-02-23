@@ -174,7 +174,6 @@ export async function getTraefikConfig(
     resourcesWithTargetsAndSites.forEach((row) => {
         const resourceId = row.resourceId;
         const resourceName = sanitize(row.resourceName) || "";
-        const targetPath = encodePath(row.path); // Encode path preserving uniqueness for key generation
         const pathMatchType = row.pathMatchType || "";
         const rewritePath = row.rewritePath || "";
         const rewritePathType = row.rewritePathType || "";
@@ -184,19 +183,37 @@ export async function getTraefikConfig(
             return;
         }
 
-        // Create a unique key combining resourceId, path config, and rewrite config
-        const pathKey = [
-            targetPath,
+        // Use encodePath for the internal map key to avoid collisions
+        // (e.g. "/a/b" vs "/a-b" must map to different groups)
+        const encodedPath = encodePath(row.path);
+        const internalPathKey = [
+            encodedPath,
             pathMatchType,
             rewritePath,
             rewritePathType
         ]
             .filter(Boolean)
             .join("-");
-        const mapKey = [resourceId, pathKey].filter(Boolean).join("-");
-        const key = sanitize(mapKey);
+        const internalMapKey = [resourceId, internalPathKey]
+            .filter(Boolean)
+            .join("-");
 
-        if (!resourcesMap.has(key)) {
+        // Use sanitize for the Traefik-facing key to preserve backward-compatible
+        // router/service names (existing sticky session cookies, etc.)
+        const sanitizedPath = sanitize(row.path) || "";
+        const traefikPathKey = [
+            sanitizedPath,
+            pathMatchType,
+            rewritePath,
+            rewritePathType
+        ]
+            .filter(Boolean)
+            .join("-");
+        const traefikKey = sanitize(
+            [resourceId, traefikPathKey].filter(Boolean).join("-")
+        );
+
+        if (!resourcesMap.has(internalMapKey)) {
             const validation = validatePathRewriteConfig(
                 row.path,
                 row.pathMatchType,
@@ -211,9 +228,10 @@ export async function getTraefikConfig(
                 return;
             }
 
-            resourcesMap.set(key, {
+            resourcesMap.set(internalMapKey, {
                 resourceId: row.resourceId,
                 name: resourceName,
+                traefikKey: traefikKey, // backward-compatible key for Traefik names
                 fullDomain: row.fullDomain,
                 ssl: row.ssl,
                 http: row.http,
@@ -247,7 +265,7 @@ export async function getTraefikConfig(
         }
 
         // Add target with its associated site data
-        resourcesMap.get(key).targets.push({
+        resourcesMap.get(internalMapKey).targets.push({
             resourceId: row.resourceId,
             targetId: row.targetId,
             ip: row.ip,
@@ -300,8 +318,9 @@ export async function getTraefikConfig(
     };
 
     // get the key and the resource
-    for (const [key, resource] of resourcesMap.entries()) {
+    for (const [, resource] of resourcesMap.entries()) {
         const targets = resource.targets as TargetWithSite[];
+        const key = resource.traefikKey; // backward-compatible key for Traefik names
 
         const routerName = `${key}-${resource.name}-router`;
         const serviceName = `${key}-${resource.name}-service`;
