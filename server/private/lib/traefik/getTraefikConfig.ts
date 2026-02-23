@@ -34,7 +34,11 @@ import {
 import logger from "@server/logger";
 import config from "@server/lib/config";
 import { orgs, resources, sites, Target, targets } from "@server/db";
-import { sanitize, validatePathRewriteConfig } from "@server/lib/traefik/utils";
+import {
+    sanitize,
+    encodePath,
+    validatePathRewriteConfig
+} from "@server/lib/traefik/utils";
 import privateConfig from "#private/lib/config";
 import createPathRewriteMiddleware from "@server/lib/traefik/middleware";
 import {
@@ -170,7 +174,7 @@ export async function getTraefikConfig(
     resourcesWithTargetsAndSites.forEach((row) => {
         const resourceId = row.resourceId;
         const resourceName = sanitize(row.resourceName) || "";
-        const targetPath = sanitize(row.path) || ""; // Handle null/undefined paths
+        const targetPath = encodePath(row.path); // Encode path preserving uniqueness for key generation
         const pathMatchType = row.pathMatchType || "";
         const rewritePath = row.rewritePath || "";
         const rewritePathType = row.rewritePathType || "";

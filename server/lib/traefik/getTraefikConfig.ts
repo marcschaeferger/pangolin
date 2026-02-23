@@ -14,7 +14,7 @@ import logger from "@server/logger";
 import config from "@server/lib/config";
 import { resources, sites, Target, targets } from "@server/db";
 import createPathRewriteMiddleware from "./middleware";
-import { sanitize, validatePathRewriteConfig } from "./utils";
+import { sanitize, encodePath, validatePathRewriteConfig } from "./utils";
 
 const redirectHttpsMiddlewareName = "redirect-to-https";
 const badgerMiddlewareName = "badger";
@@ -44,7 +44,7 @@ export async function getTraefikConfig(
     filterOutNamespaceDomains = false, // UNUSED BUT USED IN PRIVATE
     generateLoginPageRouters = false, // UNUSED BUT USED IN PRIVATE
     allowRawResources = true,
-    allowMaintenancePage = true, // UNUSED BUT USED IN PRIVATE
+    allowMaintenancePage = true // UNUSED BUT USED IN PRIVATE
 ): Promise<any> {
     // Get resources with their targets and sites in a single optimized query
     // Start from sites on this exit node, then join to targets and resources
@@ -127,7 +127,7 @@ export async function getTraefikConfig(
     resourcesWithTargetsAndSites.forEach((row) => {
         const resourceId = row.resourceId;
         const resourceName = sanitize(row.resourceName) || "";
-        const targetPath = sanitize(row.path) || ""; // Handle null/undefined paths
+        const targetPath = encodePath(row.path); // Encode path preserving uniqueness for key generation
         const pathMatchType = row.pathMatchType || "";
         const rewritePath = row.rewritePath || "";
         const rewritePathType = row.rewritePathType || "";
