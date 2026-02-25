@@ -221,12 +221,16 @@ export async function createOrgUser(
                         );
                     }
 
-                    await assignUserToOrg(org, {
-                        orgId,
-                        userId: existingUser.userId,
-                        roleId: role.roleId,
-                        autoProvisioned: false
-                    }, trx);
+                    await assignUserToOrg(
+                        org,
+                        {
+                            orgId,
+                            userId: existingUser.userId,
+                            autoProvisioned: false,
+                        },
+                        role.roleId,
+                        trx
+                    );
                 } else {
                     userId = generateId(15);
 
@@ -244,12 +248,16 @@ export async function createOrgUser(
                         })
                         .returning();
 
-                        await assignUserToOrg(org, {
-                            orgId,
-                            userId: newUser.userId,
-                            roleId: role.roleId,
-                            autoProvisioned: false
-                        }, trx);
+                        await assignUserToOrg(
+                            org,
+                            {
+                                orgId,
+                                userId: newUser.userId,
+                                autoProvisioned: false,
+                            },
+                            role.roleId,
+                            trx
+                        );
                 }
 
                 await calculateUserClientsForOrgs(userId, trx);

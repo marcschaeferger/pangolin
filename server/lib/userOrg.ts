@@ -6,7 +6,7 @@ import {
     siteResources,
     sites,
     Transaction,
-    UserOrg,
+    userOrgRoles,
     userOrgs,
     userResources,
     userSiteResources,
@@ -19,9 +19,15 @@ import { FeatureId } from "@server/lib/billing";
 export async function assignUserToOrg(
     org: Org,
     values: typeof userOrgs.$inferInsert,
+    roleId: number,
     trx: Transaction | typeof db = db
 ) {
     const [userOrg] = await trx.insert(userOrgs).values(values).returning();
+    await trx.insert(userOrgRoles).values({
+        userId: userOrg.userId,
+        orgId: userOrg.orgId,
+        roleId
+    });
 
     // calculate if the user is in any other of the orgs before we count it as an add to the billing org
     if (org.billingOrgId) {
@@ -58,6 +64,14 @@ export async function removeUserFromOrg(
     userId: string,
     trx: Transaction | typeof db = db
 ) {
+    await trx
+        .delete(userOrgRoles)
+        .where(
+            and(
+                eq(userOrgRoles.userId, userId),
+                eq(userOrgRoles.orgId, org.orgId)
+            )
+        );
     await trx
         .delete(userOrgs)
         .where(and(eq(userOrgs.userId, userId), eq(userOrgs.orgId, org.orgId)));

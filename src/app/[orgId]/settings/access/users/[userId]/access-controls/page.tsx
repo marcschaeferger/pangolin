@@ -8,7 +8,6 @@ import {
     FormLabel,
     FormMessage
 } from "@app/components/ui/form";
-import { Input } from "@app/components/ui/input";
 import {
     Select,
     SelectContent,
@@ -19,7 +18,6 @@ import {
 import { Checkbox } from "@app/components/ui/checkbox";
 import { toast } from "@app/hooks/useToast";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { InviteUserResponse } from "@server/routers/user";
 import { AxiosResponse } from "axios";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -44,6 +42,9 @@ import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useTranslations } from "next-intl";
 import IdpTypeBadge from "@app/components/IdpTypeBadge";
 import { UserType } from "@server/types/UserTypes";
+import { Badge } from "@app/components/ui/badge";
+
+type UserRole = { roleId: number; name: string };
 
 export default function AccessControlsPage() {
     const { orgUser: user } = userOrgUserContext();
@@ -54,12 +55,12 @@ export default function AccessControlsPage() {
 
     const [loading, setLoading] = useState(false);
     const [roles, setRoles] = useState<{ roleId: number; name: string }[]>([]);
+    const [userRoles, setUserRoles] = useState<UserRole[]>([]);
 
     const t = useTranslations();
 
     const formSchema = z.object({
         username: z.string(),
-        roleId: z.string().min(1, { message: t("accessRoleSelectPlease") }),
         autoProvisioned: z.boolean()
     });
 
@@ -67,10 +68,16 @@ export default function AccessControlsPage() {
         resolver: zodResolver(formSchema),
         defaultValues: {
             username: user.username!,
-            roleId: user.roleId?.toString(),
             autoProvisioned: user.autoProvisioned || false
         }
     });
+
+    const currentRoleIds = user.roleIds ?? [];
+    const currentRoles: UserRole[] = user.roles ?? [];
+
+    useEffect(() => {
+        setUserRoles(currentRoles);
+    }, [user.userId, currentRoleIds.join(",")]);
 
     useEffect(() => {
         async function fetchRoles() {
@@ -94,32 +101,20 @@ export default function AccessControlsPage() {
         }
 
         fetchRoles();
-
-        form.setValue("roleId", user.roleId.toString());
         form.setValue("autoProvisioned", user.autoProvisioned || false);
     }, []);
 
-    async function onSubmit(values: z.infer<typeof formSchema>) {
+    async function handleAddRole(roleId: number) {
         setLoading(true);
-
         try {
-            // Execute both API calls simultaneously
-            const [roleRes, userRes] = await Promise.all([
-                api.post<AxiosResponse<InviteUserResponse>>(
-                    `/role/${values.roleId}/add/${user.userId}`
-                ),
-                api.post(`/org/${orgId}/user/${user.userId}`, {
-                    autoProvisioned: values.autoProvisioned
-                })
-            ]);
-
-            if (roleRes.status === 200 && userRes.status === 200) {
-                toast({
-                    variant: "default",
-                    title: t("userSaved"),
-                    description: t("userSavedDescription")
-                });
-            }
+            await api.post(`/role/${roleId}/add/${user.userId}`);
+            toast({
+                variant: "default",
+                title: t("userSaved"),
+                description: t("userSavedDescription")
+            });
+            const role = roles.find((r) => r.roleId === roleId);
+            if (role) setUserRoles((prev) => [...prev, role]);
         } catch (e) {
             toast({
                 variant: "destructive",
@@ -130,9 +125,60 @@ export default function AccessControlsPage() {
                 )
             });
         }
-
         setLoading(false);
     }
+
+    async function handleRemoveRole(roleId: number) {
+        setLoading(true);
+        try {
+            await api.delete(`/role/${roleId}/remove/${user.userId}`);
+            toast({
+                variant: "default",
+                title: t("userSaved"),
+                description: t("userSavedDescription")
+            });
+            setUserRoles((prev) => prev.filter((r) => r.roleId !== roleId));
+        } catch (e) {
+            toast({
+                variant: "destructive",
+                title: t("accessRoleErrorAdd"),
+                description: formatAxiosError(
+                    e,
+                    t("accessRoleErrorAddDescription")
+                )
+            });
+        }
+        setLoading(false);
+    }
+
+    async function onSubmit(values: z.infer<typeof formSchema>) {
+        setLoading(true);
+        try {
+            await api.post(`/org/${orgId}/user/${user.userId}`, {
+                autoProvisioned: values.autoProvisioned
+            });
+            toast({
+                variant: "default",
+                title: t("userSaved"),
+                description: t("userSavedDescription")
+            });
+        } catch (e) {
+            toast({
+                variant: "destructive",
+                title: t("accessRoleErrorAdd"),
+                description: formatAxiosError(
+                    e,
+                    t("accessRoleErrorAddDescription")
+                )
+            });
+        }
+        setLoading(false);
+    }
+
+    const availableRolesToAdd = roles.filter(
+        (r) => !userRoles.some((ur) => ur.roleId === r.roleId)
+    );
+    const canRemoveRole = userRoles.length > 1;
 
     return (
         <SettingsContainer>
@@ -154,7 +200,6 @@ export default function AccessControlsPage() {
                                 className="space-y-4"
                                 id="access-controls-form"
                             >
-                                {/* IDP Type Display */}
                                 {user.type !== UserType.Internal &&
                                     user.idpType && (
                                         <div className="flex items-center space-x-2 mb-4">
@@ -171,49 +216,72 @@ export default function AccessControlsPage() {
                                         </div>
                                     )}
 
-                                <FormField
-                                    control={form.control}
-                                    name="roleId"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>{t("role")}</FormLabel>
+                                <FormItem>
+                                    <FormLabel>{t("role")}</FormLabel>
+                                    <div className="flex flex-wrap gap-2 items-center">
+                                        {userRoles.map((r) => (
+                                            <Badge
+                                                key={r.roleId}
+                                                variant="secondary"
+                                                className="flex items-center gap-1"
+                                            >
+                                                {r.name}
+                                                {canRemoveRole && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            handleRemoveRole(
+                                                                r.roleId
+                                                            )
+                                                        }
+                                                        disabled={loading}
+                                                        className="ml-1 rounded hover:bg-muted"
+                                                        aria-label={`Remove ${r.name}`}
+                                                    >
+                                                        ×
+                                                    </button>
+                                                )}
+                                            </Badge>
+                                        ))}
+                                        {availableRolesToAdd.length > 0 && (
                                             <Select
                                                 onValueChange={(value) => {
-                                                    field.onChange(value);
-                                                    // If auto provision is enabled, set it to false when role changes
-                                                    if (user.idpAutoProvision) {
-                                                        form.setValue(
-                                                            "autoProvisioned",
-                                                            false
-                                                        );
-                                                    }
+                                                    handleAddRole(
+                                                        parseInt(value, 10)
+                                                    );
                                                 }}
-                                                value={field.value}
+                                                disabled={loading}
                                             >
-                                                <FormControl>
-                                                    <SelectTrigger>
-                                                        <SelectValue
-                                                            placeholder={t(
-                                                                "accessRoleSelect"
-                                                            )}
-                                                        />
-                                                    </SelectTrigger>
-                                                </FormControl>
+                                                <SelectTrigger className="w-[180px]">
+                                                    <SelectValue
+                                                        placeholder={t(
+                                                            "accessRoleSelect"
+                                                        )}
+                                                    />
+                                                </SelectTrigger>
                                                 <SelectContent>
-                                                    {roles.map((role) => (
-                                                        <SelectItem
-                                                            key={role.roleId}
-                                                            value={role.roleId.toString()}
-                                                        >
-                                                            {role.name}
-                                                        </SelectItem>
-                                                    ))}
+                                                    {availableRolesToAdd.map(
+                                                        (role) => (
+                                                            <SelectItem
+                                                                key={
+                                                                    role.roleId
+                                                                }
+                                                                value={role.roleId.toString()}
+                                                            >
+                                                                {role.name}
+                                                            </SelectItem>
+                                                        )
+                                                    )}
                                                 </SelectContent>
                                             </Select>
-                                            <FormMessage />
-                                        </FormItem>
+                                        )}
+                                    </div>
+                                    {userRoles.length === 0 && (
+                                        <p className="text-sm text-muted-foreground">
+                                            {t("accessRoleSelectPlease")}
+                                        </p>
                                     )}
-                                />
+                                </FormItem>
 
                                 {user.idpAutoProvision && (
                                     <FormField
@@ -231,7 +299,9 @@ export default function AccessControlsPage() {
                                                 </FormControl>
                                                 <div className="space-y-1 leading-none">
                                                     <FormLabel>
-                                                        {t("autoProvisioned")}
+                                                        {t(
+                                                            "autoProvisioned"
+                                                        )}
                                                     </FormLabel>
                                                     <p className="text-sm text-muted-foreground">
                                                         {t(

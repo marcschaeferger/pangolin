@@ -654,6 +654,16 @@ authenticated.post(
     user.addUserRole
 );
 
+authenticated.delete(
+    "/role/:roleId/remove/:userId",
+    verifyRoleAccess,
+    verifyUserAccess,
+    verifyLimits,
+    verifyUserHasAction(ActionsEnum.removeUserRole),
+    logActionAudit(ActionsEnum.removeUserRole),
+    user.removeUserRole
+);
+
 authenticated.post(
     "/resource/:resourceId/roles",
     verifyResourceAccess,

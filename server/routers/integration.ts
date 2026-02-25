@@ -532,6 +532,16 @@ authenticated.post(
     user.addUserRole
 );
 
+authenticated.delete(
+    "/role/:roleId/remove/:userId",
+    verifyApiKeyRoleAccess,
+    verifyApiKeyUserAccess,
+    verifyLimits,
+    verifyApiKeyHasAction(ActionsEnum.removeUserRole),
+    logActionAudit(ActionsEnum.removeUserRole),
+    user.removeUserRole
+);
+
 authenticated.post(
     "/resource/:resourceId/roles",
     verifyApiKeyResourceAccess,

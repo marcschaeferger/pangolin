@@ -9,6 +9,7 @@ import {
     real,
     serial,
     text,
+    unique,
     varchar
 } from "drizzle-orm/pg-core";
 
@@ -332,9 +333,6 @@ export const userOrgs = pgTable("userOrgs", {
             onDelete: "cascade"
         })
         .notNull(),
-    roleId: integer("roleId")
-        .notNull()
-        .references(() => roles.roleId),
     isOwner: boolean("isOwner").notNull().default(false),
     autoProvisioned: boolean("autoProvisioned").default(false),
     pamUsername: varchar("pamUsername") // cleaned username for ssh and such
@@ -382,6 +380,22 @@ export const roles = pgTable("roles", {
     sshCreateHomeDir: boolean("sshCreateHomeDir").default(true),
     sshUnixGroups: text("sshUnixGroups").default("[]")
 });
+
+export const userOrgRoles = pgTable(
+    "userOrgRoles",
+    {
+        userId: varchar("userId")
+            .notNull()
+            .references(() => users.userId, { onDelete: "cascade" }),
+        orgId: varchar("orgId")
+            .notNull()
+            .references(() => orgs.orgId, { onDelete: "cascade" }),
+        roleId: integer("roleId")
+            .notNull()
+            .references(() => roles.roleId, { onDelete: "cascade" })
+    },
+    (t) => [unique().on(t.userId, t.orgId, t.roleId)]
+);
 
 export const roleActions = pgTable("roleActions", {
     roleId: integer("roleId")
@@ -1031,6 +1045,7 @@ export type RoleResource = InferSelectModel<typeof roleResources>;
 export type UserResource = InferSelectModel<typeof userResources>;
 export type UserInvite = InferSelectModel<typeof userInvites>;
 export type UserOrg = InferSelectModel<typeof userOrgs>;
+export type UserOrgRole = InferSelectModel<typeof userOrgRoles>;
 export type ResourceSession = InferSelectModel<typeof resourceSessions>;
 export type ResourcePincode = InferSelectModel<typeof resourcePincode>;
 export type ResourcePassword = InferSelectModel<typeof resourcePassword>;

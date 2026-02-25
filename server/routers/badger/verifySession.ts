@@ -3,12 +3,13 @@ import { verifyResourceAccessToken } from "@server/auth/verifyResourceAccessToke
 import {
     getResourceByDomain,
     getResourceRules,
+    getRoleName,
     getRoleResourceAccess,
-    getUserOrgRole,
     getUserResourceAccess,
     getOrgLoginPage,
     getUserSessionWithUser
 } from "@server/db/queries/verifySessionQueries";
+import { getUserOrgRoleIds } from "@server/lib/userOrgRoles";
 import {
     LoginPage,
     Org,
@@ -916,9 +917,9 @@ async function isUserAllowedToAccessResource(
         return null;
     }
 
-    const userOrgRole = await getUserOrgRole(user.userId, resource.orgId);
+    const userOrgRoleIds = await getUserOrgRoleIds(user.userId, resource.orgId);
 
-    if (!userOrgRole) {
+    if (!userOrgRoleIds.length) {
         return null;
     }
 
@@ -934,17 +935,23 @@ async function isUserAllowedToAccessResource(
         return null;
     }
 
-    const roleResourceAccess = await getRoleResourceAccess(
-        resource.resourceId,
-        userOrgRole.roleId
-    );
-
-    if (roleResourceAccess) {
+    const roleNames: string[] = [];
+    for (const roleId of userOrgRoleIds) {
+        const roleResourceAccess = await getRoleResourceAccess(
+            resource.resourceId,
+            roleId
+        );
+        if (roleResourceAccess) {
+            const roleName = await getRoleName(roleId);
+            if (roleName) roleNames.push(roleName);
+        }
+    }
+    if (roleNames.length > 0) {
         return {
             username: user.username,
             email: user.email,
             name: user.name,
-            role: userOrgRole.roleName
+            role: roleNames.join(", ")
         };
     }
 
@@ -954,11 +961,15 @@ async function isUserAllowedToAccessResource(
     );
 
     if (userResourceAccess) {
+        const names = await Promise.all(
+            userOrgRoleIds.map((id) => getRoleName(id))
+        );
+        const role = names.filter(Boolean).join(", ") || "";
         return {
             username: user.username,
             email: user.email,
             name: user.name,
-            role: userOrgRole.roleName
+            role
         };
     }
 

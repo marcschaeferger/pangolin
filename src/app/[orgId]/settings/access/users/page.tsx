@@ -88,7 +88,9 @@ export default async function UsersPage(props: UsersPageProps) {
             status: t("userConfirmed"),
             role: user.isOwner
                 ? t("accessRoleOwner")
-                : user.roleName || t("accessRoleMember"),
+                : user.roles?.length
+                  ? user.roles.map((r) => r.roleName).join(", ")
+                  : t("accessRoleMember"),
             isOwner: user.isOwner || false
         };
     });

@@ -297,7 +297,7 @@ export async function listClients(
                 .where(
                     or(
                         eq(userClients.userId, req.user!.userId),
-                        eq(roleClients.roleId, req.userOrgRoleId!)
+                        inArray(roleClients.roleId, req.userOrgRoleIds!)
                     )
                 );
         } else {

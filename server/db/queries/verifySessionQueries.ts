@@ -12,6 +12,7 @@ import {
     resources,
     roleResources,
     sessions,
+    userOrgRoles,
     userOrgs,
     userResources,
     users,
@@ -104,24 +105,57 @@ export async function getUserSessionWithUser(
 }
 
 /**
- * Get user organization role
+ * Get user organization role (single role; prefer getUserOrgRoleIds + roles for multi-role).
+ * @deprecated Use userOrgRoles table and getUserOrgRoleIds for multi-role support.
  */
 export async function getUserOrgRole(userId: string, orgId: string) {
-    const userOrgRole = await db
+    const userOrg = await db
         .select({
             userId: userOrgs.userId,
             orgId: userOrgs.orgId,
-            roleId: userOrgs.roleId,
             isOwner: userOrgs.isOwner,
-            autoProvisioned: userOrgs.autoProvisioned,
-            roleName: roles.name
+            autoProvisioned: userOrgs.autoProvisioned
         })
         .from(userOrgs)
         .where(and(eq(userOrgs.userId, userId), eq(userOrgs.orgId, orgId)))
-        .leftJoin(roles, eq(userOrgs.roleId, roles.roleId))
         .limit(1);
 
-    return userOrgRole.length > 0 ? userOrgRole[0] : null;
+    if (userOrg.length === 0) return null;
+
+    const [firstRole] = await db
+        .select({
+            roleId: userOrgRoles.roleId,
+            roleName: roles.name
+        })
+        .from(userOrgRoles)
+        .leftJoin(roles, eq(userOrgRoles.roleId, roles.roleId))
+        .where(
+            and(
+                eq(userOrgRoles.userId, userId),
+                eq(userOrgRoles.orgId, orgId)
+            )
+        )
+        .limit(1);
+
+    return firstRole
+        ? {
+              ...userOrg[0],
+              roleId: firstRole.roleId,
+              roleName: firstRole.roleName
+          }
+        : { ...userOrg[0], roleId: null, roleName: null };
+}
+
+/**
+ * Get role name by role ID (for display).
+ */
+export async function getRoleName(roleId: number): Promise<string | null> {
+    const [row] = await db
+        .select({ name: roles.name })
+        .from(roles)
+        .where(eq(roles.roleId, roleId))
+        .limit(1);
+    return row?.name ?? null;
 }
 
 /**

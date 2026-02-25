@@ -13,6 +13,7 @@ import {
     orgs,
     Role,
     roles,
+    userOrgRoles,
     userOrgs,
     users
 } from "@server/db";
@@ -570,32 +571,28 @@ export async function validateOidcCallback(
                     }
                 }
 
-                // Update roles for existing auto-provisioned orgs where the role has changed
-                const orgsToUpdate = autoProvisionedOrgs.filter(
-                    (currentOrg) => {
-                        const newOrg = userOrgInfo.find(
-                            (newOrg) => newOrg.orgId === currentOrg.orgId
-                        );
-                        return newOrg && newOrg.roleId !== currentOrg.roleId;
-                    }
-                );
-
-                if (orgsToUpdate.length > 0) {
-                    for (const org of orgsToUpdate) {
-                        const newRole = userOrgInfo.find(
-                            (newOrg) => newOrg.orgId === org.orgId
-                        );
-                        if (newRole) {
-                            await trx
-                                .update(userOrgs)
-                                .set({ roleId: newRole.roleId })
-                                .where(
-                                    and(
-                                        eq(userOrgs.userId, userId!),
-                                        eq(userOrgs.orgId, org.orgId)
-                                    )
-                                );
-                        }
+                // Ensure IDP-provided role exists for existing auto-provisioned orgs (add only; never delete other roles)
+                const userRolesInOrgs = await trx
+                    .select()
+                    .from(userOrgRoles)
+                    .where(eq(userOrgRoles.userId, userId!));
+                for (const currentOrg of autoProvisionedOrgs) {
+                    const newRole = userOrgInfo.find(
+                        (newOrg) => newOrg.orgId === currentOrg.orgId
+                    );
+                    if (!newRole) continue;
+                    const currentRolesInOrg = userRolesInOrgs.filter(
+                        (r) => r.orgId === currentOrg.orgId
+                    );
+                    const hasIdpRole = currentRolesInOrg.some(
+                        (r) => r.roleId === newRole.roleId
+                    );
+                    if (!hasIdpRole) {
+                        await trx.insert(userOrgRoles).values({
+                            userId: userId!,
+                            orgId: currentOrg.orgId,
+                            roleId: newRole.roleId
+                        });
                     }
                 }
 
@@ -619,9 +616,9 @@ export async function validateOidcCallback(
                                 {
                                     orgId: org.orgId,
                                     userId: userId!,
-                                    roleId: org.roleId,
                                     autoProvisioned: true,
                                 },
+                                org.roleId,
                                 trx
                             );
                         }

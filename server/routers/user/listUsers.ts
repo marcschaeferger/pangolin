@@ -1,11 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db, idpOidcConfig } from "@server/db";
-import { idp, roles, userOrgs, users } from "@server/db";
+import { idp, roles, userOrgRoles, userOrgs, users } from "@server/db";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
-import { and, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import logger from "@server/logger";
 import { fromZodError } from "zod-validation-error";
 import { OpenAPITags, registry } from "@server/openApi";
@@ -31,7 +31,7 @@ const listUsersSchema = z.strictObject({
 });
 
 async function queryUsers(orgId: string, limit: number, offset: number) {
-    return await db
+    const rows = await db
         .select({
             id: users.userId,
             email: users.email,
@@ -41,8 +41,6 @@ async function queryUsers(orgId: string, limit: number, offset: number) {
             username: users.username,
             name: users.name,
             type: users.type,
-            roleId: userOrgs.roleId,
-            roleName: roles.name,
             isOwner: userOrgs.isOwner,
             idpName: idp.name,
             idpId: users.idpId,
@@ -52,12 +50,39 @@ async function queryUsers(orgId: string, limit: number, offset: number) {
         })
         .from(users)
         .leftJoin(userOrgs, eq(users.userId, userOrgs.userId))
-        .leftJoin(roles, eq(userOrgs.roleId, roles.roleId))
         .leftJoin(idp, eq(users.idpId, idp.idpId))
         .leftJoin(idpOidcConfig, eq(idpOidcConfig.idpId, idp.idpId))
         .where(eq(userOrgs.orgId, orgId))
         .limit(limit)
         .offset(offset);
+
+    const roleRows = await db
+        .select({
+            userId: userOrgRoles.userId,
+            roleId: userOrgRoles.roleId,
+            roleName: roles.name
+        })
+        .from(userOrgRoles)
+        .leftJoin(roles, eq(userOrgRoles.roleId, roles.roleId))
+        .where(eq(userOrgRoles.orgId, orgId));
+
+    const rolesByUser = new Map<
+        string,
+        { roleId: number; roleName: string }[]
+    >();
+    for (const r of roleRows) {
+        const list = rolesByUser.get(r.userId) ?? [];
+        list.push({ roleId: r.roleId, roleName: r.roleName ?? "" });
+        rolesByUser.set(r.userId, list);
+    }
+
+    return rows.map((row) => {
+        const userRoles = rolesByUser.get(row.id) ?? [];
+        return {
+            ...row,
+            roles: userRoles
+        };
+    });
 }
 
 export type ListUsersResponse = {

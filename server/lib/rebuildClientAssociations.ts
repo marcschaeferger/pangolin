@@ -14,6 +14,7 @@ import {
     siteResources,
     sites,
     Transaction,
+    userOrgRoles,
     userOrgs,
     userSiteResources
 } from "@server/db";
@@ -77,10 +78,10 @@ export async function getClientSiteResourceAccess(
     // get all of the users in these roles
     const userIdsFromRoles = await trx
         .select({
-            userId: userOrgs.userId
+            userId: userOrgRoles.userId
         })
-        .from(userOrgs)
-        .where(inArray(userOrgs.roleId, roleIds))
+        .from(userOrgRoles)
+        .where(inArray(userOrgRoles.roleId, roleIds))
         .then((rows) => rows.map((row) => row.userId));
 
     const newAllUserIds = Array.from(
@@ -811,12 +812,12 @@ export async function rebuildClientAssociationsFromClient(
 
         // Role-based access
         const roleIds = await trx
-            .select({ roleId: userOrgs.roleId })
-            .from(userOrgs)
+            .select({ roleId: userOrgRoles.roleId })
+            .from(userOrgRoles)
             .where(
                 and(
-                    eq(userOrgs.userId, client.userId),
-                    eq(userOrgs.orgId, client.orgId)
+                    eq(userOrgRoles.userId, client.userId),
+                    eq(userOrgRoles.orgId, client.orgId)
                 )
             ) // this needs to be locked onto this org or else cross-org access could happen
             .then((rows) => rows.map((row) => row.roleId));

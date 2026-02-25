@@ -165,9 +165,9 @@ export async function acceptInvite(
                 org,
                 {
                     userId: existingUser[0].userId,
-                    orgId: existingInvite.orgId,
-                    roleId: existingInvite.roleId
+                    orgId: existingInvite.orgId
                 },
+                existingInvite.roleId,
                 trx
             );
 

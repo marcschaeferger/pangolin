@@ -235,7 +235,7 @@ export async function listSites(
                 .where(
                     or(
                         eq(userSites.userId, req.user!.userId),
-                        eq(roleSites.roleId, req.userOrgRoleId!)
+                        inArray(roleSites.roleId, req.userOrgRoleIds!)
                     )
                 );
         } else {

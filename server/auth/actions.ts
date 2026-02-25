@@ -1,7 +1,7 @@
 import { Request } from "express";
 import { db } from "@server/db";
-import { userActions, roleActions, userOrgs } from "@server/db";
-import { and, eq } from "drizzle-orm";
+import { userActions, roleActions } from "@server/db";
+import { and, eq, inArray } from "drizzle-orm";
 import createHttpError from "http-errors";
 import HttpCode from "@server/types/HttpCode";
 
@@ -52,6 +52,7 @@ export enum ActionsEnum {
     listRoleResources = "listRoleResources",
     // listRoleActions = "listRoleActions",
     addUserRole = "addUserRole",
+    removeUserRole = "removeUserRole",
     // addUserSite = "addUserSite",
     // addUserAction = "addUserAction",
     // removeUserAction = "removeUserAction",
@@ -153,29 +154,19 @@ export async function checkUserActionPermission(
     }
 
     try {
-        let userOrgRoleId = req.userOrgRoleId;
+        let userOrgRoleIds = req.userOrgRoleIds;
 
-        // If userOrgRoleId is not available on the request, fetch it
-        if (userOrgRoleId === undefined) {
-            const userOrgRole = await db
-                .select()
-                .from(userOrgs)
-                .where(
-                    and(
-                        eq(userOrgs.userId, userId),
-                        eq(userOrgs.orgId, req.userOrgId!)
-                    )
-                )
-                .limit(1);
-
-            if (userOrgRole.length === 0) {
+        if (userOrgRoleIds === undefined) {
+            const { getUserOrgRoleIds } = await import(
+                "@server/lib/userOrgRoles"
+            );
+            userOrgRoleIds = await getUserOrgRoleIds(userId, req.userOrgId!);
+            if (userOrgRoleIds.length === 0) {
                 throw createHttpError(
                     HttpCode.FORBIDDEN,
                     "User does not have access to this organization"
                 );
             }
-
-            userOrgRoleId = userOrgRole[0].roleId;
         }
 
         // Check if the user has direct permission for the action in the current org
@@ -186,7 +177,7 @@ export async function checkUserActionPermission(
                 and(
                     eq(userActions.userId, userId),
                     eq(userActions.actionId, actionId),
-                    eq(userActions.orgId, req.userOrgId!) // TODO: we cant pass the org id if we are not checking the org
+                    eq(userActions.orgId, req.userOrgId!)
                 )
             )
             .limit(1);
@@ -195,14 +186,14 @@ export async function checkUserActionPermission(
             return true;
         }
 
-        // If no direct permission, check role-based permission
+        // If no direct permission, check role-based permission (any of user's roles)
         const roleActionPermission = await db
             .select()
             .from(roleActions)
             .where(
                 and(
                     eq(roleActions.actionId, actionId),
-                    eq(roleActions.roleId, userOrgRoleId!),
+                    inArray(roleActions.roleId, userOrgRoleIds),
                     eq(roleActions.orgId, req.userOrgId!)
                 )
             )

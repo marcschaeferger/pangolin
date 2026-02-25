@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "@server/db";
-import { roles, userOrgs } from "@server/db";
+import { roles, userOrgRoles } from "@server/db";
 import { eq } from "drizzle-orm";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
@@ -114,11 +114,11 @@ export async function deleteRole(
         }
 
         await db.transaction(async (trx) => {
-            // move all users from the userOrgs table with roleId to newRoleId
+            // move all users from userOrgRoles with roleId to newRoleId
             await trx
-                .update(userOrgs)
+                .update(userOrgRoles)
                 .set({ roleId: newRoleId })
-                .where(eq(userOrgs.roleId, roleId));
+                .where(eq(userOrgRoles.roleId, roleId));
 
             // delete the old role
             await trx.delete(roles).where(eq(roles.roleId, roleId));

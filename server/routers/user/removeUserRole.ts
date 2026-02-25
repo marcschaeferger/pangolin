@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { clients, db } from "@server/db";
-import { userOrgRoles, userOrgs, roles } from "@server/db";
+import { db } from "@server/db";
+import { userOrgRoles, userOrgs, roles, clients } from "@server/db";
 import { eq, and } from "drizzle-orm";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
@@ -12,31 +12,29 @@ import stoi from "@server/lib/stoi";
 import { OpenAPITags, registry } from "@server/openApi";
 import { rebuildClientAssociationsFromClient } from "@server/lib/rebuildClientAssociations";
 
-const addUserRoleParamsSchema = z.strictObject({
+const removeUserRoleParamsSchema = z.strictObject({
     userId: z.string(),
     roleId: z.string().transform(stoi).pipe(z.number())
 });
 
-export type AddUserRoleResponse = z.infer<typeof addUserRoleParamsSchema>;
-
 registry.registerPath({
-    method: "post",
-    path: "/role/{roleId}/add/{userId}",
-    description: "Add a role to a user.",
+    method: "delete",
+    path: "/role/{roleId}/remove/{userId}",
+    description: "Remove a role from a user. User must have at least one role left in the org.",
     tags: [OpenAPITags.Role, OpenAPITags.User],
     request: {
-        params: addUserRoleParamsSchema
+        params: removeUserRoleParamsSchema
     },
     responses: {}
 });
 
-export async function addUserRole(
+export async function removeUserRole(
     req: Request,
     res: Response,
     next: NextFunction
 ): Promise<any> {
     try {
-        const parsedParams = addUserRoleParamsSchema.safeParse(req.params);
+        const parsedParams = removeUserRoleParamsSchema.safeParse(req.params);
         if (!parsedParams.success) {
             return next(
                 createHttpError(
@@ -57,7 +55,6 @@ export async function addUserRole(
             );
         }
 
-        // get the role
         const [role] = await db
             .select()
             .from(roles)
@@ -70,7 +67,7 @@ export async function addUserRole(
             );
         }
 
-        const existingUser = await db
+        const [existingUser] = await db
             .select()
             .from(userOrgs)
             .where(
@@ -78,7 +75,7 @@ export async function addUserRole(
             )
             .limit(1);
 
-        if (existingUser.length === 0) {
+        if (!existingUser) {
             return next(
                 createHttpError(
                     HttpCode.NOT_FOUND,
@@ -87,46 +84,47 @@ export async function addUserRole(
             );
         }
 
-        if (existingUser[0].isOwner) {
+        if (existingUser.isOwner) {
             return next(
                 createHttpError(
                     HttpCode.FORBIDDEN,
-                    "Cannot change the role of the owner of the organization"
+                    "Cannot change the roles of the owner of the organization"
                 )
             );
         }
 
-        const roleExists = await db
-            .select()
-            .from(roles)
-            .where(and(eq(roles.roleId, roleId), eq(roles.orgId, role.orgId)))
-            .limit(1);
-
-        if (roleExists.length === 0) {
-            return next(
-                createHttpError(
-                    HttpCode.NOT_FOUND,
-                    "Role not found or does not belong to the specified organization"
+        const remainingRoles = await db
+            .select({ roleId: userOrgRoles.roleId })
+            .from(userOrgRoles)
+            .where(
+                and(
+                    eq(userOrgRoles.userId, userId),
+                    eq(userOrgRoles.orgId, role.orgId)
                 )
             );
-        }
 
-        let newUserRole: { userId: string; orgId: string; roleId: number } | null =
-            null;
-        await db.transaction(async (trx) => {
-            const inserted = await trx
-                .insert(userOrgRoles)
-                .values({
-                    userId,
-                    orgId: role.orgId,
-                    roleId
-                })
-                .onConflictDoNothing()
-                .returning();
-
-            if (inserted.length > 0) {
-                newUserRole = inserted[0];
+        if (remainingRoles.length <= 1) {
+            const hasThisRole = remainingRoles.some((r) => r.roleId === roleId);
+            if (hasThisRole) {
+                return next(
+                    createHttpError(
+                        HttpCode.FORBIDDEN,
+                        "User must have at least one role in the organization. Remove the last role is not allowed."
+                    )
+                );
             }
+        }
+
+        await db.transaction(async (trx) => {
+            await trx
+                .delete(userOrgRoles)
+                .where(
+                    and(
+                        eq(userOrgRoles.userId, userId),
+                        eq(userOrgRoles.orgId, role.orgId),
+                        eq(userOrgRoles.roleId, roleId)
+                    )
+                );
 
             const orgClients = await trx
                 .select()
@@ -144,10 +142,10 @@ export async function addUserRole(
         });
 
         return response(res, {
-            data: newUserRole ?? { userId, orgId: role.orgId, roleId },
+            data: { userId, orgId: role.orgId, roleId },
             success: true,
             error: false,
-            message: "Role added to user successfully",
+            message: "Role removed from user successfully",
             status: HttpCode.OK
         });
     } catch (error) {
