@@ -69,14 +69,14 @@ export function LayoutMobileMenu({
                                     <SheetDescription className="sr-only">
                                         {t("navbarDescription")}
                                     </SheetDescription>
+                                    <div className="px-1 shrink-0">
+                                        <OrgSelector
+                                            orgId={orgId}
+                                            orgs={orgs}
+                                        />
+                                    </div>
+                                    <div className="w-full border-b border-border" />
                                     <div className="flex-1 overflow-y-auto relative">
-                                        <div className="px-1">
-                                            <OrgSelector
-                                                orgId={orgId}
-                                                orgs={orgs}
-                                            />
-                                        </div>
-                                        <div className="w-full border-b border-border" />
                                         <div className="px-3 pt-3">
                                             {!isAdminPage &&
                                                 user.serverAdmin && (
