@@ -292,7 +292,7 @@ export async function createSite(
             if (type == "newt") {
                 [newSite] = await trx
                     .insert(sites)
-                    .values({
+                    .values({ // NOTE: NO SUBNET OR EXIT NODE ID PASSED IN HERE BECAUSE ITS NOW CHOSEN ON CONNECT
                         orgId,
                         name,
                         niceId,
