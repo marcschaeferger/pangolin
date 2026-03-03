@@ -136,7 +136,7 @@ registry.registerPath({
     method: "post",
     path: "/resource/{resourceId}",
     description: "Update a resource.",
-    tags: [OpenAPITags.Resource],
+    tags: [OpenAPITags.PublicResource],
     request: {
         params: updateResourceParamsSchema,
         body: {
