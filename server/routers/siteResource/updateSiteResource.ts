@@ -618,8 +618,8 @@ export async function handleMessagingForUpdatedSiteResource(
             );
 
             await updateTargets(newt.newtId, {
-                oldTargets: [oldTarget],
-                newTargets: [newTarget]
+                oldTargets: oldTarget ? [oldTarget] : [],
+                newTargets: newTarget ? [newTarget] : []
             });
         }
 
