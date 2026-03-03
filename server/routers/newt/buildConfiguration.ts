@@ -1,9 +1,23 @@
-import { clients, clientSiteResourcesAssociationsCache, clientSitesAssociationsCache, db, ExitNode, resources, Site, siteResources, targetHealthCheck, targets } from "@server/db";
+import {
+    clients,
+    clientSiteResourcesAssociationsCache,
+    clientSitesAssociationsCache,
+    db,
+    ExitNode,
+    resources,
+    Site,
+    siteResources,
+    targetHealthCheck,
+    targets
+} from "@server/db";
 import logger from "@server/logger";
 import { initPeerAddHandshake, updatePeer } from "../olm/peers";
 import { eq, and } from "drizzle-orm";
 import config from "@server/lib/config";
-import { generateSubnetProxyTargets, SubnetProxyTarget } from "@server/lib/ip";
+import {
+    generateSubnetProxyTargetV2,
+    SubnetProxyTargetV2
+} from "@server/lib/ip";
 
 export async function buildClientConfigurationForNewtClient(
     site: Site,
@@ -126,7 +140,7 @@ export async function buildClientConfigurationForNewtClient(
         .from(siteResources)
         .where(eq(siteResources.siteId, siteId));
 
-    const targetsToSend: SubnetProxyTarget[] = [];
+    const targetsToSend: SubnetProxyTargetV2[] = [];
 
     for (const resource of allSiteResources) {
         // Get clients associated with this specific resource
@@ -151,12 +165,14 @@ export async function buildClientConfigurationForNewtClient(
                 )
             );
 
-        const resourceTargets = generateSubnetProxyTargets(
+        const resourceTarget = generateSubnetProxyTargetV2(
             resource,
             resourceClients
         );
 
-        targetsToSend.push(...resourceTargets);
+        if (resourceTarget) {
+            targetsToSend.push(resourceTarget);
+        }
     }
 
     return {
