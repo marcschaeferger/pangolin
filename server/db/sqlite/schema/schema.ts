@@ -314,6 +314,9 @@ export const users = sqliteTable("user", {
     dateCreated: text("dateCreated").notNull(),
     termsAcceptedTimestamp: text("termsAcceptedTimestamp"),
     termsVersion: text("termsVersion"),
+    marketingEmailConsent: integer("marketingEmailConsent", {
+        mode: "boolean"
+    }).default(false),
     serverAdmin: integer("serverAdmin", { mode: "boolean" })
         .notNull()
         .default(false),
