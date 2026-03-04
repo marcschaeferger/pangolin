@@ -175,6 +175,7 @@
     "resourceHTTPDescription": "Проксировать запросы через HTTPS с использованием полного доменного имени.",
     "resourceRaw": "Сырой TCP/UDP-ресурс",
     "resourceRawDescription": "Проксировать запросы по сырому TCP/UDP с использованием номера порта.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. REQUIRES THE USE OF A REMOTE NODE.",
     "resourceCreate": "Создание ресурса",
     "resourceCreateDescription": "Следуйте инструкциям ниже для создания нового ресурса",
     "resourceSeeAll": "Посмотреть все ресурсы",
