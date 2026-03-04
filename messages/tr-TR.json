@@ -175,6 +175,7 @@
     "resourceHTTPDescription": "Tam nitelikli bir etki alanı adı kullanarak HTTPS üzerinden proxy isteklerini yönlendirin.",
     "resourceRaw": "Ham TCP/UDP Kaynağı",
     "resourceRawDescription": "Port numarası kullanarak ham TCP/UDP üzerinden proxy isteklerini yönlendirin.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. REQUIRES THE USE OF A REMOTE NODE.",
     "resourceCreate": "Kaynak Oluştur",
     "resourceCreateDescription": "Yeni bir kaynak oluşturmak için aşağıdaki adımları izleyin",
     "resourceSeeAll": "Tüm Kaynakları Gör",
