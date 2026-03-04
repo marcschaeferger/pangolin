@@ -175,6 +175,7 @@
     "resourceHTTPDescription": "Proxy les demandes sur HTTPS en utilisant un nom de domaine entièrement qualifié.",
     "resourceRaw": "Ressource TCP/UDP brute",
     "resourceRawDescription": "Proxy les demandes sur TCP/UDP brut en utilisant un numéro de port.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. REQUIRES THE USE OF A REMOTE NODE.",
     "resourceCreate": "Créer une ressource",
     "resourceCreateDescription": "Suivez les étapes ci-dessous pour créer une nouvelle ressource",
     "resourceSeeAll": "Voir toutes les ressources",
