@@ -175,6 +175,7 @@
     "resourceHTTPDescription": "완전한 도메인 이름을 사용해 RAW 또는 HTTPS로 프록시 요청을 수행합니다.",
     "resourceRaw": "원시 TCP/UDP 리소스",
     "resourceRawDescription": "포트 번호를 사용하여 RAW TCP/UDP로 요청을 프록시합니다.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. REQUIRES THE USE OF A REMOTE NODE.",
     "resourceCreate": "리소스 생성",
     "resourceCreateDescription": "아래 단계를 따라 새 리소스를 생성하세요.",
     "resourceSeeAll": "모든 리소스 보기",
