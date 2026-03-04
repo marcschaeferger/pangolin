@@ -175,6 +175,7 @@
     "resourceHTTPDescription": "通过使用完全限定的域名的HTTPS代理请求。",
     "resourceRaw": "TCP/UDP 资源",
     "resourceRawDescription": "通过使用端口号的原始TCP/UDP代理请求。",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. REQUIRES THE USE OF A REMOTE NODE.",
     "resourceCreate": "创建资源",
     "resourceCreateDescription": "按照下面的步骤创建新资源",
     "resourceSeeAll": "查看所有资源",
