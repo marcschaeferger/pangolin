@@ -175,6 +175,7 @@
     "resourceHTTPDescription": "Proxy požadavky přes HTTPS pomocí plně kvalifikovaného názvu domény.",
     "resourceRaw": "Surový TCP/UDP zdroj",
     "resourceRawDescription": "Proxy požadavky přes nezpracovaný TCP/UDP pomocí čísla portu.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. REQUIRES THE USE OF A REMOTE NODE.",
     "resourceCreate": "Vytvořit zdroj",
     "resourceCreateDescription": "Postupujte podle níže uvedených kroků, abyste vytvořili a připojili nový zdroj",
     "resourceSeeAll": "Zobrazit všechny zdroje",
