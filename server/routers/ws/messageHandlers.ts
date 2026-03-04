@@ -15,7 +15,8 @@ import {
     startOlmOfflineChecker,
     handleOlmServerPeerAddMessage,
     handleOlmUnRelayMessage,
-    handleOlmDisconnecingMessage
+    handleOlmDisconnecingMessage,
+    handleOlmServerInitAddPeerHandshake
 } from "../olm";
 import { handleHealthcheckStatusMessage } from "../target";
 import { handleRoundTripMessage } from "./handleRoundTripMessage";
@@ -23,6 +24,7 @@ import { MessageHandler } from "./types";
 
 export const messageHandlers: Record<string, MessageHandler> = {
     "olm/wg/server/peer/add": handleOlmServerPeerAddMessage,
+    "olm/wg/server/peer/init": handleOlmServerInitAddPeerHandshake,
     "olm/wg/register": handleOlmRegisterMessage,
     "olm/wg/relay": handleOlmRelayMessage,
     "olm/wg/unrelay": handleOlmUnRelayMessage,

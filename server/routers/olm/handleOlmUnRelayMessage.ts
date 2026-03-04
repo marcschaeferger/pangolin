@@ -17,7 +17,7 @@ export const handleOlmUnRelayMessage: MessageHandler = async (context) => {
     }
 
     if (!olm.clientId) {
-        logger.warn("Olm has no site!"); // TODO: Maybe we create the site here?
+        logger.warn("Olm has no client!");
         return;
     }
 

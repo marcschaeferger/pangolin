@@ -265,12 +265,14 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         return;
     }
 
-    // NOTE: its important that the client here is the old client and the public key is the new key
-    const siteConfigurations = await buildSiteConfigurationForOlmClient(
-        client,
-        publicKey,
-        relay
-    );
+    // // NOTE: its important that the client here is the old client and the public key is the new key
+    // const siteConfigurations = await buildSiteConfigurationForOlmClient(
+    //     client,
+    //     publicKey,
+    //     relay
+    // );
+
+    const siteConfigurations: any = [];
 
     // REMOVED THIS SO IT CREATES THE INTERFACE AND JUST WAITS FOR THE SITES
     // if (siteConfigurations.length === 0) {
