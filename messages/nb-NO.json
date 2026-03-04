@@ -175,6 +175,7 @@
     "resourceHTTPDescription": "Proxy forespørsler over HTTPS ved å bruke et fullstendig kvalifisert domenenavn.",
     "resourceRaw": "Rå TCP/UDP-ressurs",
     "resourceRawDescription": "Proxy forespørsler over rå TCP/UDP ved å bruke et portnummer.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. REQUIRES THE USE OF A REMOTE NODE.",
     "resourceCreate": "Opprett ressurs",
     "resourceCreateDescription": "Følg trinnene nedenfor for å opprette en ny ressurs",
     "resourceSeeAll": "Se alle ressurser",
