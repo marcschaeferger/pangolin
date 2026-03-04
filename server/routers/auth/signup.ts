@@ -189,6 +189,7 @@ export async function signup(
             dateCreated: moment().toISOString(),
             termsAcceptedTimestamp: termsAcceptedTimestamp || null,
             termsVersion: "1",
+            marketingEmailConsent: marketingEmailConsent ?? false,
             lastPasswordChange: new Date().getTime()
         });
 
