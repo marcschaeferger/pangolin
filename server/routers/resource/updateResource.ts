@@ -354,7 +354,7 @@ async function updateHttpResource(
             }
 
             // Prevent updating resource with same domain as dashboard
-            const dashboardUrl = process.env.DASHBOARD_URL;
+            const dashboardUrl = config.getRawConfig().app.dashboard_url;
             if (dashboardUrl) {
                 const dashboardHost = new URL(dashboardUrl).hostname;
                 if (fullDomain === dashboardHost) {
