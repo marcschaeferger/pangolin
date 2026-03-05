@@ -283,6 +283,7 @@ export const users = pgTable("user", {
     dateCreated: varchar("dateCreated").notNull(),
     termsAcceptedTimestamp: varchar("termsAcceptedTimestamp"),
     termsVersion: varchar("termsVersion"),
+    marketingEmailConsent: boolean("marketingEmailConsent").default(false),
     serverAdmin: boolean("serverAdmin").notNull().default(false),
     lastPasswordChange: bigint("lastPasswordChange", { mode: "number" })
 });
