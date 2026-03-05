@@ -76,7 +76,7 @@ const processMessage = async (
             clientId,
             message.type, // Pass message type for granular limiting
             100, // max requests per window
-            20, // max requests per message type per window
+            100, // max requests per message type per window
             60 * 1000 // window in milliseconds
         );
         if (rateLimitResult.isLimited) {

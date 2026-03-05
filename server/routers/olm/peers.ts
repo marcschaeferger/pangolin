@@ -149,7 +149,8 @@ export async function initPeerAddHandshake(
             endpoint: string;
         };
     },
-    olmId?: string
+    olmId?: string,
+    chainId?: string,
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -173,7 +174,8 @@ export async function initPeerAddHandshake(
                     publicKey: peer.exitNode.publicKey,
                     relayPort: config.getRawConfig().gerbil.clients_start_port,
                     endpoint: peer.exitNode.endpoint
-                }
+                },
+                chainId,
             }
         },
         { incrementConfigVersion: true }

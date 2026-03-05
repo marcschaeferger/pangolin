@@ -1,4 +1,6 @@
 import {
+    clientSiteResourcesAssociationsCache,
+    clientSitesAssociationsCache,
     db,
     exitNodes,
     Site,
@@ -40,7 +42,7 @@ export const handleOlmServerInitAddPeerHandshake: MessageHandler = async (
         return;
     }
 
-    const { siteId, resourceId } = message.data;
+    const { siteId, resourceId, chainId } = message.data;
 
     let site: Site | null = null;
     if (siteId) {
@@ -71,6 +73,19 @@ export const handleOlmServerInitAddPeerHandshake: MessageHandler = async (
 
         if (!resources || resources.length === 0) {
             logger.error(`handleOlmServerPeerAddMessage: Resource not found`);
+            // cancel the request from the olm side to not keep doing this
+            await sendToClient(
+                olm.olmId,
+                {
+                    type: "olm/wg/peer/chain/cancel",
+                    data: {
+                        chainId
+                    }
+                },
+                { incrementConfigVersion: false }
+            ).catch((error) => {
+                logger.warn(`Error sending message:`, error);
+            });
             return;
         }
 
@@ -81,7 +96,46 @@ export const handleOlmServerInitAddPeerHandshake: MessageHandler = async (
             );
             return;
         }
-        const siteIdFromResource = resources[0].siteId;
+
+        const resource = resources[0];
+
+        const currentResourceAssociationCaches = await db
+            .select()
+            .from(clientSiteResourcesAssociationsCache)
+            .where(
+                and(
+                    eq(
+                        clientSiteResourcesAssociationsCache.siteResourceId,
+                        resource.siteResourceId
+                    ),
+                    eq(
+                        clientSiteResourcesAssociationsCache.clientId,
+                        client.clientId
+                    )
+                )
+            );
+
+        if (currentResourceAssociationCaches.length === 0) {
+            logger.error(
+                `handleOlmServerPeerAddMessage: Client ${client.clientId} does not have access to resource ${resource.siteResourceId}`
+            );
+            // cancel the request from the olm side to not keep doing this
+            await sendToClient(
+                olm.olmId,
+                {
+                    type: "olm/wg/peer/chain/cancel",
+                    data: {
+                        chainId
+                    }
+                },
+                { incrementConfigVersion: false }
+            ).catch((error) => {
+                logger.warn(`Error sending message:`, error);
+            });
+            return;
+        }
+
+        const siteIdFromResource = resource.siteId;
 
         // get the site
         const [siteRes] = await db
@@ -103,10 +157,54 @@ export const handleOlmServerInitAddPeerHandshake: MessageHandler = async (
         return;
     }
 
+    // check if the client can access this site using the cache
+    const currentSiteAssociationCaches = await db
+        .select()
+        .from(clientSitesAssociationsCache)
+        .where(
+            and(
+                eq(clientSitesAssociationsCache.clientId, client.clientId),
+                eq(clientSitesAssociationsCache.siteId, site.siteId)
+            )
+        );
+
+    if (currentSiteAssociationCaches.length === 0) {
+        logger.error(
+            `handleOlmServerPeerAddMessage: Client ${client.clientId} does not have access to site ${site.siteId}`
+        );
+        // cancel the request from the olm side to not keep doing this
+        await sendToClient(
+            olm.olmId,
+            {
+                type: "olm/wg/peer/chain/cancel",
+                data: {
+                    chainId
+                }
+            },
+            { incrementConfigVersion: false }
+        ).catch((error) => {
+            logger.warn(`Error sending message:`, error);
+        });
+        return;
+    }
+
     if (!site.exitNodeId) {
         logger.error(
             `handleOlmServerPeerAddMessage: Site with ID ${site.siteId} has no exit node`
         );
+        // cancel the request from the olm side to not keep doing this
+        await sendToClient(
+            olm.olmId,
+            {
+                type: "olm/wg/peer/chain/cancel",
+                data: {
+                    chainId
+                }
+            },
+            { incrementConfigVersion: false }
+        ).catch((error) => {
+            logger.warn(`Error sending message:`, error);
+        });
         return;
     }
 
@@ -135,7 +233,8 @@ export const handleOlmServerInitAddPeerHandshake: MessageHandler = async (
                 endpoint: exitNode.endpoint
             }
         },
-        olm.olmId
+        olm.olmId,
+        chainId
     );
 
     return;
