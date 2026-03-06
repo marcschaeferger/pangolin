@@ -17,6 +17,8 @@ import { getUserDeviceName } from "@server/db/names";
 import { buildSiteConfigurationForOlmClient } from "./buildConfiguration";
 import { OlmErrorCodes, sendOlmError } from "./error";
 import { handleFingerprintInsertion } from "./fingerprintingUtils";
+import { Alias } from "@server/lib/ip";
+import { build } from "@server/build";
 
 export const handleOlmRegisterMessage: MessageHandler = async (context) => {
     logger.info("Handling register olm message!");
@@ -265,20 +267,26 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         return;
     }
 
-    // // NOTE: its important that the client here is the old client and the public key is the new key
-    // const siteConfigurations = await buildSiteConfigurationForOlmClient(
-    //     client,
-    //     publicKey,
-    //     relay
-    // );
+    let siteConfigurations: {
+        siteId: number;
+        name: string;
+        endpoint: string;
+        publicKey: string | null;
+        serverIP: string | null;
+        serverPort: number | null;
+        remoteSubnets: string[];
+        aliases: Alias[];
+    }[] = [];
 
-    const siteConfigurations: any = [];
-
-    // REMOVED THIS SO IT CREATES THE INTERFACE AND JUST WAITS FOR THE SITES
-    // if (siteConfigurations.length === 0) {
-    //     logger.warn("No valid site configurations found");
-    //     return;
-    // }
+    // If we have too many sites we need to drop into fully JIT mode by not sending any of the sites
+    if (sitesCount <= 250 && build == "saas") { // THIS IS THE MAX ON THE BUSINESS TIER
+        // NOTE: its important that the client here is the old client and the public key is the new key
+        siteConfigurations = await buildSiteConfigurationForOlmClient(
+            client,
+            publicKey,
+            relay
+        );
+    }
 
     // Return connect message with all site configurations
     return {
