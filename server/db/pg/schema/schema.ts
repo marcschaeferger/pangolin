@@ -720,6 +720,7 @@ export const clientSitesAssociationsCache = pgTable(
             .notNull(),
         siteId: integer("siteId").notNull(),
         isRelayed: boolean("isRelayed").notNull().default(false),
+        isJitMode: boolean("isJitMode").notNull().default(false),
         endpoint: varchar("endpoint"),
         publicKey: varchar("publicKey") // this will act as the session's public key for hole punching so we can track when it changes
     }

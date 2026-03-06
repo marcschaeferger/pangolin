@@ -409,6 +409,9 @@ export const clientSitesAssociationsCache = sqliteTable(
         isRelayed: integer("isRelayed", { mode: "boolean" })
             .notNull()
             .default(false),
+        isJitMode: integer("isJitMode", { mode: "boolean" })
+            .notNull()
+            .default(false),
         endpoint: text("endpoint"),
         publicKey: text("publicKey") // this will act as the session's public key for hole punching so we can track when it changes
     }

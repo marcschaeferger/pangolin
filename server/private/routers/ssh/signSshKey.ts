@@ -63,6 +63,7 @@ export type SignSshKeyResponse = {
     sshUsername: string;
     sshHost: string;
     resourceId: number;
+    siteId: number;
     keyId: string;
     validPrincipals: string[];
     validAfter: string;
@@ -452,6 +453,7 @@ export async function signSshKey(
                 sshUsername: usernameToUse,
                 sshHost: sshHost,
                 resourceId: resource.siteResourceId,
+                siteId: resource.siteId,
                 keyId: cert.keyId,
                 validPrincipals: cert.validPrincipals,
                 validAfter: cert.validAfter.toISOString(),

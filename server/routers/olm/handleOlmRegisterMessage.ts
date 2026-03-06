@@ -209,6 +209,32 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         }
     }
 
+    // Get all sites data
+    const sitesCountResult = await db
+        .select({ count: count() })
+        .from(sites)
+        .innerJoin(
+            clientSitesAssociationsCache,
+            eq(sites.siteId, clientSitesAssociationsCache.siteId)
+        )
+        .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
+
+    // Extract the count value from the result array
+    const sitesCount =
+        sitesCountResult.length > 0 ? sitesCountResult[0].count : 0;
+
+    // Prepare an array to store site configurations
+    logger.debug(`Found ${sitesCount} sites for client ${client.clientId}`);
+
+    let jitMode = false;
+    if (sitesCount > 250 && build == "saas") {
+        // THIS IS THE MAX ON THE BUSINESS TIER
+        // we have too many sites
+        // If we have too many sites we need to drop into fully JIT mode by not sending any of the sites
+        logger.info("Too many sites (%d), dropping into JIT mode", sitesCount)
+        jitMode = true;
+    }
+
     logger.debug(
         `Olm client ID: ${client.clientId}, Public Key: ${publicKey}, Relay: ${relay}`
     );
@@ -235,27 +261,11 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         await db
             .update(clientSitesAssociationsCache)
             .set({
-                isRelayed: relay == true
+                isRelayed: relay == true,
+                isJitMode: jitMode
             })
             .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
     }
-
-    // Get all sites data
-    const sitesCountResult = await db
-        .select({ count: count() })
-        .from(sites)
-        .innerJoin(
-            clientSitesAssociationsCache,
-            eq(sites.siteId, clientSitesAssociationsCache.siteId)
-        )
-        .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
-
-    // Extract the count value from the result array
-    const sitesCount =
-        sitesCountResult.length > 0 ? sitesCountResult[0].count : 0;
-
-    // Prepare an array to store site configurations
-    logger.debug(`Found ${sitesCount} sites for client ${client.clientId}`);
 
     // this prevents us from accepting a register from an olm that has not hole punched yet.
     // the olm will pump the register so we can keep checking
@@ -278,8 +288,7 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         aliases: Alias[];
     }[] = [];
 
-    // If we have too many sites we need to drop into fully JIT mode by not sending any of the sites
-    if (sitesCount <= 250 && build == "saas") { // THIS IS THE MAX ON THE BUSINESS TIER
+    if (!jitMode) {
         // NOTE: its important that the client here is the old client and the public key is the new key
         siteConfigurations = await buildSiteConfigurationForOlmClient(
             client,

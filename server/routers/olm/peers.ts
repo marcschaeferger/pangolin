@@ -1,8 +1,8 @@
 import { sendToClient } from "#dynamic/routers/ws";
-import { db, olms } from "@server/db";
+import { clientSitesAssociationsCache, db, olms } from "@server/db";
 import config from "@server/lib/config";
 import logger from "@server/logger";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Alias } from "yaml";
 
 export async function addPeer(
@@ -150,7 +150,7 @@ export async function initPeerAddHandshake(
         };
     },
     olmId?: string,
-    chainId?: string,
+    chainId?: string
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -175,13 +175,24 @@ export async function initPeerAddHandshake(
                     relayPort: config.getRawConfig().gerbil.clients_start_port,
                     endpoint: peer.exitNode.endpoint
                 },
-                chainId,
+                chainId
             }
         },
         { incrementConfigVersion: true }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
+
+    // update the clientSiteAssociationsCache to make the isJitMode flag false so that JIT mode is disabled for this site if it restarts or something after the connection
+    await db
+        .update(clientSitesAssociationsCache)
+        .set({ isJitMode: false })
+        .where(
+            and(
+                eq(clientSitesAssociationsCache.clientId, clientId),
+                eq(clientSitesAssociationsCache.siteId, peer.siteId)
+            )
+        );
 
     logger.info(
         `Initiated peer add handshake for site ${peer.siteId} to olm ${olmId}`
