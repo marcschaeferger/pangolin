@@ -80,7 +80,7 @@
         "d3": "7.9.0",
         "drizzle-orm": "0.45.1",
         "express": "5.2.1",
-        "express-rate-limit": "8.2.1",
+        "express-rate-limit": "8.2.2",
         "glob": "13.0.6",
         "helmet": "8.1.0",
         "http-errors": "2.0.1",
