@@ -21,13 +21,13 @@ class TelemetryClient {
         this.enabled = enabled;
         const dev = process.env.ENVIRONMENT !== "prod";
 
-        if (dev) {
-            return;
-        }
+        // if (dev) {
+        //     return;
+        // }
 
-        if (build === "saas") {
-            return;
-        }
+        // if (build === "saas") {
+        //     return;
+        // }
 
         if (this.enabled) {
             this.client = new PostHog(

@@ -1,5 +1,17 @@
-import { Client, clientSiteResourcesAssociationsCache, clientSitesAssociationsCache, db, exitNodes, siteResources, sites } from "@server/db";
-import { generateAliasConfig, generateRemoteSubnets } from "@server/lib/ip";
+import {
+    Client,
+    clientSiteResourcesAssociationsCache,
+    clientSitesAssociationsCache,
+    db,
+    exitNodes,
+    siteResources,
+    sites
+} from "@server/db";
+import {
+    Alias,
+    generateAliasConfig,
+    generateRemoteSubnets
+} from "@server/lib/ip";
 import logger from "@server/logger";
 import { and, eq } from "drizzle-orm";
 import { addPeer, deletePeer } from "../newt/peers";
@@ -8,9 +20,19 @@ import config from "@server/lib/config";
 export async function buildSiteConfigurationForOlmClient(
     client: Client,
     publicKey: string | null,
-    relay: boolean
+    relay: boolean,
+    jitMode: boolean = false
 ) {
-    const siteConfigurations = [];
+    const siteConfigurations: {
+        siteId: number;
+        name: string | null;
+        endpoint: string | null;
+        publicKey: string | null;
+        serverIP: string | null;
+        serverPort: number | null;
+        remoteSubnets: string[];
+        aliases: Alias[];
+    }[] = [];
 
     // Get all sites data
     const sitesData = await db
@@ -27,6 +49,46 @@ export async function buildSiteConfigurationForOlmClient(
         sites: site,
         clientSitesAssociationsCache: association
     } of sitesData) {
+        const allSiteResources = await db // only get the site resources that this client has access to
+            .select()
+            .from(siteResources)
+            .innerJoin(
+                clientSiteResourcesAssociationsCache,
+                eq(
+                    siteResources.siteResourceId,
+                    clientSiteResourcesAssociationsCache.siteResourceId
+                )
+            )
+            .where(
+                and(
+                    eq(siteResources.siteId, site.siteId),
+                    eq(
+                        clientSiteResourcesAssociationsCache.clientId,
+                        client.clientId
+                    )
+                )
+            );
+
+        if (jitMode) {
+            // Add site configuration to the array
+            siteConfigurations.push({
+                siteId: site.siteId,
+                name: null, // this is just to sync the aliases
+                endpoint: null,
+                publicKey: null,
+                serverIP: null,
+                serverPort: null,
+                // remoteSubnets: generateRemoteSubnets(
+                //     allSiteResources.map(({ siteResources }) => siteResources)
+                // ),
+                remoteSubnets: [],
+                aliases: generateAliasConfig(
+                    allSiteResources.map(({ siteResources }) => siteResources)
+                )
+            });
+            continue;
+        }
+
         if (!site.exitNodeId) {
             logger.warn(
                 `Site ${site.siteId} does not have exit node, skipping`
@@ -102,26 +164,6 @@ export async function buildSiteConfigurationForOlmClient(
             }
             relayEndpoint = `${exitNode.endpoint}:${config.getRawConfig().gerbil.clients_start_port}`;
         }
-
-        const allSiteResources = await db // only get the site resources that this client has access to
-            .select()
-            .from(siteResources)
-            .innerJoin(
-                clientSiteResourcesAssociationsCache,
-                eq(
-                    siteResources.siteResourceId,
-                    clientSiteResourcesAssociationsCache.siteResourceId
-                )
-            )
-            .where(
-                and(
-                    eq(siteResources.siteId, site.siteId),
-                    eq(
-                        clientSiteResourcesAssociationsCache.clientId,
-                        client.clientId
-                    )
-                )
-            );
 
         // Add site configuration to the array
         siteConfigurations.push({

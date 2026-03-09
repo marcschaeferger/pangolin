@@ -226,12 +226,12 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
     // Prepare an array to store site configurations
     logger.debug(`Found ${sitesCount} sites for client ${client.clientId}`);
 
-    let jitMode = false;
+    let jitMode = true;
     if (sitesCount > 250 && build == "saas") {
         // THIS IS THE MAX ON THE BUSINESS TIER
         // we have too many sites
         // If we have too many sites we need to drop into fully JIT mode by not sending any of the sites
-        logger.info("Too many sites (%d), dropping into JIT mode", sitesCount)
+        logger.info("Too many sites (%d), dropping into JIT mode", sitesCount);
         jitMode = true;
     }
 
@@ -277,25 +277,13 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         return;
     }
 
-    let siteConfigurations: {
-        siteId: number;
-        name: string;
-        endpoint: string;
-        publicKey: string | null;
-        serverIP: string | null;
-        serverPort: number | null;
-        remoteSubnets: string[];
-        aliases: Alias[];
-    }[] = [];
-
-    if (!jitMode) {
-        // NOTE: its important that the client here is the old client and the public key is the new key
-        siteConfigurations = await buildSiteConfigurationForOlmClient(
-            client,
-            publicKey,
-            relay
-        );
-    }
+   // NOTE: its important that the client here is the old client and the public key is the new key
+    const siteConfigurations = await buildSiteConfigurationForOlmClient(
+        client,
+        publicKey,
+        relay,
+        jitMode
+    );
 
     // Return connect message with all site configurations
     return {
