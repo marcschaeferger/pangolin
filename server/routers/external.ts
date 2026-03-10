@@ -793,6 +793,11 @@ unauthenticated.get(
 // );
 
 unauthenticated.get("/user", verifySessionMiddleware, user.getUser);
+unauthenticated.post(
+    "/user/locale",
+    verifySessionMiddleware,
+    user.updateUserLocale
+);
 unauthenticated.get("/my-device", verifySessionMiddleware, user.myDevice);
 
 authenticated.get("/users", verifyUserIsServerAdmin, user.adminListUsers);
