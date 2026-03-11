@@ -559,7 +559,7 @@ export default function Page() {
             toast({
                 variant: "destructive",
                 title: t("resourceErrorCreate"),
-                description: t("resourceErrorCreateMessageDescription")
+                description: formatAxiosError(e, t("resourceErrorCreateMessageDescription"))
             });
         }
 
