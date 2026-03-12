@@ -22,7 +22,8 @@ export const domains = pgTable("domains", {
     tries: integer("tries").notNull().default(0),
     certResolver: varchar("certResolver"),
     customCertResolver: varchar("customCertResolver"),
-    preferWildcardCert: boolean("preferWildcardCert")
+    preferWildcardCert: boolean("preferWildcardCert"),
+    errorMessage: text("errorMessage")
 });
 
 export const dnsRecords = pgTable("dnsRecords", {

@@ -104,6 +104,13 @@ export async function buildSiteConfigurationForOlmClient(
             continue;
         }
 
+        if (!site.publicKey || site.publicKey == "") { // the site is not ready to accept new peers
+            logger.warn(
+                `Site ${site.siteId} has no public key, skipping`
+            );
+            continue;
+        }
+
         // if (site.lastHolePunch && now - site.lastHolePunch > 6 && relay) {
         //     logger.warn(
         //         `Site ${site.siteId} last hole punch is too old, skipping`
