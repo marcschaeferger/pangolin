@@ -477,6 +477,7 @@ async function handleMessagesForSiteClients(
         }
 
         if (isAdd) {
+            // TODO: if we are in jit mode here should we really be sending this?
             await initPeerAddHandshake(
                 // this will kick off the add peer process for the client
                 client.clientId,
@@ -1080,6 +1081,7 @@ async function handleMessagesForClientSites(
                 continue;
             }
 
+            // TODO: if we are in jit mode here should we really be sending this?
             await initPeerAddHandshake(
                 // this will kick off the add peer process for the client
                 client.clientId,
