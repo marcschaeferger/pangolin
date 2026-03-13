@@ -25,12 +25,12 @@ export async function buildSiteConfigurationForOlmClient(
 ) {
     const siteConfigurations: {
         siteId: number;
-        name: string | null;
-        endpoint: string | null;
-        publicKey: string | null;
-        serverIP: string | null;
-        serverPort: number | null;
-        remoteSubnets: string[];
+        name?: string
+        endpoint?: string
+        publicKey?: string
+        serverIP?: string | null
+        serverPort?: number | null
+        remoteSubnets?: string[];
         aliases: Alias[];
     }[] = [];
 
@@ -73,15 +73,9 @@ export async function buildSiteConfigurationForOlmClient(
             // Add site configuration to the array
             siteConfigurations.push({
                 siteId: site.siteId,
-                name: null, // this is just to sync the aliases
-                endpoint: null,
-                publicKey: null,
-                serverIP: null,
-                serverPort: null,
                 // remoteSubnets: generateRemoteSubnets(
                 //     allSiteResources.map(({ siteResources }) => siteResources)
                 // ),
-                remoteSubnets: [],
                 aliases: generateAliasConfig(
                     allSiteResources.map(({ siteResources }) => siteResources)
                 )
