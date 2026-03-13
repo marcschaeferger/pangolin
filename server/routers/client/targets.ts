@@ -1,23 +1,29 @@
 import { sendToClient } from "#dynamic/routers/ws";
 import { db, olms, Transaction } from "@server/db";
+import { canCompress } from "@server/lib/clientVersionChecks";
 import { Alias, SubnetProxyTarget } from "@server/lib/ip";
 import logger from "@server/logger";
 import { eq } from "drizzle-orm";
 
-export async function addTargets(newtId: string, targets: SubnetProxyTarget[]) {
+export async function addTargets(
+    newtId: string,
+    targets: SubnetProxyTarget[],
+    version?: string | null
+) {
     await sendToClient(
         newtId,
         {
             type: `newt/wg/targets/add`,
             data: targets
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "newt") }
     );
 }
 
 export async function removeTargets(
     newtId: string,
-    targets: SubnetProxyTarget[]
+    targets: SubnetProxyTarget[],
+    version?: string | null
 ) {
     await sendToClient(
         newtId,
@@ -25,7 +31,7 @@ export async function removeTargets(
             type: `newt/wg/targets/remove`,
             data: targets
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "newt") }
     );
 }
 
@@ -34,7 +40,8 @@ export async function updateTargets(
     targets: {
         oldTargets: SubnetProxyTarget[];
         newTargets: SubnetProxyTarget[];
-    }
+    },
+    version?: string | null
 ) {
     await sendToClient(
         newtId,
@@ -45,7 +52,7 @@ export async function updateTargets(
                 newTargets: targets.newTargets
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "newt") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -56,7 +63,8 @@ export async function addPeerData(
     siteId: number,
     remoteSubnets: string[],
     aliases: Alias[],
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -68,6 +76,7 @@ export async function addPeerData(
             return; // ignore this because an olm might not be associated with the client anymore
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -80,7 +89,7 @@ export async function addPeerData(
                 aliases: aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -91,7 +100,8 @@ export async function removePeerData(
     siteId: number,
     remoteSubnets: string[],
     aliases: Alias[],
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -103,6 +113,7 @@ export async function removePeerData(
             return;
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -115,7 +126,7 @@ export async function removePeerData(
                 aliases: aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -136,7 +147,8 @@ export async function updatePeerData(
               newAliases: Alias[];
           }
         | undefined,
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -148,6 +160,7 @@ export async function updatePeerData(
             return;
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -160,7 +173,7 @@ export async function updatePeerData(
                 ...aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });

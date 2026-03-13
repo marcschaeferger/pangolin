@@ -6,6 +6,7 @@ import { db, ExitNode, exitNodes, Newt, sites } from "@server/db";
 import { eq } from "drizzle-orm";
 import { sendToExitNode } from "#dynamic/lib/exitNodes";
 import { buildClientConfigurationForNewtClient } from "./buildConfiguration";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 const inputSchema = z.object({
     publicKey: z.string(),
@@ -134,6 +135,9 @@ export const handleGetConfigMessage: MessageHandler = async (context) => {
                 peers,
                 targets
             }
+        },
+        options: {
+            compress: canCompress(newt.version, "newt")
         },
         broadcast: false,
         excludeSender: false

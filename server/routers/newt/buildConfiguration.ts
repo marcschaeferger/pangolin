@@ -243,9 +243,9 @@ export async function buildTargetConfigurationForNewtClient(siteId: number) {
             !target.hcInterval ||
             !target.hcMethod
         ) {
-            logger.debug(
-                `Skipping adding target health check ${target.targetId} due to missing health check fields`
-            );
+            // logger.debug(
+            //     `Skipping adding target health check ${target.targetId} due to missing health check fields`
+            // );
             return null; // Skip targets with missing health check fields
         }
 

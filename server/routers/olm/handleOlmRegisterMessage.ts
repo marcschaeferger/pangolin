@@ -19,6 +19,7 @@ import { OlmErrorCodes, sendOlmError } from "./error";
 import { handleFingerprintInsertion } from "./fingerprintingUtils";
 import { Alias } from "@server/lib/ip";
 import { build } from "@server/build";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 export const handleOlmRegisterMessage: MessageHandler = async (context) => {
     logger.info("Handling register olm message!");
@@ -294,6 +295,9 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
                 tunnelIP: client.subnet,
                 utilitySubnet: org.utilitySubnet
             }
+        },
+        options: {
+            compress: canCompress(olm.version, "olm")
         },
         broadcast: false,
         excludeSender: false

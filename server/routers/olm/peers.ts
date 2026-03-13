@@ -1,5 +1,6 @@
 import { sendToClient } from "#dynamic/routers/ws";
 import { clientSitesAssociationsCache, db, olms } from "@server/db";
+import { canCompress } from "@server/lib/clientVersionChecks";
 import config from "@server/lib/config";
 import logger from "@server/logger";
 import { and, eq } from "drizzle-orm";
@@ -18,7 +19,8 @@ export async function addPeer(
         remoteSubnets: string[] | null; // optional, comma-separated list of subnets that this site can access
         aliases: Alias[];
     },
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -30,6 +32,7 @@ export async function addPeer(
             return; // ignore this because an olm might not be associated with the client anymore
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -48,7 +51,7 @@ export async function addPeer(
                 aliases: peer.aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -60,7 +63,8 @@ export async function deletePeer(
     clientId: number,
     siteId: number,
     publicKey: string,
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -72,6 +76,7 @@ export async function deletePeer(
             return;
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -83,7 +88,7 @@ export async function deletePeer(
                 siteId: siteId
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -103,7 +108,8 @@ export async function updatePeer(
         remoteSubnets?: string[] | null; // optional, comma-separated list of subnets that
         aliases?: Alias[] | null;
     },
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -115,6 +121,7 @@ export async function updatePeer(
             return;
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -132,7 +139,7 @@ export async function updatePeer(
                 aliases: peer.aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
