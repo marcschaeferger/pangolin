@@ -12,6 +12,7 @@
  */
 
 import { Router, Request, Response } from "express";
+import zlib from "zlib";
 import { Server as HttpServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { Socket } from "net";
@@ -57,11 +58,13 @@ const MAX_PENDING_MESSAGES = 50; // Maximum messages to queue during connection 
 const processMessage = async (
     ws: AuthenticatedWebSocket,
     data: Buffer,
+    isBinary: boolean,
     clientId: string,
     clientType: ClientType
 ): Promise<void> => {
     try {
-        const message: WSMessage = JSON.parse(data.toString());
+        const messageBuffer = isBinary ? zlib.gunzipSync(data) : data;
+        const message: WSMessage = JSON.parse(messageBuffer.toString());
 
         // logger.debug(
         //     `Processing message from ${clientType.toUpperCase()} ID: ${clientId}, type: ${message.type}`
@@ -163,8 +166,10 @@ const processPendingMessages = async (
     );
 
     const jobs = [];
-    for (const messageData of ws.pendingMessages) {
-        jobs.push(processMessage(ws, messageData, clientId, clientType));
+    for (const pending of ws.pendingMessages) {
+        jobs.push(
+            processMessage(ws, pending.data, pending.isBinary, clientId, clientType)
+        );
     }
 
     await Promise.all(jobs);
@@ -502,11 +507,20 @@ const sendToClientLocal = async (
     };
 
     const messageString = JSON.stringify(messageWithVersion);
-    clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(messageString);
-        }
-    });
+    if (options.compress) {
+        const compressed = zlib.gzipSync(Buffer.from(messageString, "utf8"));
+        clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(compressed);
+            }
+        });
+    } else {
+        clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(messageString);
+            }
+        });
+    }
 
     return true;
 };
@@ -532,11 +546,22 @@ const broadcastToAllExceptLocal = async (
                 configVersion
             };
 
-            clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(messageWithVersion));
-                }
-            });
+            if (options.compress) {
+                const compressed = zlib.gzipSync(
+                    Buffer.from(JSON.stringify(messageWithVersion), "utf8")
+                );
+                clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(compressed);
+                    }
+                });
+            } else {
+                clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(messageWithVersion));
+                    }
+                });
+            }
         }
     }
 };
@@ -762,7 +787,7 @@ const setupConnection = async (
     }
 
     // Set up message handler FIRST to prevent race condition
-    ws.on("message", async (data) => {
+    ws.on("message", async (data, isBinary) => {
         if (!ws.isFullyConnected) {
             // Queue message for later processing with limits
             ws.pendingMessages = ws.pendingMessages || [];
@@ -777,11 +802,11 @@ const setupConnection = async (
             logger.debug(
                 `Queueing message from ${clientType.toUpperCase()} ID: ${clientId} (connection not fully established)`
             );
-            ws.pendingMessages.push(data as Buffer);
+            ws.pendingMessages.push({ data: data as Buffer, isBinary });
             return;
         }
 
-        await processMessage(ws, data as Buffer, clientId, clientType);
+        await processMessage(ws, data as Buffer, isBinary, clientId, clientType);
     });
 
     // Set up other event handlers before async operations

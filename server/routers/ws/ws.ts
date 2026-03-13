@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import zlib from "zlib";
 import { Server as HttpServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { Socket } from "net";
@@ -116,11 +117,20 @@ const sendToClientLocal = async (
     };
 
     const messageString = JSON.stringify(messageWithVersion);
-    clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(messageString);
-        }
-    });
+    if (options.compress) {
+        const compressed = zlib.gzipSync(Buffer.from(messageString, "utf8"));
+        clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(compressed);
+            }
+        });
+    } else {
+        clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(messageString);
+            }
+        });
+    }
     return true;
 };
 
@@ -147,11 +157,22 @@ const broadcastToAllExceptLocal = async (
                 ...message,
                 configVersion
             };
-            clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(messageWithVersion));
-                }
-            });
+            if (options.compress) {
+                const compressed = zlib.gzipSync(
+                    Buffer.from(JSON.stringify(messageWithVersion), "utf8")
+                );
+                clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(compressed);
+                    }
+                });
+            } else {
+                clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(messageWithVersion));
+                    }
+                });
+            }
         }
     });
 };
@@ -286,9 +307,12 @@ const setupConnection = async (
         clientType === "newt" ? (client as Newt).newtId : (client as Olm).olmId;
     await addClient(clientType, clientId, ws);
 
-    ws.on("message", async (data) => {
+    ws.on("message", async (data, isBinary) => {
         try {
-            const message: WSMessage = JSON.parse(data.toString());
+            const messageBuffer = isBinary
+                ? zlib.gunzipSync(data as Buffer)
+                : (data as Buffer);
+            const message: WSMessage = JSON.parse(messageBuffer.toString());
 
             if (!message.type || typeof message.type !== "string") {
                 throw new Error(
