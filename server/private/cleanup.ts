@@ -13,8 +13,12 @@
 
 import { rateLimitService } from "#private/lib/rateLimit";
 import { cleanup as wsCleanup } from "#private/routers/ws";
+import { flushBandwidthToDb } from "@server/routers/newt/handleReceiveBandwidthMessage";
+import { flushSiteBandwidthToDb } from "@server/routers/gerbil/receiveBandwidth";
 
 async function cleanup() {
+    await flushBandwidthToDb();
+    await flushSiteBandwidthToDb();
     await rateLimitService.cleanup();
     await wsCleanup();
 
