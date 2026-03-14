@@ -3,7 +3,7 @@ import zlib from "zlib";
 import { Server as HttpServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { Socket } from "net";
-import { Newt, newts, NewtSession, olms, Olm, OlmSession } from "@server/db";
+import { Newt, newts, NewtSession, olms, Olm, OlmSession, sites } from "@server/db";
 import { eq } from "drizzle-orm";
 import { db } from "@server/db";
 import { validateNewtSessionToken } from "@server/auth/sessions/newt";
@@ -379,6 +379,31 @@ const setupConnection = async (
             `Client disconnected - ${clientType.toUpperCase()} ID: ${clientId}`
         );
     });
+
+    // Handle WebSocket protocol-level pings from older newt clients that do
+    // not send application-level "newt/ping" messages. Update the site's
+    // online state and lastPing timestamp so the offline checker treats them
+    // the same as modern newt clients.
+    if (clientType === "newt") {
+        const newtClient = client as Newt;
+        ws.on("ping", async () => {
+            if (!newtClient.siteId) return;
+            try {
+                await db
+                    .update(sites)
+                    .set({
+                        online: true,
+                        lastPing: Math.floor(Date.now() / 1000)
+                    })
+                    .where(eq(sites.siteId, newtClient.siteId));
+            } catch (error) {
+                logger.error(
+                    "Error updating newt site online state on WS ping",
+                    { error }
+                );
+            }
+        });
+    }
 
     ws.on("error", (error: Error) => {
         logger.error(

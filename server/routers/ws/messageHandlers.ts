@@ -6,7 +6,8 @@ import {
     handleDockerContainersMessage,
     handleNewtPingRequestMessage,
     handleApplyBlueprintMessage,
-    handleNewtPingMessage
+    handleNewtPingMessage,
+    startNewtOfflineChecker
 } from "../newt";
 import {
     handleOlmRegisterMessage,
@@ -43,3 +44,4 @@ export const messageHandlers: Record<string, MessageHandler> = {
 };
 
 startOlmOfflineChecker(); // this is to handle the offline check for olms
+startNewtOfflineChecker(); // this is to handle the offline check for newts

@@ -89,6 +89,7 @@ export const sites = pgTable("sites", {
     lastBandwidthUpdate: varchar("lastBandwidthUpdate"),
     type: varchar("type").notNull(), // "newt" or "wireguard"
     online: boolean("online").notNull().default(false),
+    lastPing: integer("lastPing"),
     address: varchar("address"),
     endpoint: varchar("endpoint"),
     publicKey: varchar("publicKey"),

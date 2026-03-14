@@ -90,6 +90,7 @@ export const sites = sqliteTable("sites", {
     lastBandwidthUpdate: text("lastBandwidthUpdate"),
     type: text("type").notNull(), // "newt" or "wireguard"
     online: integer("online", { mode: "boolean" }).notNull().default(false),
+    lastPing: integer("lastPing"),
 
     // exit node stuff that is how to connect to the site when it has a wg server
     address: text("address"), // this is the address of the wireguard interface in newt
