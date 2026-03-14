@@ -7,3 +7,4 @@ export * from "./handleSocketMessages";
 export * from "./handleNewtPingRequestMessage";
 export * from "./handleApplyBlueprintMessage";
 export * from "./handleNewtPingMessage";
+export * from "./handleNewtDisconnectingMessage";
