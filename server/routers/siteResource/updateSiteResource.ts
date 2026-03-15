@@ -620,7 +620,7 @@ export async function handleMessagingForUpdatedSiteResource(
             await updateTargets(newt.newtId, {
                 oldTargets: oldTargets,
                 newTargets: newTargets
-            });
+            }, newt.version);
         }
 
         const olmJobs: Promise<void>[] = [];

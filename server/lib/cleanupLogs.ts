@@ -4,8 +4,12 @@ import { cleanUpOldLogs as cleanUpOldActionLogs } from "#dynamic/middlewares/log
 import { cleanUpOldLogs as cleanUpOldRequestLogs } from "@server/routers/badger/logRequestAudit";
 import { gt, or } from "drizzle-orm";
 import { cleanUpOldFingerprintSnapshots } from "@server/routers/olm/fingerprintingUtils";
+import { build } from "@server/build";
 
 export function initLogCleanupInterval() {
+    if (build == "saas") { // skip log cleanup for saas builds
+        return null;
+    }
     return setInterval(
         async () => {
             const orgsToClean = await db

@@ -29,7 +29,6 @@ import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
-import { OpenAPITags, registry } from "@server/openApi";
 import { eq, or, and } from "drizzle-orm";
 import { canUserAccessSiteResource } from "@server/auth/canUserAccessSiteResource";
 import { signPublicKey, getOrgCAKeys } from "@server/lib/sshCA";
@@ -64,6 +63,7 @@ export type SignSshKeyResponse = {
     sshUsername: string;
     sshHost: string;
     resourceId: number;
+    siteId: number;
     keyId: string;
     validPrincipals: string[];
     validAfter: string;
@@ -453,6 +453,7 @@ export async function signSshKey(
                 sshUsername: usernameToUse,
                 sshHost: sshHost,
                 resourceId: resource.siteResourceId,
+                siteId: resource.siteId,
                 keyId: cert.keyId,
                 validPrincipals: cert.validPrincipals,
                 validAfter: cert.validAfter.toISOString(),

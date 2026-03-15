@@ -1,33 +1,33 @@
 import { MessageHandler } from "@server/routers/ws";
-import { clients, db, Olm } from "@server/db";
+import { db, Newt, sites } from "@server/db";
 import { eq } from "drizzle-orm";
 import logger from "@server/logger";
 
 /**
- * Handles disconnecting messages from clients to show disconnected in the ui
+ * Handles disconnecting messages from sites to show disconnected in the ui
  */
-export const handleOlmDisconnectingMessage: MessageHandler = async (context) => {
+export const handleNewtDisconnectingMessage: MessageHandler = async (context) => {
     const { message, client: c, sendToClient } = context;
-    const olm = c as Olm;
+    const newt = c as Newt;
 
-    if (!olm) {
-        logger.warn("Olm not found");
+    if (!newt) {
+        logger.warn("Newt not found");
         return;
     }
 
-    if (!olm.clientId) {
-        logger.warn("Olm has no client ID!");
+    if (!newt.siteId) {
+        logger.warn("Newt has no client ID!");
         return;
     }
 
     try {
         // Update the client's last ping timestamp
         await db
-            .update(clients)
+            .update(sites)
             .set({
                 online: false
             })
-            .where(eq(clients.clientId, olm.clientId));
+            .where(eq(sites.siteId, sites.siteId));
     } catch (error) {
         logger.error("Error handling disconnecting message", { error });
     }

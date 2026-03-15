@@ -17,6 +17,9 @@ import { getUserDeviceName } from "@server/db/names";
 import { buildSiteConfigurationForOlmClient } from "./buildConfiguration";
 import { OlmErrorCodes, sendOlmError } from "./error";
 import { handleFingerprintInsertion } from "./fingerprintingUtils";
+import { Alias } from "@server/lib/ip";
+import { build } from "@server/build";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 export const handleOlmRegisterMessage: MessageHandler = async (context) => {
     logger.info("Handling register olm message!");
@@ -207,6 +210,32 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         }
     }
 
+    // Get all sites data
+    const sitesCountResult = await db
+        .select({ count: count() })
+        .from(sites)
+        .innerJoin(
+            clientSitesAssociationsCache,
+            eq(sites.siteId, clientSitesAssociationsCache.siteId)
+        )
+        .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
+
+    // Extract the count value from the result array
+    const sitesCount =
+        sitesCountResult.length > 0 ? sitesCountResult[0].count : 0;
+
+    // Prepare an array to store site configurations
+    logger.debug(`Found ${sitesCount} sites for client ${client.clientId}`);
+
+    let jitMode = true;
+    if (sitesCount > 250 && build == "saas") {
+        // THIS IS THE MAX ON THE BUSINESS TIER
+        // we have too many sites
+        // If we have too many sites we need to drop into fully JIT mode by not sending any of the sites
+        logger.info("Too many sites (%d), dropping into JIT mode", sitesCount);
+        jitMode = true;
+    }
+
     logger.debug(
         `Olm client ID: ${client.clientId}, Public Key: ${publicKey}, Relay: ${relay}`
     );
@@ -233,27 +262,11 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         await db
             .update(clientSitesAssociationsCache)
             .set({
-                isRelayed: relay == true
+                isRelayed: relay == true,
+                isJitMode: jitMode
             })
             .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
     }
-
-    // Get all sites data
-    const sitesCountResult = await db
-        .select({ count: count() })
-        .from(sites)
-        .innerJoin(
-            clientSitesAssociationsCache,
-            eq(sites.siteId, clientSitesAssociationsCache.siteId)
-        )
-        .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
-
-    // Extract the count value from the result array
-    const sitesCount =
-        sitesCountResult.length > 0 ? sitesCountResult[0].count : 0;
-
-    // Prepare an array to store site configurations
-    logger.debug(`Found ${sitesCount} sites for client ${client.clientId}`);
 
     // this prevents us from accepting a register from an olm that has not hole punched yet.
     // the olm will pump the register so we can keep checking
@@ -265,18 +278,13 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         return;
     }
 
-    // NOTE: its important that the client here is the old client and the public key is the new key
+   // NOTE: its important that the client here is the old client and the public key is the new key
     const siteConfigurations = await buildSiteConfigurationForOlmClient(
         client,
         publicKey,
-        relay
+        relay,
+        jitMode
     );
-
-    // REMOVED THIS SO IT CREATES THE INTERFACE AND JUST WAITS FOR THE SITES
-    // if (siteConfigurations.length === 0) {
-    //     logger.warn("No valid site configurations found");
-    //     return;
-    // }
 
     // Return connect message with all site configurations
     return {
@@ -287,6 +295,9 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
                 tunnelIP: client.subnet,
                 utilitySubnet: org.utilitySubnet
             }
+        },
+        options: {
+            compress: canCompress(olm.version, "olm")
         },
         broadcast: false,
         excludeSender: false

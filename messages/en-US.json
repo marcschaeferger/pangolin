@@ -2681,5 +2681,6 @@
     "approvalsEmptyStateStep2Title": "Enable Device Approvals",
     "approvalsEmptyStateStep2Description": "Edit a role and enable the 'Require Device Approvals' option. Users with this role will need admin approval for new devices.",
     "approvalsEmptyStatePreviewDescription": "Preview: When enabled, pending device requests will appear here for review",
-    "approvalsEmptyStateButtonText": "Manage Roles"
+    "approvalsEmptyStateButtonText": "Manage Roles",
+    "domainErrorTitle": "We are having trouble verifying your domain"
 }

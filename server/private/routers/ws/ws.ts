@@ -12,6 +12,7 @@
  */
 
 import { Router, Request, Response } from "express";
+import zlib from "zlib";
 import { Server as HttpServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { Socket } from "net";
@@ -24,7 +25,8 @@ import {
     OlmSession,
     RemoteExitNode,
     RemoteExitNodeSession,
-    remoteExitNodes
+    remoteExitNodes,
+    sites
 } from "@server/db";
 import { eq } from "drizzle-orm";
 import { db } from "@server/db";
@@ -57,11 +59,13 @@ const MAX_PENDING_MESSAGES = 50; // Maximum messages to queue during connection 
 const processMessage = async (
     ws: AuthenticatedWebSocket,
     data: Buffer,
+    isBinary: boolean,
     clientId: string,
     clientType: ClientType
 ): Promise<void> => {
     try {
-        const message: WSMessage = JSON.parse(data.toString());
+        const messageBuffer = isBinary ? zlib.gunzipSync(data) : data;
+        const message: WSMessage = JSON.parse(messageBuffer.toString());
 
         // logger.debug(
         //     `Processing message from ${clientType.toUpperCase()} ID: ${clientId}, type: ${message.type}`
@@ -76,7 +80,7 @@ const processMessage = async (
             clientId,
             message.type, // Pass message type for granular limiting
             100, // max requests per window
-            20, // max requests per message type per window
+            100, // max requests per message type per window
             60 * 1000 // window in milliseconds
         );
         if (rateLimitResult.isLimited) {
@@ -163,8 +167,16 @@ const processPendingMessages = async (
     );
 
     const jobs = [];
-    for (const messageData of ws.pendingMessages) {
-        jobs.push(processMessage(ws, messageData, clientId, clientType));
+    for (const pending of ws.pendingMessages) {
+        jobs.push(
+            processMessage(
+                ws,
+                pending.data,
+                pending.isBinary,
+                clientId,
+                clientType
+            )
+        );
     }
 
     await Promise.all(jobs);
@@ -325,7 +337,9 @@ const addClient = async (
     // Check Redis first if enabled
     if (redisManager.isRedisEnabled()) {
         try {
-            const redisVersion = await redisManager.get(getConfigVersionKey(clientId));
+            const redisVersion = await redisManager.get(
+                getConfigVersionKey(clientId)
+            );
             if (redisVersion !== null) {
                 configVersion = parseInt(redisVersion, 10);
                 // Sync to local cache
@@ -337,7 +351,10 @@ const addClient = async (
             } else {
                 // Use local cache version and sync to Redis
                 configVersion = clientConfigVersions.get(clientId) || 0;
-                await redisManager.set(getConfigVersionKey(clientId), configVersion.toString());
+                await redisManager.set(
+                    getConfigVersionKey(clientId),
+                    configVersion.toString()
+                );
             }
         } catch (error) {
             logger.error("Failed to get/set config version in Redis:", error);
@@ -432,7 +449,9 @@ const removeClient = async (
 };
 
 // Helper to get the current config version for a client
-const getClientConfigVersion = async (clientId: string): Promise<number | undefined> => {
+const getClientConfigVersion = async (
+    clientId: string
+): Promise<number | undefined> => {
     // Try Redis first if available
     if (redisManager.isRedisEnabled()) {
         try {
@@ -502,11 +521,26 @@ const sendToClientLocal = async (
     };
 
     const messageString = JSON.stringify(messageWithVersion);
-    clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(messageString);
-        }
-    });
+    if (options.compress) {
+        logger.debug(
+            `Message size before compression: ${messageString.length} bytes`
+        );
+        const compressed = zlib.gzipSync(Buffer.from(messageString, "utf8"));
+        logger.debug(
+            `Message size after compression: ${compressed.length} bytes`
+        );
+        clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(compressed);
+            }
+        });
+    } else {
+        clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(messageString);
+            }
+        });
+    }
 
     return true;
 };
@@ -532,11 +566,22 @@ const broadcastToAllExceptLocal = async (
                 configVersion
             };
 
-            clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(messageWithVersion));
-                }
-            });
+            if (options.compress) {
+                const compressed = zlib.gzipSync(
+                    Buffer.from(JSON.stringify(messageWithVersion), "utf8")
+                );
+                clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(compressed);
+                    }
+                });
+            } else {
+                clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(messageWithVersion));
+                    }
+                });
+            }
         }
     }
 };
@@ -762,7 +807,7 @@ const setupConnection = async (
     }
 
     // Set up message handler FIRST to prevent race condition
-    ws.on("message", async (data) => {
+    ws.on("message", async (data, isBinary) => {
         if (!ws.isFullyConnected) {
             // Queue message for later processing with limits
             ws.pendingMessages = ws.pendingMessages || [];
@@ -777,11 +822,17 @@ const setupConnection = async (
             logger.debug(
                 `Queueing message from ${clientType.toUpperCase()} ID: ${clientId} (connection not fully established)`
             );
-            ws.pendingMessages.push(data as Buffer);
+            ws.pendingMessages.push({ data: data as Buffer, isBinary });
             return;
         }
 
-        await processMessage(ws, data as Buffer, clientId, clientType);
+        await processMessage(
+            ws,
+            data as Buffer,
+            isBinary,
+            clientId,
+            clientType
+        );
     });
 
     // Set up other event handlers before async operations
@@ -795,6 +846,31 @@ const setupConnection = async (
             `Client disconnected - ${clientType.toUpperCase()} ID: ${clientId}`
         );
     });
+
+    // Handle WebSocket protocol-level pings from older newt clients that do
+    // not send application-level "newt/ping" messages. Update the site's
+    // online state and lastPing timestamp so the offline checker treats them
+    // the same as modern newt clients.
+    if (clientType === "newt") {
+        const newtClient = client as Newt;
+        ws.on("ping", async () => {
+            if (!newtClient.siteId) return;
+            try {
+                await db
+                    .update(sites)
+                    .set({
+                        online: true,
+                        lastPing: Math.floor(Date.now() / 1000)
+                    })
+                    .where(eq(sites.siteId, newtClient.siteId));
+            } catch (error) {
+                logger.error(
+                    "Error updating newt site online state on WS ping",
+                    { error }
+                );
+            }
+        });
+    }
 
     ws.on("error", (error: Error) => {
         logger.error(

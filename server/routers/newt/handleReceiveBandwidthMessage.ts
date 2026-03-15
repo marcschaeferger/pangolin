@@ -10,9 +10,20 @@ interface PeerBandwidth {
     bytesOut: number;
 }
 
+interface BandwidthAccumulator {
+    bytesIn: number;
+    bytesOut: number;
+}
+
 // Retry configuration for deadlock handling
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 50;
+
+// How often to flush accumulated bandwidth data to the database
+const FLUSH_INTERVAL_MS = 120_000; // 120 seconds
+
+// In-memory accumulator: publicKey -> { bytesIn, bytesOut }
+let accumulator = new Map<string, BandwidthAccumulator>();
 
 /**
  * Check if an error is a deadlock error
@@ -53,6 +64,90 @@ async function withDeadlockRetry<T>(
     }
 }
 
+/**
+ * Flush all accumulated bandwidth data to the database.
+ *
+ * Swaps out the accumulator before writing so that any bandwidth messages
+ * received during the flush are captured in the new accumulator rather than
+ * being lost or causing contention. Entries that fail to write are re-queued
+ * back into the accumulator so they will be retried on the next flush.
+ *
+ * This function is exported so that the application's graceful-shutdown
+ * cleanup handler can call it before the process exits.
+ */
+export async function flushBandwidthToDb(): Promise<void> {
+    if (accumulator.size === 0) {
+        return;
+    }
+
+    // Atomically swap out the accumulator so new data keeps flowing in
+    // while we write the snapshot to the database.
+    const snapshot = accumulator;
+    accumulator = new Map<string, BandwidthAccumulator>();
+
+    const currentTime = new Date().toISOString();
+
+    // Sort by publicKey for consistent lock ordering across concurrent
+    // writers — this is the same deadlock-prevention strategy used in the
+    // original per-message implementation.
+    const sortedEntries = [...snapshot.entries()].sort(([a], [b]) =>
+        a.localeCompare(b)
+    );
+
+    logger.debug(
+        `Flushing accumulated bandwidth data for ${sortedEntries.length} client(s) to the database`
+    );
+
+    for (const [publicKey, { bytesIn, bytesOut }] of sortedEntries) {
+        try {
+            await withDeadlockRetry(async () => {
+                // Use atomic SQL increment to avoid the SELECT-then-UPDATE
+                // anti-pattern and the races it would introduce.
+                await db
+                    .update(clients)
+                    .set({
+                        // Note: bytesIn from peer goes to megabytesOut (data
+                        // sent to client) and bytesOut from peer goes to
+                        // megabytesIn (data received from client).
+                        megabytesOut: sql`COALESCE(${clients.megabytesOut}, 0) + ${bytesIn}`,
+                        megabytesIn: sql`COALESCE(${clients.megabytesIn}, 0) + ${bytesOut}`,
+                        lastBandwidthUpdate: currentTime
+                    })
+                    .where(eq(clients.pubKey, publicKey));
+            }, `flush bandwidth for client ${publicKey}`);
+        } catch (error) {
+            logger.error(
+                `Failed to flush bandwidth for client ${publicKey}:`,
+                error
+            );
+
+            // Re-queue the failed entry so it is retried on the next flush
+            // rather than silently dropped.
+            const existing = accumulator.get(publicKey);
+            if (existing) {
+                existing.bytesIn += bytesIn;
+                existing.bytesOut += bytesOut;
+            } else {
+                accumulator.set(publicKey, { bytesIn, bytesOut });
+            }
+        }
+    }
+}
+
+const flushTimer = setInterval(async () => {
+    try {
+        await flushBandwidthToDb();
+    } catch (error) {
+        logger.error("Unexpected error during periodic bandwidth flush:", error);
+    }
+}, FLUSH_INTERVAL_MS);
+
+// Calling unref() means this timer will not keep the Node.js event loop alive
+// on its own — the process can still exit normally when there is no other work
+// left.  The graceful-shutdown path (see server/cleanup.ts) will call
+// flushBandwidthToDb() explicitly before process.exit(), so no data is lost.
+flushTimer.unref();
+
 export const handleReceiveBandwidthMessage: MessageHandler = async (
     context
 ) => {
@@ -69,40 +164,21 @@ export const handleReceiveBandwidthMessage: MessageHandler = async (
         throw new Error("Invalid bandwidth data");
     }
 
-    // Sort bandwidth data by publicKey to ensure consistent lock ordering across all instances
-    // This is critical for preventing deadlocks when multiple instances update the same clients
-    const sortedBandwidthData = [...bandwidthData].sort((a, b) =>
-        a.publicKey.localeCompare(b.publicKey)
-    );
+    // Accumulate the incoming data in memory; the periodic timer (and the
+    // shutdown hook) will take care of writing it to the database.
+    for (const { publicKey, bytesIn, bytesOut } of bandwidthData) {
+        // Skip peers that haven't transferred any data — writing zeros to the
+        // database would be a no-op anyway.
+        if (bytesIn <= 0 && bytesOut <= 0) {
+            continue;
+        }
 
-    const currentTime = new Date().toISOString();
-
-    // Update each client individually with retry logic
-    // This reduces transaction scope and allows retries per-client
-    for (const peer of sortedBandwidthData) {
-        const { publicKey, bytesIn, bytesOut } = peer;
-
-        try {
-            await withDeadlockRetry(async () => {
-                // Use atomic SQL increment to avoid SELECT then UPDATE pattern
-                // This eliminates the need to read the current value first
-                await db
-                    .update(clients)
-                    .set({
-                        // Note: bytesIn from peer goes to megabytesOut (data sent to client)
-                        // and bytesOut from peer goes to megabytesIn (data received from client)
-                        megabytesOut: sql`COALESCE(${clients.megabytesOut}, 0) + ${bytesIn}`,
-                        megabytesIn: sql`COALESCE(${clients.megabytesIn}, 0) + ${bytesOut}`,
-                        lastBandwidthUpdate: currentTime
-                    })
-                    .where(eq(clients.pubKey, publicKey));
-            }, `update client bandwidth ${publicKey}`);
-        } catch (error) {
-            logger.error(
-                `Failed to update bandwidth for client ${publicKey}:`,
-                error
-            );
-            // Continue with other clients even if one fails
+        const existing = accumulator.get(publicKey);
+        if (existing) {
+            existing.bytesIn += bytesIn;
+            existing.bytesOut += bytesOut;
+        } else {
+            accumulator.set(publicKey, { bytesIn, bytesOut });
         }
     }
 };

@@ -264,7 +264,7 @@ export async function createTarget(
                     newTarget,
                     healthCheck,
                     resource.protocol,
-                    resource.proxyPort
+                    newt.version
                 );
             }
         }

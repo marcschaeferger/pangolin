@@ -1,4 +1,15 @@
-import { clients, clientSiteResourcesAssociationsCache, clientSitesAssociationsCache, db, ExitNode, resources, Site, siteResources, targetHealthCheck, targets } from "@server/db";
+import {
+    clients,
+    clientSiteResourcesAssociationsCache,
+    clientSitesAssociationsCache,
+    db,
+    ExitNode,
+    resources,
+    Site,
+    siteResources,
+    targetHealthCheck,
+    targets
+} from "@server/db";
 import logger from "@server/logger";
 import { initPeerAddHandshake, updatePeer } from "../olm/peers";
 import { eq, and } from "drizzle-orm";
@@ -69,40 +80,42 @@ export async function buildClientConfigurationForNewtClient(
                     //         )
                     //     );
 
-                    // update the peer info on the olm
-                    // if the peer has not been added yet this will be a no-op
-                    await updatePeer(client.clients.clientId, {
-                        siteId: site.siteId,
-                        endpoint: site.endpoint!,
-                        relayEndpoint: `${exitNode.endpoint}:${config.getRawConfig().gerbil.clients_start_port}`,
-                        publicKey: site.publicKey!,
-                        serverIP: site.address,
-                        serverPort: site.listenPort
-                        // remoteSubnets: generateRemoteSubnets(
-                        //     allSiteResources.map(
-                        //         ({ siteResources }) => siteResources
-                        //     )
-                        // ),
-                        // aliases: generateAliasConfig(
-                        //     allSiteResources.map(
-                        //         ({ siteResources }) => siteResources
-                        //     )
-                        // )
-                    });
+                    if (!client.clientSitesAssociationsCache.isJitMode) { // if we are adding sites through jit then dont add the site to the olm
+                        // update the peer info on the olm
+                        // if the peer has not been added yet this will be a no-op
+                        await updatePeer(client.clients.clientId, {
+                            siteId: site.siteId,
+                            endpoint: site.endpoint!,
+                            relayEndpoint: `${exitNode.endpoint}:${config.getRawConfig().gerbil.clients_start_port}`,
+                            publicKey: site.publicKey!,
+                            serverIP: site.address,
+                            serverPort: site.listenPort
+                            // remoteSubnets: generateRemoteSubnets(
+                            //     allSiteResources.map(
+                            //         ({ siteResources }) => siteResources
+                            //     )
+                            // ),
+                            // aliases: generateAliasConfig(
+                            //     allSiteResources.map(
+                            //         ({ siteResources }) => siteResources
+                            //     )
+                            // )
+                        });
 
-                    // also trigger the peer add handshake in case the peer was not already added to the olm and we need to hole punch
-                    // if it has already been added this will be a no-op
-                    await initPeerAddHandshake(
-                        // this will kick off the add peer process for the client
-                        client.clients.clientId,
-                        {
-                            siteId,
-                            exitNode: {
-                                publicKey: exitNode.publicKey,
-                                endpoint: exitNode.endpoint
+                        // also trigger the peer add handshake in case the peer was not already added to the olm and we need to hole punch
+                        // if it has already been added this will be a no-op
+                        await initPeerAddHandshake(
+                            // this will kick off the add peer process for the client
+                            client.clients.clientId,
+                            {
+                                siteId,
+                                exitNode: {
+                                    publicKey: exitNode.publicKey,
+                                    endpoint: exitNode.endpoint
+                                }
                             }
-                        }
-                    );
+                        );
+                    }
 
                     return {
                         publicKey: client.clients.pubKey!,
@@ -188,7 +201,8 @@ export async function buildTargetConfigurationForNewtClient(siteId: number) {
             hcTimeout: targetHealthCheck.hcTimeout,
             hcHeaders: targetHealthCheck.hcHeaders,
             hcMethod: targetHealthCheck.hcMethod,
-            hcTlsServerName: targetHealthCheck.hcTlsServerName
+            hcTlsServerName: targetHealthCheck.hcTlsServerName,
+            hcStatus: targetHealthCheck.hcStatus
         })
         .from(targets)
         .innerJoin(resources, eq(targets.resourceId, resources.resourceId))
@@ -229,9 +243,9 @@ export async function buildTargetConfigurationForNewtClient(siteId: number) {
             !target.hcInterval ||
             !target.hcMethod
         ) {
-            logger.debug(
-                `Skipping adding target health check ${target.targetId} due to missing health check fields`
-            );
+            // logger.debug(
+            //     `Skipping adding target health check ${target.targetId} due to missing health check fields`
+            // );
             return null; // Skip targets with missing health check fields
         }
 
@@ -261,7 +275,8 @@ export async function buildTargetConfigurationForNewtClient(siteId: number) {
             hcTimeout: target.hcTimeout, // in seconds
             hcHeaders: hcHeadersSend,
             hcMethod: target.hcMethod,
-            hcTlsServerName: target.hcTlsServerName
+            hcTlsServerName: target.hcTlsServerName,
+            hcStatus: target.hcStatus
         };
     });
 

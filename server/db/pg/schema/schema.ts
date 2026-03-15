@@ -22,7 +22,8 @@ export const domains = pgTable("domains", {
     tries: integer("tries").notNull().default(0),
     certResolver: varchar("certResolver"),
     customCertResolver: varchar("customCertResolver"),
-    preferWildcardCert: boolean("preferWildcardCert")
+    preferWildcardCert: boolean("preferWildcardCert"),
+    errorMessage: text("errorMessage")
 });
 
 export const dnsRecords = pgTable("dnsRecords", {
@@ -88,6 +89,7 @@ export const sites = pgTable("sites", {
     lastBandwidthUpdate: varchar("lastBandwidthUpdate"),
     type: varchar("type").notNull(), // "newt" or "wireguard"
     online: boolean("online").notNull().default(false),
+    lastPing: integer("lastPing"),
     address: varchar("address"),
     endpoint: varchar("endpoint"),
     publicKey: varchar("publicKey"),
@@ -720,6 +722,7 @@ export const clientSitesAssociationsCache = pgTable(
             .notNull(),
         siteId: integer("siteId").notNull(),
         isRelayed: boolean("isRelayed").notNull().default(false),
+        isJitMode: boolean("isJitMode").notNull().default(false),
         endpoint: varchar("endpoint"),
         publicKey: varchar("publicKey") // this will act as the session's public key for hole punching so we can track when it changes
     }

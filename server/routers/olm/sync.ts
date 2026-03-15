@@ -1,9 +1,17 @@
-import { Client, db, exitNodes, Olm, sites, clientSitesAssociationsCache } from "@server/db";
+import {
+    Client,
+    db,
+    exitNodes,
+    Olm,
+    sites,
+    clientSitesAssociationsCache
+} from "@server/db";
 import { buildSiteConfigurationForOlmClient } from "./buildConfiguration";
 import { sendToClient } from "#dynamic/routers/ws";
 import logger from "@server/logger";
 import { eq, inArray } from "drizzle-orm";
 import config from "@server/lib/config";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 export async function sendOlmSyncMessage(olm: Olm, client: Client) {
     // NOTE: WE ARE HARDCODING THE RELAY PARAMETER TO FALSE HERE BUT IN THE REGISTER MESSAGE ITS DEFINED BY THE CLIENT
@@ -17,10 +25,7 @@ export async function sendOlmSyncMessage(olm: Olm, client: Client) {
     const clientSites = await db
         .select()
         .from(clientSitesAssociationsCache)
-        .innerJoin(
-            sites,
-            eq(sites.siteId, clientSitesAssociationsCache.siteId)
-        )
+        .innerJoin(sites, eq(sites.siteId, clientSitesAssociationsCache.siteId))
         .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
 
     // Extract unique exit node IDs
@@ -68,13 +73,20 @@ export async function sendOlmSyncMessage(olm: Olm, client: Client) {
 
     logger.debug("sendOlmSyncMessage: sending sync message");
 
-    await sendToClient(olm.olmId, {
-        type: "olm/sync",
-        data: {
-            sites: siteConfigurations,
-            exitNodes: exitNodesData
+    await sendToClient(
+        olm.olmId,
+        {
+            type: "olm/sync",
+            data: {
+                sites: siteConfigurations,
+                exitNodes: exitNodesData
+            }
+        },
+
+        {
+            compress: canCompress(olm.version, "olm")
         }
-    }).catch((error) => {
+    ).catch((error) => {
         logger.warn(`Error sending olm sync message:`, error);
     });
 }

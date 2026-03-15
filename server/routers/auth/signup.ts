@@ -22,7 +22,6 @@ import { checkValidInvite } from "@server/auth/checkValidInvite";
 import { passwordSchema } from "@server/auth/passwordSchema";
 import { UserType } from "@server/types/UserTypes";
 import { build } from "@server/build";
-import resend, { AudienceIds, moveEmailToAudience } from "#dynamic/lib/resend";
 
 export const signupBodySchema = z.object({
     email: z.email().toLowerCase(),
@@ -237,7 +236,7 @@ export async function signup(
             logger.debug(
                 `User ${email} opted in to marketing emails during signup.`
             );
-            moveEmailToAudience(email, AudienceIds.SignUps);
+            // TODO: update user in Sendy
         }
 
         if (config.getRawConfig().flags?.require_email_verification) {
