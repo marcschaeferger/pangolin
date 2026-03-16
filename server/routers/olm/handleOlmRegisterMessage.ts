@@ -227,7 +227,7 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
     // Prepare an array to store site configurations
     logger.debug(`Found ${sitesCount} sites for client ${client.clientId}`);
 
-    let jitMode = true;
+    let jitMode = false;
     if (sitesCount > 250 && build == "saas") {
         // THIS IS THE MAX ON THE BUSINESS TIER
         // we have too many sites
