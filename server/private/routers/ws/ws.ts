@@ -197,6 +197,12 @@ const connectedClients: Map<string, AuthenticatedWebSocket[]> = new Map();
 // Config version tracking map (local to this node, resets on server restart)
 const clientConfigVersions: Map<string, number> = new Map();
 
+// Tracks the last Unix timestamp (seconds) at which a ping was flushed to the
+// DB for a given siteId. Resets on server restart which is fine – the first
+// ping after startup will always write, re-establishing the online state.
+const lastPingDbWrite: Map<number, number> = new Map();
+const PING_DB_WRITE_INTERVAL = 45; // seconds
+
 // Recovery tracking
 let isRedisRecoveryInProgress = false;
 
@@ -855,12 +861,16 @@ const setupConnection = async (
         const newtClient = client as Newt;
         ws.on("ping", async () => {
             if (!newtClient.siteId) return;
+            const now = Math.floor(Date.now() / 1000);
+            const lastWrite = lastPingDbWrite.get(newtClient.siteId) ?? 0;
+            if (now - lastWrite < PING_DB_WRITE_INTERVAL) return;
+            lastPingDbWrite.set(newtClient.siteId, now);
             try {
                 await db
                     .update(sites)
                     .set({
                         online: true,
-                        lastPing: Math.floor(Date.now() / 1000)
+                        lastPing: now
                     })
                     .where(eq(sites.siteId, newtClient.siteId));
             } catch (error) {
