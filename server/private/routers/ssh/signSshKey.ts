@@ -14,7 +14,9 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import {
+    actionAuditLog,
     db,
+    logsDb,
     newts,
     roles,
     roundTripMessageTracker,
@@ -34,6 +36,7 @@ import { canUserAccessSiteResource } from "@server/auth/canUserAccessSiteResourc
 import { signPublicKey, getOrgCAKeys } from "@server/lib/sshCA";
 import config from "@server/lib/config";
 import { sendToClient } from "#private/routers/ws";
+import { ActionsEnum } from "@server/auth/actions";
 
 const paramsSchema = z.strictObject({
     orgId: z.string().nonempty()
@@ -445,6 +448,20 @@ export async function signSshKey(
         } else {
             sshHost = resource.destination;
         }
+
+        await logsDb.insert(actionAuditLog).values({
+            timestamp: Math.floor(Date.now() / 1000),
+            orgId: orgId,
+            actorType: "user",
+            actor: req.user?.username ?? "",
+            actorId: req.user?.userId ?? "",
+            action: ActionsEnum.signSshKey,
+            metadata: JSON.stringify({
+                resourceId: resource.siteResourceId,
+                resource: resource.name,
+                siteId: resource.siteId,
+            })
+        });
 
         return response<SignSshKeyResponse>(res, {
             data: {
