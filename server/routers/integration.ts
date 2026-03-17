@@ -310,7 +310,7 @@ authenticated.post(
 );
 
 authenticated.post(
-    "/client/:clientId/resources",
+    "/client/:clientId/site-resources",
     verifyLimits,
     verifyApiKeyHasAction(ActionsEnum.setResourceUsers),
     logActionAudit(ActionsEnum.setResourceUsers),
