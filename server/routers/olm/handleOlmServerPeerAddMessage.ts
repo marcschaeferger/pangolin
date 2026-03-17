@@ -54,7 +54,7 @@ export const handleOlmServerPeerAddMessage: MessageHandler = async (
         return;
     }
 
-    const { siteId } = message.data;
+    const { siteId, chainId } = message.data;
 
     // get the site
     const [site] = await db
@@ -179,7 +179,8 @@ export const handleOlmServerPeerAddMessage: MessageHandler = async (
                 ),
                 aliases: generateAliasConfig(
                     allSiteResources.map(({ siteResources }) => siteResources)
-                )
+                ),
+                chainId: chainId,
             }
         },
         broadcast: false,
