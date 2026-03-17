@@ -309,6 +309,14 @@ authenticated.post(
     siteResource.removeClientFromSiteResource
 );
 
+authenticated.post(
+    "/client/:clientId/resources",
+    verifyLimits,
+    verifyApiKeyHasAction(ActionsEnum.setResourceUsers),
+    logActionAudit(ActionsEnum.setResourceUsers),
+    siteResource.batchAddClientToSiteResources
+);
+
 authenticated.put(
     "/org/:orgId/resource",
     verifyApiKeyOrgAccess,
