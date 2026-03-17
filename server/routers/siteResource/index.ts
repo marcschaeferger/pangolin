@@ -15,4 +15,5 @@ export * from "./addUserToSiteResource";
 export * from "./removeUserFromSiteResource";
 export * from "./setSiteResourceClients";
 export * from "./addClientToSiteResource";
+export * from "./batchAddClientToSiteResources";
 export * from "./removeClientFromSiteResource";
