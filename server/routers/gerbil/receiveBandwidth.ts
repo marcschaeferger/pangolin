@@ -97,6 +97,7 @@ export async function flushSiteBandwidthToDb(): Promise<void> {
     accumulator = new Map<string, AccumulatorEntry>();
 
     const currentTime = new Date().toISOString();
+    const currentTimeEpochSeconds = Math.floor(new Date().getTime() / 1000);
 
     // Sort by publicKey for consistent lock ordering across concurrent
     // writers — deadlock-prevention strategy.
@@ -119,7 +120,8 @@ export async function flushSiteBandwidthToDb(): Promise<void> {
                     .set({
                         megabytesOut: sql`COALESCE(${sites.megabytesOut}, 0) + ${bytesIn}`,
                         megabytesIn: sql`COALESCE(${sites.megabytesIn}, 0) + ${bytesOut}`,
-                        lastBandwidthUpdate: currentTime
+                        lastBandwidthUpdate: currentTime,
+                        lastPing: currentTimeEpochSeconds
                     })
                     .where(eq(sites.pubKey, publicKey))
                     .returning({
