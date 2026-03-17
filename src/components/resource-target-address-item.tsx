@@ -1,12 +1,15 @@
 import { cn } from "@app/lib/cn";
 import type { DockerState } from "@app/lib/docker";
 import { parseHostTarget } from "@app/lib/parseHostTarget";
+import { orgQueries } from "@app/lib/queries";
 import { CaretSortIcon } from "@radix-ui/react-icons";
 import type { ListSitesResponse } from "@server/routers/site";
 import { type ListTargetsResponse } from "@server/routers/target";
 import type { ArrayElement } from "@server/types/ArrayElement";
+import { useQuery } from "@tanstack/react-query";
 import { CheckIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useState } from "react";
 import { ContainersSelector } from "./ContainersSelector";
 import { Button } from "./ui/button";
 import {
@@ -20,7 +23,6 @@ import {
 import { Input } from "./ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/select";
-import { useEffect } from "react";
 
 type SiteWithUpdateAvailable = ListSitesResponse["sites"][number];
 
@@ -36,14 +38,14 @@ export type LocalTarget = Omit<
 export type ResourceTargetAddressItemProps = {
     getDockerStateForSite: (siteId: number) => DockerState;
     updateTarget: (targetId: number, data: Partial<LocalTarget>) => void;
-    sites: SiteWithUpdateAvailable[];
+    orgId: string;
     proxyTarget: LocalTarget;
     isHttp: boolean;
     refreshContainersForSite: (siteId: number) => void;
 };
 
 export function ResourceTargetAddressItem({
-    sites,
+    orgId,
     getDockerStateForSite,
     updateTarget,
     proxyTarget,
@@ -52,9 +54,33 @@ export function ResourceTargetAddressItem({
 }: ResourceTargetAddressItemProps) {
     const t = useTranslations();
 
-    const selectedSite = sites.find(
-        (site) => site.siteId === proxyTarget.siteId
+    const [siteSearchQuery, setSiteSearchQuery] = useState("");
+
+    const { data: sites = [] } = useQuery(
+        orgQueries.sites({
+            orgId,
+            query: siteSearchQuery,
+            perPage: 10
+        })
     );
+
+    const [selectedSite, setSelectedSite] = useState<Pick<
+        SiteWithUpdateAvailable,
+        "name" | "siteId" | "type"
+    > | null>(() => {
+        if (
+            proxyTarget.siteName &&
+            proxyTarget.siteType &&
+            proxyTarget.siteId
+        ) {
+            return {
+                name: proxyTarget.siteName,
+                siteId: proxyTarget.siteId,
+                type: proxyTarget.siteType
+            };
+        }
+        return null;
+    });
 
     const handleContainerSelectForTarget = (
         hostname: string,
@@ -70,28 +96,23 @@ export function ResourceTargetAddressItem({
     return (
         <div className="flex items-center w-full" key={proxyTarget.targetId}>
             <div className="flex items-center w-full justify-start py-0 space-x-2 px-0 cursor-default border border-input rounded-md">
-                {selectedSite &&
-                    selectedSite.type === "newt" &&
-                    (() => {
-                        const dockerState = getDockerStateForSite(
-                            selectedSite.siteId
-                        );
-                        return (
-                            <ContainersSelector
-                                site={selectedSite}
-                                containers={dockerState.containers}
-                                isAvailable={dockerState.isAvailable}
-                                onContainerSelect={
-                                    handleContainerSelectForTarget
-                                }
-                                onRefresh={() =>
-                                    refreshContainersForSite(
-                                        selectedSite.siteId
-                                    )
-                                }
-                            />
-                        );
-                    })()}
+                {selectedSite && selectedSite.type === "newt" && (
+                    <ContainersSelector
+                        site={selectedSite}
+                        containers={
+                            getDockerStateForSite(selectedSite.siteId)
+                                .containers
+                        }
+                        isAvailable={
+                            getDockerStateForSite(selectedSite.siteId)
+                                .isAvailable
+                        }
+                        onContainerSelect={handleContainerSelectForTarget}
+                        onRefresh={() =>
+                            refreshContainersForSite(selectedSite.siteId)
+                        }
+                    />
+                )}
 
                 <Popover>
                     <PopoverTrigger asChild>
@@ -113,8 +134,11 @@ export function ResourceTargetAddressItem({
                         </Button>
                     </PopoverTrigger>
                     <PopoverContent className="p-0 w-45">
-                        <Command>
-                            <CommandInput placeholder={t("siteSearch")} />
+                        <Command shouldFilter={false}>
+                            <CommandInput
+                                placeholder={t("siteSearch")}
+                                onValueChange={(v) => setSiteSearchQuery(v)}
+                            />
                             <CommandList>
                                 <CommandEmpty>{t("siteNotFound")}</CommandEmpty>
                                 <CommandGroup>
@@ -122,14 +146,18 @@ export function ResourceTargetAddressItem({
                                         <CommandItem
                                             key={site.siteId}
                                             value={`${site.siteId}:${site.name}`}
-                                            onSelect={() =>
+                                            onSelect={() => {
                                                 updateTarget(
                                                     proxyTarget.targetId,
                                                     {
-                                                        siteId: site.siteId
+                                                        siteId: site.siteId,
+                                                        siteType: site.type,
+                                                        siteName: site.name
                                                     }
-                                                )
-                                            }
+                                                );
+
+                                                setSelectedSite(site);
+                                            }}
                                         >
                                             <CheckIcon
                                                 className={cn(
