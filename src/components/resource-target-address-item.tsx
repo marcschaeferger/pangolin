@@ -9,7 +9,7 @@ import type { ArrayElement } from "@server/types/ArrayElement";
 import { useQuery } from "@tanstack/react-query";
 import { CheckIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ContainersSelector } from "./ContainersSelector";
 import { Button } from "./ui/button";
 import {
@@ -82,6 +82,22 @@ export function ResourceTargetAddressItem({
         return null;
     });
 
+    const sitesShown = useMemo(() => {
+        const allSites: Array<
+            Pick<SiteWithUpdateAvailable, "name" | "siteId" | "type">
+        > = [...sites];
+        if (
+            selectedSite !== null &&
+            !(
+                allSites.find((site) => site.siteId)?.siteId ===
+                selectedSite?.siteId
+            )
+        ) {
+            allSites.unshift(selectedSite);
+        }
+        return allSites;
+    }, [sites, selectedSite]);
+
     const handleContainerSelectForTarget = (
         hostname: string,
         port?: number
@@ -137,12 +153,13 @@ export function ResourceTargetAddressItem({
                         <Command shouldFilter={false}>
                             <CommandInput
                                 placeholder={t("siteSearch")}
+                                value={siteSearchQuery}
                                 onValueChange={(v) => setSiteSearchQuery(v)}
                             />
                             <CommandList>
                                 <CommandEmpty>{t("siteNotFound")}</CommandEmpty>
                                 <CommandGroup>
-                                    {sites.map((site) => (
+                                    {sitesShown.map((site) => (
                                         <CommandItem
                                             key={site.siteId}
                                             value={`${site.siteId}:${site.name}`}
