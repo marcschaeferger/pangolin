@@ -35,9 +35,9 @@ const batchAddClientToSiteResourcesBodySchema = z
 
 registry.registerPath({
     method: "post",
-    path: "/client/{clientId}/resources",
+    path: "/client/{clientId}/site-resources",
     description: "Add a machine client to multiple site resources at once.",
-    tags: [OpenAPITags.PrivateResource, OpenAPITags.Client],
+    tags: [OpenAPITags.Client],
     request: {
         params: batchAddClientToSiteResourcesParamsSchema,
         body: {
