@@ -23,6 +23,7 @@ import {
 import { Input } from "./ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/select";
+import { SitesSelector } from "./site-selector";
 
 type SiteWithUpdateAvailable = ListSitesResponse["sites"][number];
 
@@ -54,16 +55,6 @@ export function ResourceTargetAddressItem({
 }: ResourceTargetAddressItemProps) {
     const t = useTranslations();
 
-    const [siteSearchQuery, setSiteSearchQuery] = useState("");
-
-    const { data: sites = [] } = useQuery(
-        orgQueries.sites({
-            orgId,
-            query: siteSearchQuery,
-            perPage: 10
-        })
-    );
-
     const [selectedSite, setSelectedSite] = useState<Pick<
         SiteWithUpdateAvailable,
         "name" | "siteId" | "type"
@@ -81,22 +72,6 @@ export function ResourceTargetAddressItem({
         }
         return null;
     });
-
-    const sitesShown = useMemo(() => {
-        const allSites: Array<
-            Pick<SiteWithUpdateAvailable, "name" | "siteId" | "type">
-        > = [...sites];
-        if (
-            selectedSite !== null &&
-            !(
-                allSites.find((site) => site.siteId)?.siteId ===
-                selectedSite?.siteId
-            )
-        ) {
-            allSites.unshift(selectedSite);
-        }
-        return allSites;
-    }, [sites, selectedSite]);
 
     const handleContainerSelectForTarget = (
         hostname: string,
@@ -150,47 +125,18 @@ export function ResourceTargetAddressItem({
                         </Button>
                     </PopoverTrigger>
                     <PopoverContent className="p-0 w-45">
-                        <Command shouldFilter={false}>
-                            <CommandInput
-                                placeholder={t("siteSearch")}
-                                value={siteSearchQuery}
-                                onValueChange={(v) => setSiteSearchQuery(v)}
-                            />
-                            <CommandList>
-                                <CommandEmpty>{t("siteNotFound")}</CommandEmpty>
-                                <CommandGroup>
-                                    {sitesShown.map((site) => (
-                                        <CommandItem
-                                            key={site.siteId}
-                                            value={`${site.siteId}:${site.name}`}
-                                            onSelect={() => {
-                                                updateTarget(
-                                                    proxyTarget.targetId,
-                                                    {
-                                                        siteId: site.siteId,
-                                                        siteType: site.type,
-                                                        siteName: site.name
-                                                    }
-                                                );
-
-                                                setSelectedSite(site);
-                                            }}
-                                        >
-                                            <CheckIcon
-                                                className={cn(
-                                                    "mr-2 h-4 w-4",
-                                                    site.siteId ===
-                                                        proxyTarget.siteId
-                                                        ? "opacity-100"
-                                                        : "opacity-0"
-                                                )}
-                                            />
-                                            {site.name}
-                                        </CommandItem>
-                                    ))}
-                                </CommandGroup>
-                            </CommandList>
-                        </Command>
+                        <SitesSelector
+                            orgId={orgId}
+                            selectedSite={selectedSite}
+                            onSelectSite={(site) => {
+                                updateTarget(proxyTarget.targetId, {
+                                    siteId: site.siteId,
+                                    siteType: site.type,
+                                    siteName: site.name
+                                });
+                                setSelectedSite(site);
+                            }}
+                        />
                     </PopoverContent>
                 </Popover>
 
