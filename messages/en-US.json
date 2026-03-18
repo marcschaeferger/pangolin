@@ -1120,6 +1120,7 @@
     "setupTokenDescription": "Enter the setup token from the server console.",
     "setupTokenRequired": "Setup token is required",
     "actionUpdateSite": "Update Site",
+    "actionResetSiteBandwidth": "Reset Organization Bandwidth",
     "actionListSiteRoles": "List Allowed Site Roles",
     "actionCreateResource": "Create Resource",
     "actionDeleteResource": "Delete Resource",
