@@ -14,7 +14,11 @@ import logger from "@server/logger";
 import { initPeerAddHandshake, updatePeer } from "../olm/peers";
 import { eq, and } from "drizzle-orm";
 import config from "@server/lib/config";
-import { generateSubnetProxyTargets, SubnetProxyTarget } from "@server/lib/ip";
+import {
+    formatEndpoint,
+    generateSubnetProxyTargets,
+    SubnetProxyTarget
+} from "@server/lib/ip";
 
 export async function buildClientConfigurationForNewtClient(
     site: Site,
@@ -219,8 +223,8 @@ export async function buildTargetConfigurationForNewtClient(siteId: number) {
                 return acc;
             }
 
-            // Format target into string
-            const formattedTarget = `${target.internalPort}:${target.ip}:${target.port}`;
+            // Format target into string (handles IPv6 bracketing)
+            const formattedTarget = `${target.internalPort}:${formatEndpoint(target.ip, target.port)}`;
 
             // Add to the appropriate protocol array
             if (target.protocol === "tcp") {
