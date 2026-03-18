@@ -129,6 +129,11 @@ const ResourceInfo = ({ resource }: { resource: Resource }) => {
         resource.pincode ||
         resource.whitelist;
 
+    const hasAnyInfo =
+        Boolean(resource.siteName) || Boolean(hasAuthMethods) || !resource.enabled;
+
+    if (!hasAnyInfo) return null;
+
     const infoContent = (
         <div className="flex flex-col gap-3">
             {/* Site Information */}
@@ -828,19 +833,17 @@ export default function MemberResourcesPortal({
                                                                     </span>
                                                                 </div>
                                                             )}
+                                                            <div>
+                                                                <span className="font-medium">Destination:</span>
+                                                                <span className="ml-2 text-muted-foreground">
+                                                                    {siteResource.destination}
+                                                                </span>
+                                                            </div>
                                                             {siteResource.alias && (
                                                                 <div>
                                                                     <span className="font-medium">Alias:</span>
                                                                     <span className="ml-2 text-muted-foreground">
                                                                         {siteResource.alias}
-                                                                    </span>
-                                                                </div>
-                                                            )}
-                                                            {siteResource.aliasAddress && (
-                                                                <div>
-                                                                    <span className="font-medium">Alias Address:</span>
-                                                                    <span className="ml-2 text-muted-foreground">
-                                                                        {siteResource.aliasAddress}
                                                                     </span>
                                                                 </div>
                                                             )}

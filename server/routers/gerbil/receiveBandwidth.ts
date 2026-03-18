@@ -119,7 +119,7 @@ export async function flushSiteBandwidthToDb(): Promise<void> {
                     .set({
                         megabytesOut: sql`COALESCE(${sites.megabytesOut}, 0) + ${bytesIn}`,
                         megabytesIn: sql`COALESCE(${sites.megabytesIn}, 0) + ${bytesOut}`,
-                        lastBandwidthUpdate: currentTime
+                        lastBandwidthUpdate: currentTime,
                     })
                     .where(eq(sites.pubKey, publicKey))
                     .returning({
