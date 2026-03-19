@@ -175,7 +175,7 @@
     "resourceHTTPDescription": "Проксировать запросы через HTTPS с использованием полного доменного имени.",
     "resourceRaw": "Сырой TCP/UDP-ресурс",
     "resourceRawDescription": "Проксировать запросы по сырому TCP/UDP с использованием номера порта.",
-    "resourceRawDescriptionCloud": "Прокси-запросы через необработанный TCP/UDP с использованием номера порта. ТРЕБУЕТЕСЬ ИСПОЛЬЗОВАТЬ НЕОБХОДИМЫ.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. Requires sites to connect to a remote node.",
     "resourceCreate": "Создание ресурса",
     "resourceCreateDescription": "Следуйте инструкциям ниже для создания нового ресурса",
     "resourceSeeAll": "Посмотреть все ресурсы",
@@ -1426,6 +1426,7 @@
     "domainPickerNamespace": "Пространство имен: {namespace}",
     "domainPickerShowMore": "Показать еще",
     "regionSelectorTitle": "Выберите регион",
+    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be availble on remote nodes, use a custom domain instead.",
     "regionSelectorInfo": "Выбор региона помогает нам обеспечить лучшее качество обслуживания для вашего расположения. Вам необязательно находиться в том же регионе, что и ваш сервер.",
     "regionSelectorPlaceholder": "Выбор региона",
     "regionSelectorComingSoon": "Скоро будет",
@@ -2342,8 +2343,8 @@
     "logRetentionEndOfFollowingYear": "Конец следующего года",
     "actionLogsDescription": "Просмотр истории действий, выполненных в этой организации",
     "accessLogsDescription": "Просмотр запросов авторизации доступа к ресурсам этой организации",
-    "licenseRequiredToUse": "Лицензия на <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> требуется для использования этой функции. Эта функция также доступна в <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>.",
-    "ossEnterpriseEditionRequired": "Для использования этой функции требуется <enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink>. Эта функция также доступна в <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>.",
+    "licenseRequiredToUse": "An <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> license or <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> is required to use this feature. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
+    "ossEnterpriseEditionRequired": "The <enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> is required to use this feature. This feature is also available in <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
     "certResolver": "Резольвер сертификата",
     "certResolverDescription": "Выберите резолвер сертификата, который будет использоваться для этого ресурса.",
     "selectCertResolver": "Выберите резолвер сертификата",
@@ -2680,5 +2681,6 @@
     "approvalsEmptyStateStep2Title": "Включить утверждения устройства",
     "approvalsEmptyStateStep2Description": "Редактировать роль и включить опцию 'Требовать утверждения устройств'. Пользователям с этой ролью потребуется подтверждение администратора для новых устройств.",
     "approvalsEmptyStatePreviewDescription": "Предпросмотр: Если включено, ожидающие запросы на устройство появятся здесь для проверки",
-    "approvalsEmptyStateButtonText": "Управление ролями"
+    "approvalsEmptyStateButtonText": "Управление ролями",
+    "domainErrorTitle": "We are having trouble verifying your domain"
 }
