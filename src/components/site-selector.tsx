@@ -15,7 +15,7 @@ import { CheckIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useDebounce } from "use-debounce";
 
-type Selectedsite = Pick<
+export type Selectedsite = Pick<
     ListSitesResponse["sites"][number],
     "name" | "siteId" | "type"
 >;

@@ -1,15 +1,10 @@
 "use client";
 
+import { HorizontalTabs } from "@app/components/HorizontalTabs";
+import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
+import { StrategySelect } from "@app/components/StrategySelect";
 import { Tag, TagInput } from "@app/components/tags/tag-input";
 import { Button } from "@app/components/ui/button";
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList
-} from "@app/components/ui/command";
 import {
     Form,
     FormControl,
@@ -32,24 +27,22 @@ import {
     SelectValue
 } from "@app/components/ui/select";
 import { Switch } from "@app/components/ui/switch";
-import { getUserDisplayName } from "@app/lib/getUserDisplayName";
+import { useEnvContext } from "@app/hooks/useEnvContext";
+import { usePaidStatus } from "@app/hooks/usePaidStatus";
 import { cn } from "@app/lib/cn";
+import { getUserDisplayName } from "@app/lib/getUserDisplayName";
 import { orgQueries, resourceQueries } from "@app/lib/queries";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import { ListSitesResponse } from "@server/routers/site";
 import { UserType } from "@server/types/UserTypes";
-import { Check, ChevronsUpDown, ExternalLink } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronsUpDown, ExternalLink } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEnvContext } from "@app/hooks/useEnvContext";
-import { usePaidStatus } from "@app/hooks/usePaidStatus";
-import { tierMatrix } from "@server/lib/billing/tierMatrix";
-import { HorizontalTabs } from "@app/components/HorizontalTabs";
-import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
-import { StrategySelect } from "@app/components/StrategySelect";
+import { SitesSelector, type Selectedsite } from "./site-selector";
 
 // --- Helpers (shared) ---
 
@@ -407,6 +400,10 @@ export function InternalResourceForm({
                   clients: []
               };
 
+    const [selectedSite, setSelectedSite] = useState<Selectedsite>(
+        availableSites[0]
+    );
+
     const form = useForm<FormData>({
         resolver: zodResolver(formSchema),
         defaultValues
@@ -578,46 +575,14 @@ export function InternalResourceForm({
                                         </FormControl>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-full p-0">
-                                        <Command>
-                                            <CommandInput
-                                                placeholder={t("searchSites")}
-                                            />
-                                            <CommandList>
-                                                <CommandEmpty>
-                                                    {t("noSitesFound")}
-                                                </CommandEmpty>
-                                                <CommandGroup>
-                                                    {availableSites.map(
-                                                        (site) => (
-                                                            <CommandItem
-                                                                key={
-                                                                    site.siteId
-                                                                }
-                                                                value={
-                                                                    site.name
-                                                                }
-                                                                onSelect={() =>
-                                                                    field.onChange(
-                                                                        site.siteId
-                                                                    )
-                                                                }
-                                                            >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        field.value ===
-                                                                            site.siteId
-                                                                            ? "opacity-100"
-                                                                            : "opacity-0"
-                                                                    )}
-                                                                />
-                                                                {site.name}
-                                                            </CommandItem>
-                                                        )
-                                                    )}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
+                                        <SitesSelector
+                                            orgId={orgId}
+                                            selectedSite={selectedSite}
+                                            onSelectSite={(site) => {
+                                                setSelectedSite(site);
+                                                field.onChange(site.siteId);
+                                            }}
+                                        />
                                     </PopoverContent>
                                 </Popover>
                                 <FormMessage />
