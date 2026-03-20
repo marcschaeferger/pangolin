@@ -1426,7 +1426,7 @@
     "domainPickerNamespace": "이름 공간: {namespace}",
     "domainPickerShowMore": "더보기",
     "regionSelectorTitle": "지역 선택",
-    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be availble on remote nodes, use a custom domain instead.",
+    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
     "regionSelectorInfo": "지역을 선택하면 위치에 따라 더 나은 성능이 제공됩니다. 서버와 같은 지역에 있을 필요는 없습니다.",
     "regionSelectorPlaceholder": "지역 선택",
     "regionSelectorComingSoon": "곧 출시 예정",
