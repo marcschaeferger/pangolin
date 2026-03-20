@@ -1426,7 +1426,7 @@
     "domainPickerNamespace": "Ad Alanı: {namespace}",
     "domainPickerShowMore": "Daha Fazla Göster",
     "regionSelectorTitle": "Bölge Seç",
-    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be availble on remote nodes, use a custom domain instead.",
+    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
     "regionSelectorInfo": "Bir bölge seçmek, konumunuz için daha iyi performans sağlamamıza yardımcı olur. Sunucunuzla aynı bölgede olmanıza gerek yoktur.",
     "regionSelectorPlaceholder": "Bölge Seçin",
     "regionSelectorComingSoon": "Yakında Geliyor",
