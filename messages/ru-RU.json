@@ -1426,7 +1426,7 @@
     "domainPickerNamespace": "Пространство имен: {namespace}",
     "domainPickerShowMore": "Показать еще",
     "regionSelectorTitle": "Выберите регион",
-    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be availble on remote nodes, use a custom domain instead.",
+    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
     "regionSelectorInfo": "Выбор региона помогает нам обеспечить лучшее качество обслуживания для вашего расположения. Вам необязательно находиться в том же регионе, что и ваш сервер.",
     "regionSelectorPlaceholder": "Выбор региона",
     "regionSelectorComingSoon": "Скоро будет",
