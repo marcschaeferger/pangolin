@@ -1426,7 +1426,7 @@
     "domainPickerNamespace": "Navnerom: {namespace}",
     "domainPickerShowMore": "Vis mer",
     "regionSelectorTitle": "Velg Region",
-    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be availble on remote nodes, use a custom domain instead.",
+    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
     "regionSelectorInfo": "Å velge en region hjelper oss med å gi bedre ytelse for din lokasjon. Du trenger ikke være i samme region som serveren.",
     "regionSelectorPlaceholder": "Velg en region",
     "regionSelectorComingSoon": "Kommer snart",
