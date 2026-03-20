@@ -175,7 +175,7 @@
     "resourceHTTPDescription": "Proxyverzoeken via HTTPS met een volledig gekwalificeerde domeinnaam.",
     "resourceRaw": "TCP/UDP bron",
     "resourceRawDescription": "Proxyverzoeken via ruwe TCP/UDP met een poortnummer.",
-    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. Requires sites to connect to a remote node.",
+    "resourceRawDescriptionCloud": "Proxy verzoeken over rauwe TCP/UDP met behulp van een poortnummer. Vereist sites om verbinding te maken met een remote node.",
     "resourceCreate": "Bron maken",
     "resourceCreateDescription": "Volg de onderstaande stappen om een nieuwe bron te maken",
     "resourceSeeAll": "Alle bronnen bekijken",
@@ -1426,7 +1426,7 @@
     "domainPickerNamespace": "Naamruimte: {namespace}",
     "domainPickerShowMore": "Meer weergeven",
     "regionSelectorTitle": "Selecteer Regio",
-    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
+    "domainPickerRemoteExitNodeWarning": "Opgegeven domeinen worden niet ondersteund wanneer websites verbinding maken met externe sluitnodes. Gebruik in plaats daarvan een aangepast domein. Om bronnen beschikbaar te maken op externe nodes.",
     "regionSelectorInfo": "Het selecteren van een regio helpt ons om betere prestaties te leveren voor uw locatie. U hoeft niet in dezelfde regio als uw server te zijn.",
     "regionSelectorPlaceholder": "Kies een regio",
     "regionSelectorComingSoon": "Komt binnenkort",
@@ -2343,8 +2343,8 @@
     "logRetentionEndOfFollowingYear": "Einde van volgend jaar",
     "actionLogsDescription": "Bekijk een geschiedenis van acties die worden uitgevoerd in deze organisatie",
     "accessLogsDescription": "Toegangsverificatieverzoeken voor resources in deze organisatie bekijken",
-    "licenseRequiredToUse": "An <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> license or <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> is required to use this feature. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
-    "ossEnterpriseEditionRequired": "The <enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> is required to use this feature. This feature is also available in <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
+    "licenseRequiredToUse": "Een <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> licentie of <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> is vereist om deze functie te gebruiken. <bookADemoLink>Boek een demo of POC trial</bookADemoLink>.",
+    "ossEnterpriseEditionRequired": "De <enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> is vereist om deze functie te gebruiken. Deze functie is ook beschikbaar in <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>. <bookADemoLink>Boek een demo of POC trial</bookADemoLink>.",
     "certResolver": "Certificaat Resolver",
     "certResolverDescription": "Selecteer de certificaat resolver die moet worden gebruikt voor deze resource.",
     "selectCertResolver": "Certificaat Resolver selecteren",
@@ -2682,5 +2682,5 @@
     "approvalsEmptyStateStep2Description": "Bewerk een rol en schakel de optie 'Vereist Apparaat Goedkeuringen' in. Gebruikers met deze rol hebben admin goedkeuring nodig voor nieuwe apparaten.",
     "approvalsEmptyStatePreviewDescription": "Voorbeeld: Indien ingeschakeld, zullen in afwachting van apparaatverzoeken hier verschijnen om te beoordelen",
     "approvalsEmptyStateButtonText": "Rollen beheren",
-    "domainErrorTitle": "We are having trouble verifying your domain"
+    "domainErrorTitle": "We ondervinden problemen bij het controleren van uw domein"
 }
