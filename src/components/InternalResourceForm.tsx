@@ -531,9 +531,15 @@ export function InternalResourceForm({
     return (
         <Form {...form}>
             <form
-                onSubmit={form.handleSubmit((values) =>
-                    onSubmit(values as InternalResourceFormValues)
-                )}
+                onSubmit={form.handleSubmit((values) => {
+                    onSubmit({
+                        ...values,
+                        clients: (values.clients ?? []).map((c) => ({
+                            id: c.clientId.toString(),
+                            text: c.name
+                        }))
+                    });
+                })}
                 className="space-y-6"
                 id={formId}
             >
