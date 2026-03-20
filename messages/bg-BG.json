@@ -175,7 +175,7 @@
     "resourceHTTPDescription": "Прокси заявки чрез HTTPS, използвайки напълно квалифицирано име на домейн.",
     "resourceRaw": "Суров TCP/UDP ресурс",
     "resourceRawDescription": "Прокси заявки чрез сурови TCP/UDP, използвайки порт номер.",
-    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. Requires sites to connect to a remote node.",
+    "resourceRawDescriptionCloud": "Получавайте заявки чрез суров TCP/UDP с използване на портен номер. Изисква се сайтовете да се свързват към отдалечен възел.",
     "resourceCreate": "Създайте ресурс",
     "resourceCreateDescription": "Следвайте стъпките по-долу, за да създадете нов ресурс",
     "resourceSeeAll": "Вижте всички ресурси",
@@ -1426,7 +1426,7 @@
     "domainPickerNamespace": "Име на пространство: {namespace}",
     "domainPickerShowMore": "Покажи повече",
     "regionSelectorTitle": "Избор на регион",
-    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
+    "domainPickerRemoteExitNodeWarning": "Предоставените домейни не се поддържат, когато сайтовете се свързват към отдалечени крайни възли. За да бъдат ресурсите налични на отдалечени възли, използвайте персонализиран домейн вместо това.",
     "regionSelectorInfo": "Изборът на регион ни помага да предоставим по-добра производителност за вашето местоположение. Не е необходимо да сте в същия регион като сървъра.",
     "regionSelectorPlaceholder": "Изберете регион",
     "regionSelectorComingSoon": "Очаква се скоро",
@@ -2343,8 +2343,8 @@
     "logRetentionEndOfFollowingYear": "Край на следващата година",
     "actionLogsDescription": "Прегледайте историята на действията, извършени в тази организация",
     "accessLogsDescription": "Прегледайте заявките за удостоверяване на достъпа до ресурсите в тази организация",
-    "licenseRequiredToUse": "An <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> license or <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> is required to use this feature. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
-    "ossEnterpriseEditionRequired": "The <enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> is required to use this feature. This feature is also available in <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
+    "licenseRequiredToUse": "Изисква се лиценз за <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> или <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> за използване на тази функция. <bookADemoLink>Резервирайте демонстрация или пробен POC</bookADemoLink>.",
+    "ossEnterpriseEditionRequired": "<enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> е необходим за използване на тази функция. Тази функция също е налична в <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>. <bookADemoLink>Резервирайте демонстрация или пробен POC</bookADemoLink>.",
     "certResolver": "Решавач на сертификати",
     "certResolverDescription": "Изберете решавач на сертификати за използване за този ресурс.",
     "selectCertResolver": "Изберете решавач на сертификати",
@@ -2682,5 +2682,5 @@
     "approvalsEmptyStateStep2Description": "Редактирайте ролята и активирайте опцията 'Изискване на одобрения за устройства'. Потребители с тази роля ще трябва администраторско одобрение за нови устройства.",
     "approvalsEmptyStatePreviewDescription": "Преглед: Когато е активирано, чакащите заявки за устройства ще се появят тук за преглед",
     "approvalsEmptyStateButtonText": "Управлявайте роли",
-    "domainErrorTitle": "We are having trouble verifying your domain"
+    "domainErrorTitle": "Имаме проблем с проверката на вашия домейн"
 }
