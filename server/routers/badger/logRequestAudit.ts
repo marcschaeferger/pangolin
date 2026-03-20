@@ -6,6 +6,26 @@ import { calculateCutoffTimestamp } from "@server/lib/cleanupLogs";
 import { stripPortFromHost } from "@server/lib/ip";
 
 /**
+ * Sanitize a string field by replacing lone UTF-16 surrogates (which cannot
+ * be encoded as valid UTF-8) with the Unicode replacement character, and
+ * stripping ASCII control characters that are invalid in most text columns.
+ */
+function sanitizeString(value: string | undefined | null): string | undefined {
+    if (value == null) return undefined;
+    return (
+        value
+            // Replace lone high surrogates (not followed by a low surrogate)
+            // and lone low surrogates (not preceded by a high surrogate)
+            .replace(
+                /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+                "\uFFFD"
+            )
+            // Strip C0 control characters except HT (\x09), LF (\x0A), CR (\x0D)
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    );
+}
+
+/**
 
 Reasons:
 100 - Allowed by Rule
@@ -253,24 +273,23 @@ export async function logRequestAudit(
         // Add to buffer instead of writing directly to DB
         auditLogBuffer.push({
             timestamp,
-            orgId: data.orgId,
-            actorType,
-            actor,
-            actorId,
-            metadata,
+            orgId: sanitizeString(data.orgId),
+            actorType: sanitizeString(actorType),
+            actor: sanitizeString(actor),
+            actorId: sanitizeString(actorId),
+            metadata: sanitizeString(metadata),
             action: data.action,
             resourceId: data.resourceId,
             reason: data.reason,
-            location: data.location,
-            originalRequestURL: body.originalRequestURL,
-            scheme: body.scheme,
-            host: body.host,
-            path: body.path,
-            method: body.method,
-            ip: clientIp,
+            location: sanitizeString(data.location),
+            originalRequestURL: sanitizeString(body.originalRequestURL) ?? "",
+            scheme: sanitizeString(body.scheme) ?? "",
+            host: sanitizeString(body.host) ?? "",
+            path: sanitizeString(body.path) ?? "",
+            method: sanitizeString(body.method) ?? "",
+            ip: sanitizeString(clientIp),
             tls: body.tls
         });
-
         // Flush immediately if buffer is full, otherwise schedule a flush
         if (auditLogBuffer.length >= BATCH_SIZE) {
             // Fire and forget - don't block the caller
