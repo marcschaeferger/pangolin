@@ -8,7 +8,7 @@ import {
     CommandItem,
     CommandList
 } from "./ui/command";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { CheckIcon } from "lucide-react";
 import { cn } from "@app/lib/cn";
@@ -44,6 +44,21 @@ export function ResourceSelector({
         })
     );
 
+    // always include the selected site in the list of sites shown
+    const resourcesShown = useMemo(() => {
+        const allResources: Array<SelectedResource> = [...resources];
+        if (
+            selectedResource &&
+            !allResources.find(
+                (resource) =>
+                    resource.resourceId === selectedResource?.resourceId
+            )
+        ) {
+            allResources.unshift(selectedResource);
+        }
+        return allResources;
+    }, [resources, selectedResource]);
+
     return (
         <Command shouldFilter={false}>
             <CommandInput
@@ -54,7 +69,7 @@ export function ResourceSelector({
             <CommandList>
                 <CommandEmpty>{t("resourcesNotFound")}</CommandEmpty>
                 <CommandGroup>
-                    {resources.map((r) => (
+                    {resourcesShown.map((r) => (
                         <CommandItem
                             value={`${r.name}:${r.resourceId}`}
                             key={r.resourceId}

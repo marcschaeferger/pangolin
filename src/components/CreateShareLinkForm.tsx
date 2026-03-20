@@ -217,11 +217,6 @@ export default function CreateShareLinkForm({
         setLoading(false);
     }
 
-    // function getSelectedResourceName(id: number) {
-    //     const resource = resources.find((r) => r.resourceId === id);
-    //     return `${resource?.name}`;
-    // }
-
     return (
         <>
             <Credenza
@@ -279,60 +274,6 @@ export default function CreateShareLinkForm({
                                                             </FormControl>
                                                         </PopoverTrigger>
                                                         <PopoverContent className="p-0">
-                                                            {/* <Command>
-                                                                <CommandInput
-                                                                    placeholder={t(
-                                                                        "resourceSearch"
-                                                                    )}
-                                                                />
-                                                                <CommandList>
-                                                                    <CommandEmpty>
-                                                                        {t(
-                                                                            "resourcesNotFound"
-                                                                        )}
-                                                                    </CommandEmpty>
-                                                                    <CommandGroup>
-                                                                        {resources.map(
-                                                                            (
-                                                                                r
-                                                                            ) => (
-                                                                                <CommandItem
-                                                                                    value={`${r.name}:${r.resourceId}`}
-                                                                                    key={
-                                                                                        r.resourceId
-                                                                                    }
-                                                                                    onSelect={() => {
-                                                                                        form.setValue(
-                                                                                            "resourceId",
-                                                                                            r.resourceId
-                                                                                        );
-                                                                                        form.setValue(
-                                                                                            "resourceName",
-                                                                                            r.name
-                                                                                        );
-                                                                                        form.setValue(
-                                                                                            "resourceUrl",
-                                                                                            r.resourceUrl
-                                                                                        );
-                                                                                    }}
-                                                                                >
-                                                                                    <CheckIcon
-                                                                                        className={cn(
-                                                                                            "mr-2 h-4 w-4",
-                                                                                            r.resourceId ===
-                                                                                                field.value
-                                                                                                ? "opacity-100"
-                                                                                                : "opacity-0"
-                                                                                        )}
-                                                                                    />
-                                                                                    {`${r.name}`}
-                                                                                </CommandItem>
-                                                                            )
-                                                                        )}
-                                                                    </CommandGroup>
-                                                                </CommandList>
-                                                            </Command> */}
-
                                                             <ResourceSelector
                                                                 orgId={
                                                                     org.org

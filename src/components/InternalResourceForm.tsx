@@ -43,6 +43,8 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { SitesSelector, type Selectedsite } from "./site-selector";
+import { CaretSortIcon } from "@radix-ui/react-icons";
+import { MachineSelector } from "./machine-selector";
 
 // --- Helpers (shared) ---
 
@@ -243,7 +245,14 @@ export function InternalResourceForm({
         authDaemonPort: z.number().int().positive().optional().nullable(),
         roles: z.array(tagSchema).optional(),
         users: z.array(tagSchema).optional(),
-        clients: z.array(tagSchema).optional()
+        clients: z
+            .array(
+                z.object({
+                    clientId: z.number(),
+                    name: z.string()
+                })
+            )
+            .optional()
     });
 
     type FormData = z.infer<typeof formSchema>;
@@ -252,7 +261,7 @@ export function InternalResourceForm({
 
     const rolesQuery = useQuery(orgQueries.roles({ orgId }));
     const usersQuery = useQuery(orgQueries.users({ orgId }));
-    const clientsQuery = useQuery(orgQueries.clients({ orgId }));
+    const clientsQuery = useQuery(orgQueries.machineClients({ orgId }));
     const resourceRolesQuery = useQuery({
         ...resourceQueries.siteResourceRoles({
             siteResourceId: siteResourceId ?? 0
@@ -310,12 +319,9 @@ export function InternalResourceForm({
             }));
         }
         if (clientsData) {
-            existingClients = (
-                clientsData as { clientId: number; name: string }[]
-            ).map((c) => ({
-                id: c.clientId.toString(),
-                text: c.name
-            }));
+            existingClients = [
+                ...(clientsData as { clientId: number; name: string }[])
+            ];
         }
     }
 
@@ -592,8 +598,7 @@ export function InternalResourceForm({
                 </div>
 
                 <HorizontalTabs
-                    clientSide={true}
-                    defaultTab={0}
+                    clientSide
                     items={[
                         {
                             title: t(
@@ -610,7 +615,7 @@ export function InternalResourceForm({
                             : [{ title: t("sshAccess"), href: "#" }])
                     ]}
                 >
-                    <div className="space-y-4 mt-4">
+                    <div className="space-y-4 mt-4 p-1">
                         <div>
                             <div className="mb-8">
                                 <label className="font-medium block">
@@ -981,7 +986,7 @@ export function InternalResourceForm({
                         </div>
                     </div>
 
-                    <div className="space-y-4 mt-4">
+                    <div className="space-y-4 mt-4 p-1">
                         <div className="mb-8">
                             <label className="font-medium block">
                                 {t("editInternalResourceDialogAccessControl")}
@@ -1101,48 +1106,73 @@ export function InternalResourceForm({
                                                 <FormLabel>
                                                     {t("machineClients")}
                                                 </FormLabel>
-                                                <FormControl>
-                                                    <TagInput
-                                                        {...field}
-                                                        activeTagIndex={
-                                                            activeClientsTagIndex
-                                                        }
-                                                        setActiveTagIndex={
-                                                            setActiveClientsTagIndex
-                                                        }
-                                                        placeholder={
-                                                            t(
-                                                                "accessClientSelect"
-                                                            ) ||
-                                                            "Select machine clients"
-                                                        }
-                                                        size="sm"
-                                                        tags={
-                                                            form.getValues()
-                                                                .clients ?? []
-                                                        }
-                                                        setTags={(newClients) =>
-                                                            form.setValue(
-                                                                "clients",
-                                                                newClients as [
-                                                                    Tag,
-                                                                    ...Tag[]
-                                                                ]
-                                                            )
-                                                        }
-                                                        enableAutocomplete={
-                                                            true
-                                                        }
-                                                        autocompleteOptions={
-                                                            allClients
-                                                        }
-                                                        allowDuplicates={false}
-                                                        restrictTagsToAutocompleteOptions={
-                                                            true
-                                                        }
-                                                        sortTags={true}
-                                                    />
-                                                </FormControl>
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <FormControl>
+                                                            <Button
+                                                                variant="outline"
+                                                                role="combobox"
+                                                                className={cn(
+                                                                    "justify-between w-full",
+                                                                    "text-muted-foreground pl-1.5"
+                                                                )}
+                                                            >
+                                                                <span
+                                                                    className={cn(
+                                                                        "inline-flex items-center gap-1",
+                                                                        "overflow-x-auto"
+                                                                    )}
+                                                                >
+                                                                    {(
+                                                                        field.value ??
+                                                                        []
+                                                                    ).map(
+                                                                        (
+                                                                            client
+                                                                        ) => (
+                                                                            <span
+                                                                                key={
+                                                                                    client.clientId
+                                                                                }
+                                                                                className={cn(
+                                                                                    "bg-muted-foreground/20 font-normal text-foreground rounded-sm",
+                                                                                    "py-1 px-1.5 text-xs"
+                                                                                )}
+                                                                            >
+                                                                                {
+                                                                                    client.name
+                                                                                }
+                                                                            </span>
+                                                                        )
+                                                                    )}
+                                                                    <span className="pl-1">
+                                                                        {t(
+                                                                            "accessClientSelect"
+                                                                        )}
+                                                                    </span>
+                                                                </span>
+                                                                <CaretSortIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                            </Button>
+                                                        </FormControl>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="p-0">
+                                                        <MachineSelector
+                                                            selectedMachines={
+                                                                field.value ??
+                                                                []
+                                                            }
+                                                            orgId={orgId}
+                                                            onSelectMachines={(
+                                                                machines
+                                                            ) => {
+                                                                form.setValue(
+                                                                    "clients",
+                                                                    machines
+                                                                );
+                                                            }}
+                                                        />
+                                                    </PopoverContent>
+                                                </Popover>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
@@ -1154,7 +1184,7 @@ export function InternalResourceForm({
 
                     {/* SSH Access tab */}
                     {!disableEnterpriseFeatures && mode !== "cidr" && (
-                        <div className="space-y-4 mt-4">
+                        <div className="space-y-4 mt-4 p-1">
                             <PaidFeaturesAlert tiers={tierMatrix.sshPam} />
                             <div className="mb-8">
                                 <label className="font-medium block">

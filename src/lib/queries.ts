@@ -92,13 +92,25 @@ export const productUpdatesQueries = {
 };
 
 export const orgQueries = {
-    clients: ({ orgId }: { orgId: string }) =>
+    machineClients: ({
+        orgId,
+        query,
+        perPage = 10_000
+    }: {
+        orgId: string;
+        query?: string;
+        perPage?: number;
+    }) =>
         queryOptions({
             queryKey: ["ORG", orgId, "CLIENTS"] as const,
             queryFn: async ({ signal, meta }) => {
                 const sp = new URLSearchParams({
-                    pageSize: "10000"
+                    pageSize: perPage.toString()
                 });
+
+                if (query?.trim()) {
+                    sp.set("query", query);
+                }
 
                 const res = await meta!.api.get<
                     AxiosResponse<ListClientsResponse>
