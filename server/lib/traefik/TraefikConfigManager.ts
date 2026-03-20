@@ -286,14 +286,12 @@ export class TraefikConfigManager {
             // Check non-wildcard certs for expiry (within 45 days to match
             // the server-side renewal window in certificate-service)
             for (const domain of domainsNeedingCerts) {
-                const localState =
-                    this.lastLocalCertificateState.get(domain);
+                const localState = this.lastLocalCertificateState.get(domain);
                 if (localState?.expiresAt) {
                     const nowInSeconds = Math.floor(Date.now() / 1000);
                     const secondsUntilExpiry =
                         localState.expiresAt - nowInSeconds;
-                    const daysUntilExpiry =
-                        secondsUntilExpiry / (60 * 60 * 24);
+                    const daysUntilExpiry = secondsUntilExpiry / (60 * 60 * 24);
                     if (daysUntilExpiry < 45) {
                         logger.info(
                             `Fetching certificates due to upcoming expiry for ${domain} (${Math.round(daysUntilExpiry)} days remaining)`
@@ -306,18 +304,11 @@ export class TraefikConfigManager {
             // Also check wildcard certificates for expiry. These are not
             // included in domainsNeedingCerts since their subdomains are
             // filtered out, so we must check them separately.
-            for (const [certDomain, state] of this
-                .lastLocalCertificateState) {
-                if (
-                    state.exists &&
-                    state.wildcard &&
-                    state.expiresAt
-                ) {
+            for (const [certDomain, state] of this.lastLocalCertificateState) {
+                if (state.exists && state.wildcard && state.expiresAt) {
                     const nowInSeconds = Math.floor(Date.now() / 1000);
-                    const secondsUntilExpiry =
-                        state.expiresAt - nowInSeconds;
-                    const daysUntilExpiry =
-                        secondsUntilExpiry / (60 * 60 * 24);
+                    const secondsUntilExpiry = state.expiresAt - nowInSeconds;
+                    const daysUntilExpiry = secondsUntilExpiry / (60 * 60 * 24);
                     if (daysUntilExpiry < 45) {
                         logger.info(
                             `Fetching certificates due to upcoming expiry for wildcard cert ${certDomain} (${Math.round(daysUntilExpiry)} days remaining)`
@@ -405,14 +396,8 @@ export class TraefikConfigManager {
                     // their subdomains were filtered out above.
                     for (const [certDomain, state] of this
                         .lastLocalCertificateState) {
-                        if (
-                            state.exists &&
-                            state.wildcard &&
-                            state.expiresAt
-                        ) {
-                            const nowInSeconds = Math.floor(
-                                Date.now() / 1000
-                            );
+                        if (state.exists && state.wildcard && state.expiresAt) {
+                            const nowInSeconds = Math.floor(Date.now() / 1000);
                             const secondsUntilExpiry =
                                 state.expiresAt - nowInSeconds;
                             const daysUntilExpiry =
@@ -572,10 +557,17 @@ export class TraefikConfigManager {
                                 config.getRawConfig().server
                                     .session_cookie_name,
 
-                            // deprecated
                             accessTokenQueryParam:
                                 config.getRawConfig().server
                                     .resource_access_token_param,
+
+                            accessTokenIdHeader:
+                                config.getRawConfig().server
+                                    .resource_access_token_headers.id,
+
+                            accessTokenHeader:
+                                config.getRawConfig().server
+                                    .resource_access_token_headers.token,
 
                             resourceSessionRequestParam:
                                 config.getRawConfig().server

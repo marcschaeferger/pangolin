@@ -39,10 +39,17 @@ export async function traefikConfigProvider(
                         userSessionCookieName:
                             config.getRawConfig().server.session_cookie_name,
 
-                        // deprecated
                         accessTokenQueryParam:
                             config.getRawConfig().server
                                 .resource_access_token_param,
+
+                        accessTokenIdHeader:
+                            config.getRawConfig().server
+                                .resource_access_token_headers.id,
+
+                        accessTokenHeader:
+                            config.getRawConfig().server
+                                .resource_access_token_headers.token,
 
                         resourceSessionRequestParam:
                             config.getRawConfig().server

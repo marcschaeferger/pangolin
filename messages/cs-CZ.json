@@ -175,7 +175,7 @@
     "resourceHTTPDescription": "Proxy požadavky přes HTTPS pomocí plně kvalifikovaného názvu domény.",
     "resourceRaw": "Surový TCP/UDP zdroj",
     "resourceRawDescription": "Proxy požadavky přes nezpracovaný TCP/UDP pomocí čísla portu.",
-    "resourceRawDescriptionCloud": "Požadavky na proxy přes syrové TCP/UDP pomocí portového čísla. ŽÁDOSTI POUŽÍVAT POUŽITÍ Z REMOTE NODE.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. Requires sites to connect to a remote node.",
     "resourceCreate": "Vytvořit zdroj",
     "resourceCreateDescription": "Postupujte podle níže uvedených kroků, abyste vytvořili a připojili nový zdroj",
     "resourceSeeAll": "Zobrazit všechny zdroje",
@@ -1426,6 +1426,7 @@
     "domainPickerNamespace": "Jmenný prostor: {namespace}",
     "domainPickerShowMore": "Zobrazit více",
     "regionSelectorTitle": "Vybrat region",
+    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
     "regionSelectorInfo": "Výběr regionu nám pomáhá poskytovat lepší výkon pro vaši polohu. Nemusíte být ve stejném regionu jako váš server.",
     "regionSelectorPlaceholder": "Vyberte region",
     "regionSelectorComingSoon": "Již brzy",
@@ -2342,8 +2343,8 @@
     "logRetentionEndOfFollowingYear": "Konec následujícího roku",
     "actionLogsDescription": "Zobrazit historii akcí provedených v této organizaci",
     "accessLogsDescription": "Zobrazit žádosti o ověření přístupu pro zdroje v této organizaci",
-    "licenseRequiredToUse": "Pro použití této funkce je vyžadována licence <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> . Tato funkce je také dostupná v <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>.",
-    "ossEnterpriseEditionRequired": "<enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> je vyžadována pro použití této funkce. Tato funkce je také k dispozici v <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>.",
+    "licenseRequiredToUse": "An <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> license or <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> is required to use this feature. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
+    "ossEnterpriseEditionRequired": "The <enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> is required to use this feature. This feature is also available in <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
     "certResolver": "Oddělovač certifikátů",
     "certResolverDescription": "Vyberte řešitele certifikátů pro tento dokument.",
     "selectCertResolver": "Vyberte řešič certifikátů",
@@ -2680,5 +2681,6 @@
     "approvalsEmptyStateStep2Title": "Povolit schválení zařízení",
     "approvalsEmptyStateStep2Description": "Upravte roli a povolte možnost 'Vyžadovat schválení zařízení'. Uživatelé s touto rolí budou potřebovat schválení pro nová zařízení správce.",
     "approvalsEmptyStatePreviewDescription": "Náhled: Pokud je povoleno, čekající na zařízení se zde zobrazí žádosti o recenzi",
-    "approvalsEmptyStateButtonText": "Spravovat role"
+    "approvalsEmptyStateButtonText": "Spravovat role",
+    "domainErrorTitle": "We are having trouble verifying your domain"
 }

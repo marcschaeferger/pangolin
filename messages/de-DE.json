@@ -175,7 +175,7 @@
     "resourceHTTPDescription": "Proxy-Anfragen über HTTPS mit einem voll qualifizierten Domain-Namen.",
     "resourceRaw": "Direkte TCP/UDP Ressource (raw)",
     "resourceRawDescription": "Proxy-Anfragen über rohes TCP/UDP mit einer Portnummer.",
-    "resourceRawDescriptionCloud": "Proxy-Anfragen über rohe TCP/UDP mit einer Portnummer. Erfordert die NUTZUNG eines REMOTE Knotens.",
+    "resourceRawDescriptionCloud": "Proxy requests over raw TCP/UDP using a port number. Requires sites to connect to a remote node.",
     "resourceCreate": "Ressource erstellen",
     "resourceCreateDescription": "Folgen Sie den Schritten unten, um eine neue Ressource zu erstellen",
     "resourceSeeAll": "Alle Ressourcen anzeigen",
@@ -1426,6 +1426,7 @@
     "domainPickerNamespace": "Namespace: {namespace}",
     "domainPickerShowMore": "Mehr anzeigen",
     "regionSelectorTitle": "Region auswählen",
+    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
     "regionSelectorInfo": "Das Auswählen einer Region hilft uns, eine bessere Leistung für Ihren Standort bereitzustellen. Sie müssen sich nicht in derselben Region wie Ihr Server befinden.",
     "regionSelectorPlaceholder": "Wähle eine Region",
     "regionSelectorComingSoon": "Kommt bald",
@@ -2342,8 +2343,8 @@
     "logRetentionEndOfFollowingYear": "Ende des folgenden Jahres",
     "actionLogsDescription": "Verlauf der in dieser Organisation durchgeführten Aktionen anzeigen",
     "accessLogsDescription": "Zugriffsauth-Anfragen für Ressourcen in dieser Organisation anzeigen",
-    "licenseRequiredToUse": "Um diese Funktion nutzen zu können, ist eine <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> Lizenz erforderlich. Diese Funktion ist auch in der <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> verfügbar.",
-    "ossEnterpriseEditionRequired": "Um diese Funktion nutzen zu können, ist die <enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> erforderlich. Diese Funktion ist auch in der <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> verfügbar.",
+    "licenseRequiredToUse": "An <enterpriseLicenseLink>Enterprise Edition</enterpriseLicenseLink> license or <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink> is required to use this feature. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
+    "ossEnterpriseEditionRequired": "The <enterpriseEditionLink>Enterprise Edition</enterpriseEditionLink> is required to use this feature. This feature is also available in <pangolinCloudLink>Pangolin Cloud</pangolinCloudLink>. <bookADemoLink>Book a demo or POC trial</bookADemoLink>.",
     "certResolver": "Zertifikatsauflöser",
     "certResolverDescription": "Wählen Sie den Zertifikatslöser aus, der für diese Ressource verwendet werden soll.",
     "selectCertResolver": "Zertifikatsauflöser auswählen",
@@ -2680,5 +2681,6 @@
     "approvalsEmptyStateStep2Title": "Gerätegenehmigungen aktivieren",
     "approvalsEmptyStateStep2Description": "Bearbeite eine Rolle und aktiviere die Option 'Gerätegenehmigung erforderlich'. Benutzer mit dieser Rolle benötigen Administrator-Genehmigung für neue Geräte.",
     "approvalsEmptyStatePreviewDescription": "Vorschau: Wenn aktiviert, werden ausstehende Geräteanfragen hier zur Überprüfung angezeigt",
-    "approvalsEmptyStateButtonText": "Rollen verwalten"
+    "approvalsEmptyStateButtonText": "Rollen verwalten",
+    "domainErrorTitle": "We are having trouble verifying your domain"
 }
