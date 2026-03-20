@@ -81,6 +81,7 @@ import { verifyResourceAccessToken } from "@server/auth/verifyResourceAccessToke
 import semver from "semver";
 import { maxmindAsnLookup } from "@server/db/maxmindAsn";
 import { checkOrgAccessPolicy } from "@server/lib/checkOrgAccessPolicy";
+import { sanitizeString } from "@server/lib/sanitize";
 
 // Zod schemas for request validation
 const getResourceByDomainParamsSchema = z.strictObject({
@@ -1859,24 +1860,24 @@ hybridRouter.post(
                 })
                 .map((logEntry) => ({
                     timestamp: logEntry.timestamp,
-                    orgId: logEntry.orgId,
-                    actorType: logEntry.actorType,
-                    actor: logEntry.actor,
-                    actorId: logEntry.actorId,
-                    metadata: logEntry.metadata,
+                    orgId: sanitizeString(logEntry.orgId),
+                    actorType: sanitizeString(logEntry.actorType),
+                    actor: sanitizeString(logEntry.actor),
+                    actorId: sanitizeString(logEntry.actorId),
+                    metadata: sanitizeString(logEntry.metadata),
                     action: logEntry.action,
                     resourceId: logEntry.resourceId,
                     reason: logEntry.reason,
-                    location: logEntry.location,
+                    location: sanitizeString(logEntry.location),
                     // userAgent: data.userAgent, // TODO: add this
                     // headers: data.body.headers,
                     // query: data.body.query,
-                    originalRequestURL: logEntry.originalRequestURL,
-                    scheme: logEntry.scheme,
-                    host: logEntry.host,
-                    path: logEntry.path,
-                    method: logEntry.method,
-                    ip: logEntry.ip,
+                    originalRequestURL: sanitizeString(logEntry.originalRequestURL) ?? "",
+                    scheme: sanitizeString(logEntry.scheme) ?? "",
+                    host: sanitizeString(logEntry.host) ?? "",
+                    path: sanitizeString(logEntry.path) ?? "",
+                    method: sanitizeString(logEntry.method) ?? "",
+                    ip: sanitizeString(logEntry.ip),
                     tls: logEntry.tls
                 }));
 

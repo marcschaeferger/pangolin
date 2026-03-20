@@ -5,25 +5,7 @@ import cache from "#dynamic/lib/cache";
 import { calculateCutoffTimestamp } from "@server/lib/cleanupLogs";
 import { stripPortFromHost } from "@server/lib/ip";
 
-/**
- * Sanitize a string field by replacing lone UTF-16 surrogates (which cannot
- * be encoded as valid UTF-8) with the Unicode replacement character, and
- * stripping ASCII control characters that are invalid in most text columns.
- */
-function sanitizeString(value: string | undefined | null): string | undefined {
-    if (value == null) return undefined;
-    return (
-        value
-            // Replace lone high surrogates (not followed by a low surrogate)
-            // and lone low surrogates (not preceded by a high surrogate)
-            .replace(
-                /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-                "\uFFFD"
-            )
-            // Strip C0 control characters except HT (\x09), LF (\x0A), CR (\x0D)
-            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
-    );
-}
+import { sanitizeString } from "@server/lib/sanitize";
 
 /**
 
