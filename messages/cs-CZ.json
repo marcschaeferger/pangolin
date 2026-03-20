@@ -1426,7 +1426,7 @@
     "domainPickerNamespace": "Jmenný prostor: {namespace}",
     "domainPickerShowMore": "Zobrazit více",
     "regionSelectorTitle": "Vybrat region",
-    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be availble on remote nodes, use a custom domain instead.",
+    "domainPickerRemoteExitNodeWarning": "Provided domains are not supported when sites connect to remote exit nodes. For resources to be available on remote nodes, use a custom domain instead.",
     "regionSelectorInfo": "Výběr regionu nám pomáhá poskytovat lepší výkon pro vaši polohu. Nemusíte být ve stejném regionu jako váš server.",
     "regionSelectorPlaceholder": "Vyberte region",
     "regionSelectorComingSoon": "Již brzy",
