@@ -27,7 +27,7 @@ export type MachineSelectorProps = {
     onSelectMachines: (machine: SelectedMachine[]) => void;
 };
 
-export function MachineSelector({
+export function MachinesSelector({
     orgId,
     selectedMachines = [],
     onSelectMachines

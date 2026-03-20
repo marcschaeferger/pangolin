@@ -44,7 +44,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { SitesSelector, type Selectedsite } from "./site-selector";
 import { CaretSortIcon } from "@radix-ui/react-icons";
-import { MachineSelector } from "./machine-selector";
+import { MachinesSelector } from "./machines-selector";
 
 // --- Helpers (shared) ---
 
@@ -1162,7 +1162,7 @@ export function InternalResourceForm({
                                                         </FormControl>
                                                     </PopoverTrigger>
                                                     <PopoverContent className="p-0">
-                                                        <MachineSelector
+                                                        <MachinesSelector
                                                             selectedMachines={
                                                                 field.value ??
                                                                 []
