@@ -41,21 +41,21 @@ export function MachineSelector({
         orgQueries.machineClients({ orgId, perPage: 10, query: debouncedValue })
     );
 
-    // always include the selected site in the list of sites shown
+    // always include the selected machines in the list of machines shown (if the user isn't searching)
     const machinesShown = useMemo(() => {
         const allMachines: Array<SelectedMachine> = [...machines];
-        for (const machine of selectedMachines) {
-            if (
-                !allMachines.find(
-                    (machine) => machine.clientId === machine.clientId
-                )
-            ) {
-                allMachines.unshift(machine);
+        if (debouncedValue.trim().length === 0) {
+            for (const machine of selectedMachines) {
+                if (
+                    !allMachines.find((mc) => mc.clientId === machine.clientId)
+                ) {
+                    allMachines.unshift(machine);
+                }
             }
         }
 
         return allMachines;
-    }, [machines, selectedMachines]);
+    }, [machines, selectedMachines, debouncedValue]);
 
     const selectedMachinesIds = new Set(
         selectedMachines.map((m) => m.clientId)

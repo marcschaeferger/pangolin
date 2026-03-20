@@ -47,13 +47,14 @@ export function SitesSelector({
     const sitesShown = useMemo(() => {
         const allSites: Array<Selectedsite> = [...sites];
         if (
+            debouncedQuery.trim().length === 0 &&
             selectedSite &&
             !allSites.find((site) => site.siteId === selectedSite?.siteId)
         ) {
             allSites.unshift(selectedSite);
         }
         return allSites;
-    }, [sites, selectedSite]);
+    }, [debouncedQuery, sites, selectedSite]);
 
     return (
         <Command shouldFilter={false}>

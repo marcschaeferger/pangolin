@@ -44,10 +44,11 @@ export function ResourceSelector({
         })
     );
 
-    // always include the selected site in the list of sites shown
+    // always include the selected resource in the list of resources shown
     const resourcesShown = useMemo(() => {
         const allResources: Array<SelectedResource> = [...resources];
         if (
+            debouncedSearchQuery.trim().length === 0 &&
             selectedResource &&
             !allResources.find(
                 (resource) =>
@@ -57,7 +58,7 @@ export function ResourceSelector({
             allResources.unshift(selectedResource);
         }
         return allResources;
-    }, [resources, selectedResource]);
+    }, [debouncedSearchQuery, resources, selectedResource]);
 
     return (
         <Command shouldFilter={false}>

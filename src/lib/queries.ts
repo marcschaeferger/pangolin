@@ -102,7 +102,7 @@ export const orgQueries = {
         perPage?: number;
     }) =>
         queryOptions({
-            queryKey: ["ORG", orgId, "CLIENTS"] as const,
+            queryKey: ["ORG", orgId, "CLIENTS", { query, perPage }] as const,
             queryFn: async ({ signal, meta }) => {
                 const sp = new URLSearchParams({
                     pageSize: perPage.toString()
