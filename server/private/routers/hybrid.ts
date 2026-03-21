@@ -15,6 +15,7 @@ import { verifySessionRemoteExitNodeMiddleware } from "#private/middlewares/veri
 import { Router } from "express";
 import {
     db,
+    logsDb,
     exitNodes,
     Resource,
     ResourcePassword,
@@ -1885,7 +1886,7 @@ hybridRouter.post(
             const batchSize = 100;
             for (let i = 0; i < logEntries.length; i += batchSize) {
                 const batch = logEntries.slice(i, i + batchSize);
-                await db.insert(requestAuditLog).values(batch);
+                await logsDb.insert(requestAuditLog).values(batch);
             }
 
             return response(res, {
