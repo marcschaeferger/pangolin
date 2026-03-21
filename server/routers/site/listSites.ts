@@ -55,7 +55,7 @@ async function getLatestNewtVersion(): Promise<string | null> {
         tags = tags.filter((version) => !version.name.includes("rc"));
         const latestVersion = tags[0].name;
 
-        await cache.set("latestNewtVersion", latestVersion);
+        await cache.set("latestNewtVersion", latestVersion, 3600);
 
         return latestVersion;
     } catch (error: any) {
@@ -180,7 +180,7 @@ registry.registerPath({
     method: "get",
     path: "/org/{orgId}/sites",
     description: "List all sites in an organization",
-    tags: [OpenAPITags.Site],
+    tags: [OpenAPITags.Org, OpenAPITags.Site],
     request: {
         params: listSitesParamsSchema,
         query: listSitesSchema
