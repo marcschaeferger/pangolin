@@ -135,6 +135,13 @@ authenticated.post(
     logActionAudit(ActionsEnum.updateSite),
     site.updateSite
 );
+authenticated.post(
+    "/org/:orgId/reset-bandwidth",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyHasAction(ActionsEnum.resetSiteBandwidth),
+    logActionAudit(ActionsEnum.resetSiteBandwidth),
+    org.resetOrgBandwidth
+);
 
 authenticated.delete(
     "/site/:siteId",
