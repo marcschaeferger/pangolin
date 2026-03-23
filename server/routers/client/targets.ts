@@ -11,7 +11,7 @@ import logger from "@server/logger";
 import { eq } from "drizzle-orm";
 import semver from "semver";
 
-const NEWT_V2_TARGETS_VERSION = ">=1.11.0";
+const NEWT_V2_TARGETS_VERSION = ">=1.10.3";
 
 export async function convertTargetsIfNessicary(
     newtId: string,
