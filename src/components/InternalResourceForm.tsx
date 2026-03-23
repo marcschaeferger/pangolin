@@ -132,6 +132,7 @@ export type InternalResourceData = {
     siteName: string;
     mode: "host" | "cidr";
     siteId: number;
+    niceId: string;
     destination: string;
     alias?: string | null;
     tcpPortRangeString?: string | null;
@@ -149,6 +150,7 @@ export type InternalResourceFormValues = {
     mode: "host" | "cidr";
     destination: string;
     alias?: string | null;
+    niceId?: string;
     tcpPortRangeString?: string | null;
     udpPortRangeString?: string | null;
     disableIcmp?: boolean;
@@ -243,6 +245,12 @@ export function InternalResourceForm({
                     : undefined
             ),
         alias: z.string().nullish(),
+        niceId: z
+            .string()
+            .min(1)
+            .max(255)
+            .regex(/^[a-zA-Z0-9-]+$/)
+            .optional(),
         tcpPortRangeString: createPortRangeStringSchema(t),
         udpPortRangeString: createPortRangeStringSchema(t),
         disableIcmp: z.boolean().optional(),
@@ -387,6 +395,7 @@ export function InternalResourceForm({
                   disableIcmp: resource.disableIcmp ?? false,
                   authDaemonMode: resource.authDaemonMode ?? "site",
                   authDaemonPort: resource.authDaemonPort ?? null,
+                  niceId: resource.niceId,
                   roles: [],
                   users: [],
                   clients: []
@@ -534,13 +543,26 @@ export function InternalResourceForm({
                 className="space-y-6"
                 id={formId}
             >
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-4">
                     <FormField
                         control={form.control}
                         name="name"
                         render={({ field }) => (
                             <FormItem>
                                 <FormLabel>{t(nameLabelKey)}</FormLabel>
+                                <FormControl>
+                                    <Input {...field} />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="niceId"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>{t("identifier")}</FormLabel>
                                 <FormControl>
                                     <Input {...field} />
                                 </FormControl>
