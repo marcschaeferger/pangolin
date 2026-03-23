@@ -40,7 +40,8 @@ async function queryDomains(orgId: string, limit: number, offset: number) {
             tries: domains.tries,
             configManaged: domains.configManaged,
             certResolver: domains.certResolver,
-            preferWildcardCert: domains.preferWildcardCert
+            preferWildcardCert: domains.preferWildcardCert,
+            errorMessage: domains.errorMessage
         })
         .from(orgDomains)
         .where(eq(orgDomains.orgId, orgId))
@@ -59,7 +60,7 @@ registry.registerPath({
     method: "get",
     path: "/org/{orgId}/domains",
     description: "List all domains for a organization.",
-    tags: [OpenAPITags.Org],
+    tags: [OpenAPITags.Domain],
     request: {
         params: z.object({
             orgId: z.string()

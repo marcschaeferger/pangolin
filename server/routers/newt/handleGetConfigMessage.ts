@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { sendToExitNode } from "#dynamic/lib/exitNodes";
 import { buildClientConfigurationForNewtClient } from "./buildConfiguration";
 import { convertTargetsIfNessicary } from "../client/targets";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 const inputSchema = z.object({
     publicKey: z.string(),
@@ -105,11 +106,11 @@ export const handleGetConfigMessage: MessageHandler = async (context) => {
             const payload = {
                 oldDestination: {
                     destinationIP: existingSite.subnet?.split("/")[0],
-                    destinationPort: existingSite.listenPort
+                    destinationPort: existingSite.listenPort || 1 // this satisfies gerbil for now but should be reevaluated
                 },
                 newDestination: {
                     destinationIP: site.subnet?.split("/")[0],
-                    destinationPort: site.listenPort
+                    destinationPort: site.listenPort || 1 // this satisfies gerbil for now but should be reevaluated
                 }
             };
 
@@ -137,6 +138,9 @@ export const handleGetConfigMessage: MessageHandler = async (context) => {
                 peers,
                 targets: targetsToSend
             }
+        },
+        options: {
+            compress: canCompress(newt.version, "newt")
         },
         broadcast: false,
         excludeSender: false

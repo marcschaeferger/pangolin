@@ -6,6 +6,7 @@ import {
     buildClientConfigurationForNewtClient,
     buildTargetConfigurationForNewtClient
 } from "./buildConfiguration";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 export async function sendNewtSyncMessage(newt: Newt, site: Site) {
     const { tcpTargets, udpTargets, validHealthCheckTargets } =
@@ -24,18 +25,24 @@ export async function sendNewtSyncMessage(newt: Newt, site: Site) {
         exitNode
     );
 
-    await sendToClient(newt.newtId, {
-        type: "newt/sync",
-        data: {
-            proxyTargets: {
-                udp: udpTargets,
-                tcp: tcpTargets
-            },
-            healthCheckTargets: validHealthCheckTargets,
-            peers: peers,
-            clientTargets: targets
+    await sendToClient(
+        newt.newtId,
+        {
+            type: "newt/sync",
+            data: {
+                proxyTargets: {
+                    udp: udpTargets,
+                    tcp: tcpTargets
+                },
+                healthCheckTargets: validHealthCheckTargets,
+                peers: peers,
+                clientTargets: targets
+            }
+        },
+        {
+            compress: canCompress(newt.version, "newt")
         }
-    }).catch((error) => {
+    ).catch((error) => {
         logger.warn(`Error sending newt sync message:`, error);
     });
 }

@@ -17,10 +17,13 @@ import {
     startRemoteExitNodeOfflineChecker
 } from "#private/routers/remoteExitNode";
 import { MessageHandler } from "@server/routers/ws";
+import { build } from "@server/build";
 
 export const messageHandlers: Record<string, MessageHandler> = {
     "remoteExitNode/register": handleRemoteExitNodeRegisterMessage,
     "remoteExitNode/ping": handleRemoteExitNodePingMessage
 };
 
-startRemoteExitNodeOfflineChecker(); // this is to handle the offline check for remote exit nodes
+if (build != "saas") {
+    startRemoteExitNodeOfflineChecker(); // this is to handle the offline check for remote exit nodes
+}

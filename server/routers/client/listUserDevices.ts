@@ -71,7 +71,7 @@ async function getLatestOlmVersion(): Promise<string | null> {
         tags = tags.filter((version) => !version.name.includes("rc"));
         const latestVersion = tags[0].name;
 
-        olmVersionCache.set("latestOlmVersion", latestVersion);
+        olmVersionCache.set("latestOlmVersion", latestVersion, 3600);
 
         return latestVersion;
     } catch (error: any) {
@@ -256,7 +256,7 @@ registry.registerPath({
     method: "get",
     path: "/org/{orgId}/user-devices",
     description: "List all user devices for an organization.",
-    tags: [OpenAPITags.Client, OpenAPITags.Org],
+    tags: [OpenAPITags.Client],
     request: {
         query: listUserDevicesSchema,
         params: listUserDevicesParamsSchema

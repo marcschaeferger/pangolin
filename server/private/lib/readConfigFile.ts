@@ -38,10 +38,6 @@ export const privateConfigSchema = z.object({
                 .string()
                 .optional()
                 .transform(getEnvOrYaml("SERVER_ENCRYPTION_KEY")),
-            resend_api_key: z
-                .string()
-                .optional()
-                .transform(getEnvOrYaml("RESEND_API_KEY")),
             reo_client_id: z
                 .string()
                 .optional()
@@ -61,7 +57,10 @@ export const privateConfigSchema = z.object({
         .object({
             host: z.string(),
             port: portSchema,
-            password: z.string().optional(),
+            password: z
+                .string()
+                .optional()
+                .transform(getEnvOrYaml("REDIS_PASSWORD")),
             db: z.int().nonnegative().optional().default(0),
             replicas: z
                 .array(

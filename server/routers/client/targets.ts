@@ -1,30 +1,15 @@
 import { sendToClient } from "#dynamic/routers/ws";
-import { S } from "@faker-js/faker/dist/airline-Dz1uGqgJ";
-import { db, newts, olms, Transaction } from "@server/db";
+import { db, newts, olms } from "@server/db";
 import {
     Alias,
     convertSubnetProxyTargetsV2ToV1,
     SubnetProxyTarget,
     SubnetProxyTargetV2
 } from "@server/lib/ip";
+import { canCompress } from "@server/lib/clientVersionChecks";
 import logger from "@server/logger";
 import { eq } from "drizzle-orm";
 import semver from "semver";
-
-const BATCH_SIZE = 50;
-const BATCH_DELAY_MS = 50;
-
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function chunkArray<T>(array: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-        chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-}
 
 const NEWT_V2_TARGETS_VERSION = ">=1.11.0";
 
@@ -59,53 +44,36 @@ export async function convertTargetsIfNessicary(
 
 export async function addTargets(
     newtId: string,
-    targets: SubnetProxyTarget[] | SubnetProxyTargetV2[]
+    targets: SubnetProxyTarget[] | SubnetProxyTargetV2[],
+    version?: string | null
 ) {
     targets = await convertTargetsIfNessicary(newtId, targets);
 
-    const batches = chunkArray<SubnetProxyTarget | SubnetProxyTargetV2>(
-        targets,
-        BATCH_SIZE
+    await sendToClient(
+        newtId,
+        {
+            type: `newt/wg/targets/add`,
+            data: targets
+        },
+        { incrementConfigVersion: true, compress: canCompress(version, "newt") }
     );
-
-    for (let i = 0; i < batches.length; i++) {
-        if (i > 0) {
-            await sleep(BATCH_DELAY_MS);
-        }
-        await sendToClient(
-            newtId,
-            {
-                type: `newt/wg/targets/add`,
-                data: batches[i]
-            },
-            { incrementConfigVersion: true }
-        );
-    }
 }
 
 export async function removeTargets(
     newtId: string,
-    targets: SubnetProxyTarget[] | SubnetProxyTargetV2[]
+    targets: SubnetProxyTarget[] | SubnetProxyTargetV2[],
+    version?: string | null
 ) {
     targets = await convertTargetsIfNessicary(newtId, targets);
 
-    const batches = chunkArray<SubnetProxyTarget | SubnetProxyTargetV2>(
-        targets,
-        BATCH_SIZE
+    await sendToClient(
+        newtId,
+        {
+            type: `newt/wg/targets/remove`,
+            data: targets
+        },
+        { incrementConfigVersion: true, compress: canCompress(version, "newt") }
     );
-    for (let i = 0; i < batches.length; i++) {
-        if (i > 0) {
-            await sleep(BATCH_DELAY_MS);
-        }
-        await sendToClient(
-            newtId,
-            {
-                type: `newt/wg/targets/remove`,
-                data: batches[i]
-            },
-            { incrementConfigVersion: true }
-        );
-    }
 }
 
 export async function updateTargets(
@@ -113,7 +81,8 @@ export async function updateTargets(
     targets: {
         oldTargets: SubnetProxyTarget[] | SubnetProxyTargetV2[];
         newTargets: SubnetProxyTarget[] | SubnetProxyTargetV2[];
-    }
+    },
+    version?: string | null
 ) {
     // get the newt
     const [newt] = await db
@@ -143,35 +112,19 @@ export async function updateTargets(
         };
     }
 
-    const oldBatches = chunkArray<SubnetProxyTarget | SubnetProxyTargetV2>(
-        targets.oldTargets,
-        BATCH_SIZE
-    );
-    const newBatches = chunkArray<SubnetProxyTarget | SubnetProxyTargetV2>(
-        targets.newTargets,
-        BATCH_SIZE
-    );
-
-    const maxBatches = Math.max(oldBatches.length, newBatches.length);
-
-    for (let i = 0; i < maxBatches; i++) {
-        if (i > 0) {
-            await sleep(BATCH_DELAY_MS);
-        }
-        await sendToClient(
-            newtId,
-            {
-                type: `newt/wg/targets/update`,
-                data: {
-                    oldTargets: oldBatches[i] || [],
-                    newTargets: newBatches[i] || []
-                }
-            },
-            { incrementConfigVersion: true }
-        ).catch((error) => {
-            logger.warn(`Error sending message:`, error);
-        });
-    }
+    await sendToClient(
+        newtId,
+        {
+            type: `newt/wg/targets/update`,
+            data: {
+                oldTargets: targets.oldTargets,
+                newTargets: targets.newTargets
+            }
+        },
+        { incrementConfigVersion: true, compress: canCompress(version, "newt") }
+    ).catch((error) => {
+        logger.warn(`Error sending message:`, error);
+    });
 }
 
 export async function addPeerData(
@@ -179,7 +132,8 @@ export async function addPeerData(
     siteId: number,
     remoteSubnets: string[],
     aliases: Alias[],
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -191,6 +145,7 @@ export async function addPeerData(
             return; // ignore this because an olm might not be associated with the client anymore
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -203,7 +158,7 @@ export async function addPeerData(
                 aliases: aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -214,7 +169,8 @@ export async function removePeerData(
     siteId: number,
     remoteSubnets: string[],
     aliases: Alias[],
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -226,6 +182,7 @@ export async function removePeerData(
             return;
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -238,7 +195,7 @@ export async function removePeerData(
                 aliases: aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -259,7 +216,8 @@ export async function updatePeerData(
               newAliases: Alias[];
           }
         | undefined,
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -271,6 +229,7 @@ export async function updatePeerData(
             return;
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -283,7 +242,7 @@ export async function updatePeerData(
                 ...aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });

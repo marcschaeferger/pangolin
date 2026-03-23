@@ -44,7 +44,7 @@ registry.registerPath({
     method: "post",
     path: "/org/{orgId}/create-invite",
     description: "Invite a user to join an organization.",
-    tags: [OpenAPITags.Org],
+    tags: [OpenAPITags.Invitation],
     request: {
         params: inviteUserParamsSchema,
         body: {
@@ -201,7 +201,7 @@ export async function inviteUser(
                 );
             }
 
-            await cache.set(email, attempts + 1);
+            await cache.set("regenerateInvite:" + email, attempts + 1, 3600);
 
             const inviteId = existingInvite[0].inviteId; // Retrieve the original inviteId
             const token = generateRandomString(

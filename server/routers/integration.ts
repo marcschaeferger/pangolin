@@ -135,6 +135,13 @@ authenticated.post(
     logActionAudit(ActionsEnum.updateSite),
     site.updateSite
 );
+authenticated.post(
+    "/org/:orgId/reset-bandwidth",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyHasAction(ActionsEnum.resetSiteBandwidth),
+    logActionAudit(ActionsEnum.resetSiteBandwidth),
+    org.resetOrgBandwidth
+);
 
 authenticated.delete(
     "/site/:siteId",
@@ -307,6 +314,14 @@ authenticated.post(
     verifyApiKeyHasAction(ActionsEnum.setResourceUsers),
     logActionAudit(ActionsEnum.setResourceUsers),
     siteResource.removeClientFromSiteResource
+);
+
+authenticated.post(
+    "/client/:clientId/site-resources",
+    verifyLimits,
+    verifyApiKeyHasAction(ActionsEnum.setResourceUsers),
+    logActionAudit(ActionsEnum.setResourceUsers),
+    siteResource.batchAddClientToSiteResources
 );
 
 authenticated.put(

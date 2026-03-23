@@ -58,7 +58,7 @@ registry.registerPath({
     method: "put",
     path: "/org/{orgId}/site",
     description: "Create a new site.",
-    tags: [OpenAPITags.Site, OpenAPITags.Org],
+    tags: [OpenAPITags.Site],
     request: {
         params: createSiteParamsSchema,
         body: {

@@ -477,6 +477,7 @@ async function handleMessagesForSiteClients(
         }
 
         if (isAdd) {
+            // TODO: if we are in jit mode here should we really be sending this?
             await initPeerAddHandshake(
                 // this will kick off the add peer process for the client
                 client.clientId,
@@ -571,7 +572,7 @@ export async function updateClientSiteDestinations(
                 destinations: [
                     {
                         destinationIP: site.sites.subnet.split("/")[0],
-                        destinationPort: site.sites.listenPort || 0
+                        destinationPort: site.sites.listenPort || 1 // this satisfies gerbil for now but should be reevaluated
                     }
                 ]
             };
@@ -579,7 +580,7 @@ export async function updateClientSiteDestinations(
             // add to the existing destinations
             destinations.destinations.push({
                 destinationIP: site.sites.subnet.split("/")[0],
-                destinationPort: site.sites.listenPort || 0
+                destinationPort: site.sites.listenPort || 1 // this satisfies gerbil for now but should be reevaluated
             });
         }
 
@@ -666,7 +667,11 @@ async function handleSubnetProxyTargetUpdates(
 
             if (targetToAdd) {
                 proxyJobs.push(
-                    addSubnetProxyTargets(newt.newtId, [targetToAdd])
+                    addSubnetProxyTargets(
+                        newt.newtId,
+                        [targetToAdd],
+                        newt.version
+                    )
                 );
             }
 
@@ -699,7 +704,11 @@ async function handleSubnetProxyTargetUpdates(
 
             if (targetToRemove) {
                 proxyJobs.push(
-                    removeSubnetProxyTargets(newt.newtId, [targetToRemove])
+                    removeSubnetProxyTargets(
+                        newt.newtId,
+                        [targetToRemove],
+                        newt.version
+                    )
                 );
             }
 
@@ -1074,6 +1083,7 @@ async function handleMessagesForClientSites(
                 continue;
             }
 
+            // TODO: if we are in jit mode here should we really be sending this?
             await initPeerAddHandshake(
                 // this will kick off the add peer process for the client
                 client.clientId,
@@ -1140,7 +1150,7 @@ async function handleMessagesForClientResources(
         // Add subnet proxy targets for each site
         for (const [siteId, resources] of addedBySite.entries()) {
             const [newt] = await trx
-                .select({ newtId: newts.newtId })
+                .select({ newtId: newts.newtId, version: newts.version })
                 .from(newts)
                 .where(eq(newts.siteId, siteId))
                 .limit(1);
@@ -1162,7 +1172,13 @@ async function handleMessagesForClientResources(
                 ]);
 
                 if (target) {
-                    proxyJobs.push(addSubnetProxyTargets(newt.newtId, [target]));
+                    proxyJobs.push(
+                        addSubnetProxyTargets(
+                            newt.newtId,
+                            [target],
+                            newt.version
+                        )
+                    );
                 }
 
                 try {
@@ -1211,7 +1227,7 @@ async function handleMessagesForClientResources(
         // Remove subnet proxy targets for each site
         for (const [siteId, resources] of removedBySite.entries()) {
             const [newt] = await trx
-                .select({ newtId: newts.newtId })
+                .select({ newtId: newts.newtId, version: newts.version })
                 .from(newts)
                 .where(eq(newts.siteId, siteId))
                 .limit(1);
@@ -1234,7 +1250,11 @@ async function handleMessagesForClientResources(
 
                 if (target) {
                     proxyJobs.push(
-                        removeSubnetProxyTargets(newt.newtId, [target])
+                        removeSubnetProxyTargets(
+                            newt.newtId,
+                            [target],
+                            newt.version
+                        )
                     );
                 }
 

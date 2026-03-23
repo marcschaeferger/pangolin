@@ -14,7 +14,9 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import {
+    actionAuditLog,
     db,
+    logsDb,
     newts,
     roles,
     roundTripMessageTracker,
@@ -29,12 +31,12 @@ import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
-import { OpenAPITags, registry } from "@server/openApi";
 import { eq, or, and } from "drizzle-orm";
 import { canUserAccessSiteResource } from "@server/auth/canUserAccessSiteResource";
 import { signPublicKey, getOrgCAKeys } from "@server/lib/sshCA";
 import config from "@server/lib/config";
 import { sendToClient } from "#private/routers/ws";
+import { ActionsEnum } from "@server/auth/actions";
 
 const paramsSchema = z.strictObject({
     orgId: z.string().nonempty()
@@ -64,6 +66,7 @@ export type SignSshKeyResponse = {
     sshUsername: string;
     sshHost: string;
     resourceId: number;
+    siteId: number;
     keyId: string;
     validPrincipals: string[];
     validAfter: string;
@@ -446,6 +449,20 @@ export async function signSshKey(
             sshHost = resource.destination;
         }
 
+        await logsDb.insert(actionAuditLog).values({
+            timestamp: Math.floor(Date.now() / 1000),
+            orgId: orgId,
+            actorType: "user",
+            actor: req.user?.username ?? "",
+            actorId: req.user?.userId ?? "",
+            action: ActionsEnum.signSshKey,
+            metadata: JSON.stringify({
+                resourceId: resource.siteResourceId,
+                resource: resource.name,
+                siteId: resource.siteId,
+            })
+        });
+
         return response<SignSshKeyResponse>(res, {
             data: {
                 certificate: cert.certificate,
@@ -453,6 +470,7 @@ export async function signSshKey(
                 sshUsername: usernameToUse,
                 sshHost: sshHost,
                 resourceId: resource.siteResourceId,
+                siteId: resource.siteId,
                 keyId: cert.keyId,
                 validPrincipals: cert.validPrincipals,
                 validAfter: cert.validAfter.toISOString(),
