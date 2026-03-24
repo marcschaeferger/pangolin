@@ -112,6 +112,9 @@ export type QueryConnectionAuditLogResponse = {
         siteName: string | null;
         siteNiceId: string | null;
         clientName: string | null;
+        clientNiceId: string | null;
+        clientType: string | null;
+        userEmail: string | null;
     }[];
     pagination: {
         total: number;
@@ -120,5 +123,18 @@ export type QueryConnectionAuditLogResponse = {
     };
     filterAttributes: {
         protocols: string[];
+        destAddrs: string[];
+        clients: {
+            id: number;
+            name: string;
+        }[];
+        resources: {
+            id: number;
+            name: string | null;
+        }[];
+        users: {
+            id: string;
+            email: string | null;
+        }[];
     };
 };

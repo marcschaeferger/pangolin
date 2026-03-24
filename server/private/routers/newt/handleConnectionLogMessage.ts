@@ -277,6 +277,8 @@ export const handleConnectionLogMessage: MessageHandler = async (context) => {
         return;
     }
 
+    logger.debug(`Sessions: ${JSON.stringify(sessions)}`)
+
     // Build a map from sourceAddr → { clientId, userId } by querying clients
     // whose subnet field matches exactly. Client subnets are stored with the
     // org's CIDR suffix (e.g. "100.90.128.5/16"), so we reconstruct that from
@@ -295,8 +297,14 @@ export const handleConnectionLogMessage: MessageHandler = async (context) => {
         if (uniqueSourceAddrs.size > 0) {
             // Construct the exact subnet strings as stored in the DB
             const subnetQueries = Array.from(uniqueSourceAddrs).map(
-                (addr) => `${addr}${cidrSuffix}`
+                (addr) => {
+                    // Strip port if present (e.g. "100.90.128.1:38004" → "100.90.128.1")
+                    const ip = addr.includes(":") ? addr.split(":")[0] : addr;
+                    return `${ip}${cidrSuffix}`;
+                }
             );
+
+            logger.debug(`Subnet queries: ${JSON.stringify(subnetQueries)}`);
 
             const matchedClients = await db
                 .select({
@@ -314,6 +322,7 @@ export const handleConnectionLogMessage: MessageHandler = async (context) => {
 
             for (const c of matchedClients) {
                 const ip = c.subnet.split("/")[0];
+                logger.debug(`Client ${c.clientId} subnet ${c.subnet} matches ${ip}`);
                 ipToClient.set(ip, { clientId: c.clientId, userId: c.userId });
             }
         }
@@ -346,7 +355,10 @@ export const handleConnectionLogMessage: MessageHandler = async (context) => {
         // Match the source address to a client. The sourceAddr is the
         // client's IP on the WireGuard network, which corresponds to the IP
         // portion of the client's subnet CIDR (e.g. "100.90.128.5/24").
-        const clientInfo = ipToClient.get(session.sourceAddr) ?? null;
+        // Strip port if present (e.g. "100.90.128.1:38004" → "100.90.128.1")
+        const sourceIp = session.sourceAddr.includes(":") ? session.sourceAddr.split(":")[0] : session.sourceAddr;
+        const clientInfo = ipToClient.get(sourceIp) ?? null;
+
 
         buffer.push({
             sessionId: session.sessionId,

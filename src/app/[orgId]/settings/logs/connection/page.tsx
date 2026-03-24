@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "@app/components/ui/button";
 import { ColumnFilter } from "@app/components/ColumnFilter";
 import { DateTimeValue } from "@app/components/DateTimePicker";
 import { LogDataTable } from "@app/components/LogDataTable";
@@ -14,7 +15,8 @@ import { build } from "@server/build";
 import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import { ColumnDef } from "@tanstack/react-table";
 import axios from "axios";
-import { Cable, Monitor, Server } from "lucide-react";
+import { ArrowUpRight, Laptop, User } from "lucide-react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
@@ -57,15 +59,31 @@ export default function ConnectionLogsPage() {
     const [isExporting, startTransition] = useTransition();
     const [filterAttributes, setFilterAttributes] = useState<{
         protocols: string[];
+        destAddrs: string[];
+        clients: { id: number; name: string }[];
+        resources: { id: number; name: string | null }[];
+        users: { id: string; email: string | null }[];
     }>({
-        protocols: []
+        protocols: [],
+        destAddrs: [],
+        clients: [],
+        resources: [],
+        users: []
     });
 
     // Filter states - unified object for all filters
     const [filters, setFilters] = useState<{
         protocol?: string;
+        destAddr?: string;
+        clientId?: string;
+        siteResourceId?: string;
+        userId?: string;
     }>({
-        protocol: searchParams.get("protocol") || undefined
+        protocol: searchParams.get("protocol") || undefined,
+        destAddr: searchParams.get("destAddr") || undefined,
+        clientId: searchParams.get("clientId") || undefined,
+        siteResourceId: searchParams.get("siteResourceId") || undefined,
+        userId: searchParams.get("userId") || undefined
     });
 
     // Pagination state
@@ -211,9 +229,7 @@ export default function ConnectionLogsPage() {
         endDate: DateTimeValue,
         page: number = currentPage,
         size: number = pageSize,
-        filtersParam?: {
-            protocol?: string;
-        }
+        filtersParam?: typeof filters
     ) => {
         console.log("Date range changed:", { startDate, endDate, page, size });
         if (!isPaidUser(tierMatrix.connectionLogs)) {
@@ -411,14 +427,126 @@ export default function ConnectionLogsPage() {
         {
             accessorKey: "resourceName",
             header: ({ column }) => {
-                return t("resource");
+                return (
+                    <div className="flex items-center gap-2">
+                        <span>{t("resource")}</span>
+                        <ColumnFilter
+                            options={filterAttributes.resources.map((res) => ({
+                                value: res.id.toString(),
+                                label: res.name || "Unnamed Resource"
+                            }))}
+                            selectedValue={filters.siteResourceId}
+                            onValueChange={(value) =>
+                                handleFilterChange("siteResourceId", value)
+                            }
+                            searchPlaceholder="Search..."
+                            emptyMessage="None found"
+                        />
+                    </div>
+                );
             },
             cell: ({ row }) => {
+                if (row.original.resourceName && row.original.resourceNiceId) {
+                    return (
+                        <Link
+                            href={`/${row.original.orgId}/settings/resources/proxy/${row.original.resourceNiceId}`}
+                        >
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-6"
+                            >
+                                {row.original.resourceName}
+                                <ArrowUpRight className="ml-2 h-3 w-3" />
+                            </Button>
+                        </Link>
+                    );
+                }
                 return (
                     <span className="whitespace-nowrap">
                         {row.original.resourceName ?? "—"}
                     </span>
                 );
+            }
+        },
+        {
+            accessorKey: "clientName",
+            header: ({ column }) => {
+                return (
+                    <div className="flex items-center gap-2">
+                        <span>{t("client")}</span>
+                        <ColumnFilter
+                            options={filterAttributes.clients.map((c) => ({
+                                value: c.id.toString(),
+                                label: c.name
+                            }))}
+                            selectedValue={filters.clientId}
+                            onValueChange={(value) =>
+                                handleFilterChange("clientId", value)
+                            }
+                            searchPlaceholder="Search..."
+                            emptyMessage="None found"
+                        />
+                    </div>
+                );
+            },
+            cell: ({ row }) => {
+                const clientType = row.original.clientType === "olm" ? "machine" : "user";
+                if (row.original.clientName && row.original.clientNiceId) {
+                    return (
+                        <Link
+                            href={`/${row.original.orgId}/settings/clients/${clientType}/${row.original.clientNiceId}`}
+                        >
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-6"
+                            >
+                                <Laptop className="mr-1 h-3 w-3" />
+                                {row.original.clientName}
+                                <ArrowUpRight className="ml-2 h-3 w-3" />
+                            </Button>
+                        </Link>
+                    );
+                }
+                return (
+                    <span className="whitespace-nowrap">
+                        {row.original.clientName ?? "—"}
+                    </span>
+                );
+            }
+        },
+        {
+            accessorKey: "userEmail",
+            header: ({ column }) => {
+                return (
+                    <div className="flex items-center gap-2">
+                        <span>{t("user")}</span>
+                        <ColumnFilter
+                            options={filterAttributes.users.map((u) => ({
+                                value: u.id,
+                                label: u.email || u.id
+                            }))}
+                            selectedValue={filters.userId}
+                            onValueChange={(value) =>
+                                handleFilterChange("userId", value)
+                            }
+                            searchPlaceholder="Search..."
+                            emptyMessage="None found"
+                        />
+                    </div>
+                );
+            },
+            cell: ({ row }) => {
+                if (row.original.userEmail || row.original.userId) {
+                    return (
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                            <User className="h-4 w-4" />
+                            {row.original.userEmail ?? row.original.userId}
+                        </span>
+                    );
+                }
+                return <span>—</span>;
             }
         },
         {
@@ -437,7 +565,23 @@ export default function ConnectionLogsPage() {
         {
             accessorKey: "destAddr",
             header: ({ column }) => {
-                return t("destinationAddress");
+                return (
+                    <div className="flex items-center gap-2">
+                        <span>{t("destinationAddress")}</span>
+                        <ColumnFilter
+                            options={filterAttributes.destAddrs.map((addr) => ({
+                                value: addr,
+                                label: addr
+                            }))}
+                            selectedValue={filters.destAddr}
+                            onValueChange={(value) =>
+                                handleFilterChange("destAddr", value)
+                            }
+                            searchPlaceholder="Search..."
+                            emptyMessage="None found"
+                        />
+                    </div>
+                );
             },
             cell: ({ row }) => {
                 return (
@@ -470,10 +614,9 @@ export default function ConnectionLogsPage() {
             <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                     <div className="space-y-2">
-                        <div className="flex items-center gap-1 font-semibold text-sm mb-1">
-                            <Cable className="h-4 w-4" />
+                        {/*<div className="flex items-center gap-1 font-semibold text-sm mb-1">
                             Connection Details
-                        </div>
+                        </div>*/}
                         <div>
                             <strong>Session ID:</strong>{" "}
                             <span className="font-mono">
@@ -518,10 +661,9 @@ export default function ConnectionLogsPage() {
                         </div>
                     </div>
                     <div className="space-y-2">
-                        <div className="flex items-center gap-1 font-semibold text-sm mb-1">
-                            <Server className="h-4 w-4" />
+                        {/*<div className="flex items-center gap-1 font-semibold text-sm mb-1">
                             Resource & Site
-                        </div>
+                        </div>*/}
                         <div>
                             <strong>Resource:</strong>{" "}
                             {row.resourceName ?? "—"}
@@ -548,10 +690,9 @@ export default function ConnectionLogsPage() {
                         </div>
                     </div>
                     <div className="space-y-2">
-                        <div className="flex items-center gap-1 font-semibold text-sm mb-1">
-                            <Monitor className="h-4 w-4" />
+                        {/*<div className="flex items-center gap-1 font-semibold text-sm mb-1">
                             Client & Transfer
-                        </div>
+                        </div>*/}
                         <div>
                             <strong>Client:</strong> {row.clientName ?? "—"}
                             {row.clientId && (
@@ -561,7 +702,8 @@ export default function ConnectionLogsPage() {
                             )}
                         </div>
                         <div>
-                            <strong>User ID:</strong> {row.userId ?? "—"}
+                            <strong>User:</strong>{" "}
+                            {row.userEmail ?? row.userId ?? "—"}
                         </div>
                         <div>
                             <strong>Bytes Sent (TX):</strong>{" "}

@@ -17,6 +17,7 @@ import {
     siteResources,
     sites,
     clients,
+    users,
     primaryDb
 } from "@server/db";
 import { registry } from "@server/openApi";
@@ -193,6 +194,13 @@ async function enrichWithDetails(
                 .filter((id): id is number => id !== null && id !== undefined)
         )
     ];
+    const userIds = [
+        ...new Set(
+            logs
+                .map((log) => log.userId)
+                .filter((id): id is string => id !== null && id !== undefined)
+        )
+    ];
 
     // Fetch resource details from main database
     const resourceMap = new Map<
@@ -235,18 +243,46 @@ async function enrichWithDetails(
     }
 
     // Fetch client details from main database
-    const clientMap = new Map<number, { name: string }>();
+    const clientMap = new Map<
+        number,
+        { name: string; niceId: string; type: string }
+    >();
     if (clientIds.length > 0) {
         const clientDetails = await primaryDb
             .select({
                 clientId: clients.clientId,
-                name: clients.name
+                name: clients.name,
+                niceId: clients.niceId,
+                type: clients.type
             })
             .from(clients)
             .where(inArray(clients.clientId, clientIds));
 
         for (const c of clientDetails) {
-            clientMap.set(c.clientId, { name: c.name });
+            clientMap.set(c.clientId, {
+                name: c.name,
+                niceId: c.niceId,
+                type: c.type
+            });
+        }
+    }
+
+    // Fetch user details from main database
+    const userMap = new Map<
+        string,
+        { email: string | null }
+    >();
+    if (userIds.length > 0) {
+        const userDetails = await primaryDb
+            .select({
+                userId: users.userId,
+                email: users.email
+            })
+            .from(users)
+            .where(inArray(users.userId, userIds));
+
+        for (const u of userDetails) {
+            userMap.set(u.userId, { email: u.email });
         }
     }
 
@@ -267,6 +303,15 @@ async function enrichWithDetails(
             : null,
         clientName: log.clientId
             ? clientMap.get(log.clientId)?.name ?? null
+            : null,
+        clientNiceId: log.clientId
+            ? clientMap.get(log.clientId)?.niceId ?? null
+            : null,
+        clientType: log.clientId
+            ? clientMap.get(log.clientId)?.type ?? null
+            : null,
+        userEmail: log.userId
+            ? userMap.get(log.userId)?.email ?? null
             : null
     }));
 }
@@ -290,10 +335,111 @@ async function queryUniqueFilterAttributes(
         .from(connectionAuditLog)
         .where(baseConditions);
 
+    // Get unique destination addresses
+    const uniqueDestAddrs = await logsDb
+        .selectDistinct({
+            destAddr: connectionAuditLog.destAddr
+        })
+        .from(connectionAuditLog)
+        .where(baseConditions);
+
+    // Get unique client IDs
+    const uniqueClients = await logsDb
+        .selectDistinct({
+            clientId: connectionAuditLog.clientId
+        })
+        .from(connectionAuditLog)
+        .where(baseConditions);
+
+    // Get unique resource IDs
+    const uniqueResources = await logsDb
+        .selectDistinct({
+            siteResourceId: connectionAuditLog.siteResourceId
+        })
+        .from(connectionAuditLog)
+        .where(baseConditions);
+
+    // Get unique user IDs
+    const uniqueUsers = await logsDb
+        .selectDistinct({
+            userId: connectionAuditLog.userId
+        })
+        .from(connectionAuditLog)
+        .where(baseConditions);
+
+    // Enrich client IDs with names from main database
+    const clientIds = uniqueClients
+        .map((row) => row.clientId)
+        .filter((id): id is number => id !== null);
+
+    let clientsWithNames: Array<{ id: number; name: string }> = [];
+    if (clientIds.length > 0) {
+        const clientDetails = await primaryDb
+            .select({
+                clientId: clients.clientId,
+                name: clients.name
+            })
+            .from(clients)
+            .where(inArray(clients.clientId, clientIds));
+
+        clientsWithNames = clientDetails.map((c) => ({
+            id: c.clientId,
+            name: c.name
+        }));
+    }
+
+    // Enrich resource IDs with names from main database
+    const resourceIds = uniqueResources
+        .map((row) => row.siteResourceId)
+        .filter((id): id is number => id !== null);
+
+    let resourcesWithNames: Array<{ id: number; name: string | null }> = [];
+    if (resourceIds.length > 0) {
+        const resourceDetails = await primaryDb
+            .select({
+                siteResourceId: siteResources.siteResourceId,
+                name: siteResources.name
+            })
+            .from(siteResources)
+            .where(inArray(siteResources.siteResourceId, resourceIds));
+
+        resourcesWithNames = resourceDetails.map((r) => ({
+            id: r.siteResourceId,
+            name: r.name
+        }));
+    }
+
+    // Enrich user IDs with emails from main database
+    const userIdsList = uniqueUsers
+        .map((row) => row.userId)
+        .filter((id): id is string => id !== null);
+
+    let usersWithEmails: Array<{ id: string; email: string | null }> = [];
+    if (userIdsList.length > 0) {
+        const userDetails = await primaryDb
+            .select({
+                userId: users.userId,
+                email: users.email
+            })
+            .from(users)
+            .where(inArray(users.userId, userIdsList));
+
+        usersWithEmails = userDetails.map((u) => ({
+            id: u.userId,
+            email: u.email
+        }));
+    }
+
     return {
         protocols: uniqueProtocols
             .map((row) => row.protocol)
-            .filter((protocol): protocol is string => protocol !== null)
+            .filter((protocol): protocol is string => protocol !== null),
+        destAddrs: uniqueDestAddrs
+            .map((row) => row.destAddr)
+            .filter((addr): addr is string => addr !== null),
+        clients: clientsWithNames,
+        resources: resourcesWithNames,
+        users: usersWithEmails
     };
 }
 
@@ -342,7 +488,7 @@ export async function queryConnectionAuditLogs(
 
         const logsRaw = await baseQuery.limit(data.limit).offset(data.offset);
 
-        // Enrich with resource, site, and client details
+        // Enrich with resource, site, client, and user details
         const log = await enrichWithDetails(logsRaw);
 
         const totalCountResult = await countConnectionQuery(data);
