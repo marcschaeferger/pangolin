@@ -478,6 +478,25 @@ authenticated.get(
     logs.exportAccessAuditLogs
 );
 
+authenticated.get(
+    "/org/:orgId/logs/connection",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.connectionLogs),
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.exportLogs),
+    logs.queryConnectionAuditLogs
+);
+
+authenticated.get(
+    "/org/:orgId/logs/connection/export",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.logExport),
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.exportLogs),
+    logActionAudit(ActionsEnum.exportLogs),
+    logs.exportConnectionAuditLogs
+);
+
 authenticated.post(
     "/re-key/:clientId/regenerate-client-secret",
     verifyClientAccess, // this is first to set the org id

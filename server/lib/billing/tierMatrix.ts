@@ -8,6 +8,7 @@ export enum TierFeature {
     LogExport = "logExport",
     AccessLogs = "accessLogs", // set the retention period to none on downgrade
     ActionLogs = "actionLogs", // set the retention period to none on downgrade
+    ConnectionLogs = "connectionLogs",
     RotateCredentials = "rotateCredentials",
     MaintencePage = "maintencePage", // handle downgrade
     DevicePosture = "devicePosture",
@@ -26,6 +27,7 @@ export const tierMatrix: Record<TierFeature, Tier[]> = {
     [TierFeature.LogExport]: ["tier3", "enterprise"],
     [TierFeature.AccessLogs]: ["tier2", "tier3", "enterprise"],
     [TierFeature.ActionLogs]: ["tier2", "tier3", "enterprise"],
+    [TierFeature.ConnectionLogs]: ["tier2", "tier3", "enterprise"],
     [TierFeature.RotateCredentials]: ["tier1", "tier2", "tier3", "enterprise"],
     [TierFeature.MaintencePage]: ["tier1", "tier2", "tier3", "enterprise"],
     [TierFeature.DevicePosture]: ["tier2", "tier3", "enterprise"],
