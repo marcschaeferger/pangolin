@@ -17,7 +17,7 @@ import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import {
     generateAliasConfig,
     generateRemoteSubnets,
-    generateSubnetProxyTargets,
+    generateSubnetProxyTargetV2,
     isIpInCidr,
     portRangeStringSchema
 } from "@server/lib/ip";
@@ -618,11 +618,11 @@ export async function handleMessagingForUpdatedSiteResource(
 
         // Only update targets on newt if destination changed
         if (destinationChanged || portRangesChanged) {
-            const oldTargets = generateSubnetProxyTargets(
+            const oldTarget = generateSubnetProxyTargetV2(
                 existingSiteResource,
                 mergedAllClients
             );
-            const newTargets = generateSubnetProxyTargets(
+            const newTarget = generateSubnetProxyTargetV2(
                 updatedSiteResource,
                 mergedAllClients
             );
@@ -630,8 +630,8 @@ export async function handleMessagingForUpdatedSiteResource(
             await updateTargets(
                 newt.newtId,
                 {
-                    oldTargets: oldTargets,
-                    newTargets: newTargets
+                    oldTargets: oldTarget ? [oldTarget] : [],
+                    newTargets: newTarget ? [newTarget] : []
                 },
                 newt.version
             );
