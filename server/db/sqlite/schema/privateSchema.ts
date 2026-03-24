@@ -309,6 +309,12 @@ export const connectionAuditLog = sqliteTable(
         siteId: integer("siteId").references(() => sites.siteId, {
             onDelete: "cascade"
         }),
+        clientId: integer("clientId").references(() => clients.clientId, {
+            onDelete: "cascade"
+        }),
+        userId: text("userId").references(() => users.userId, {
+            onDelete: "cascade"
+        }),
         sourceAddr: text("sourceAddr").notNull(),
         destAddr: text("destAddr").notNull(),
         protocol: text("protocol").notNull(),

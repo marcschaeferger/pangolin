@@ -1,7 +1,7 @@
 import { db, logsDb } from "@server/db";
 import { MessageHandler } from "@server/routers/ws";
-import { connectionAuditLog, sites, Newt } from "@server/db";
-import { and, eq, lt } from "drizzle-orm";
+import { connectionAuditLog, sites, Newt, clients, orgs } from "@server/db";
+import { and, eq, lt, inArray } from "drizzle-orm";
 import logger from "@server/logger";
 import { inflate } from "zlib";
 import { promisify } from "util";
@@ -39,6 +39,8 @@ interface ConnectionLogRecord {
     siteResourceId: number;
     orgId: string;
     siteId: number;
+    clientId: number | null;
+    userId: string | null;
     sourceAddr: string;
     destAddr: string;
     protocol: string;
@@ -243,8 +245,9 @@ export const handleConnectionLogMessage: MessageHandler = async (context) => {
 
     // Look up the org for this site
     const [site] = await db
-        .select({ orgId: sites.orgId })
+        .select({ orgId: sites.orgId, orgSubnet: orgs.subnet })
         .from(sites)
+        .innerJoin(orgs, eq(sites.orgId, orgs.orgId))
         .where(eq(sites.siteId, newt.siteId));
 
     if (!site) {
@@ -256,6 +259,12 @@ export const handleConnectionLogMessage: MessageHandler = async (context) => {
 
     const orgId = site.orgId;
 
+    // Extract the CIDR suffix (e.g. "/16") from the org subnet so we can
+    // reconstruct the exact subnet string stored on each client record.
+    const cidrSuffix = site.orgSubnet?.includes("/")
+        ? site.orgSubnet.substring(site.orgSubnet.indexOf("/"))
+        : null;
+
     let sessions: ConnectionSessionData[];
     try {
         sessions = await decompressConnectionLog(message.data.compressed);
@@ -266,6 +275,48 @@ export const handleConnectionLogMessage: MessageHandler = async (context) => {
 
     if (sessions.length === 0) {
         return;
+    }
+
+    // Build a map from sourceAddr → { clientId, userId } by querying clients
+    // whose subnet field matches exactly. Client subnets are stored with the
+    // org's CIDR suffix (e.g. "100.90.128.5/16"), so we reconstruct that from
+    // each unique sourceAddr + the org's CIDR suffix and do a targeted IN query.
+    const ipToClient = new Map<string, { clientId: number; userId: string | null }>();
+
+    if (cidrSuffix) {
+        // Collect unique source addresses so we only query for what we need
+        const uniqueSourceAddrs = new Set<string>();
+        for (const session of sessions) {
+            if (session.sourceAddr) {
+                uniqueSourceAddrs.add(session.sourceAddr);
+            }
+        }
+
+        if (uniqueSourceAddrs.size > 0) {
+            // Construct the exact subnet strings as stored in the DB
+            const subnetQueries = Array.from(uniqueSourceAddrs).map(
+                (addr) => `${addr}${cidrSuffix}`
+            );
+
+            const matchedClients = await db
+                .select({
+                    clientId: clients.clientId,
+                    userId: clients.userId,
+                    subnet: clients.subnet
+                })
+                .from(clients)
+                .where(
+                    and(
+                        eq(clients.orgId, orgId),
+                        inArray(clients.subnet, subnetQueries)
+                    )
+                );
+
+            for (const c of matchedClients) {
+                const ip = c.subnet.split("/")[0];
+                ipToClient.set(ip, { clientId: c.clientId, userId: c.userId });
+            }
+        }
     }
 
     // Convert to DB records and add to the buffer
@@ -292,11 +343,18 @@ export const handleConnectionLogMessage: MessageHandler = async (context) => {
             continue;
         }
 
+        // Match the source address to a client. The sourceAddr is the
+        // client's IP on the WireGuard network, which corresponds to the IP
+        // portion of the client's subnet CIDR (e.g. "100.90.128.5/24").
+        const clientInfo = ipToClient.get(session.sourceAddr) ?? null;
+
         buffer.push({
             sessionId: session.sessionId,
             siteResourceId: session.resourceId,
             orgId,
             siteId: newt.siteId,
+            clientId: clientInfo?.clientId ?? null,
+            userId: clientInfo?.userId ?? null,
             sourceAddr: session.sourceAddr,
             destAddr: session.destAddr,
             protocol: session.protocol,
