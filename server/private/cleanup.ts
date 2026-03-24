@@ -14,7 +14,7 @@
 import { rateLimitService } from "#private/lib/rateLimit";
 import { cleanup as wsCleanup } from "#private/routers/ws";
 import { flushBandwidthToDb } from "@server/routers/newt/handleReceiveBandwidthMessage";
-import { flushConnectionLogToDb } from "@server/routers/newt/handleConnectionLogMessage";
+import { flushConnectionLogToDb } from "#dynamic/routers/newt";
 import { flushSiteBandwidthToDb } from "@server/routers/gerbil/receiveBandwidth";
 
 async function cleanup() {
