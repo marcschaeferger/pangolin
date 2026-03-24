@@ -639,6 +639,31 @@ export default function ConnectionLogsPage() {
                                 {row.destAddr ?? "—"}
                             </span>
                         </div>
+                    </div>
+                    <div className="space-y-2">
+                        {/*<div className="flex items-center gap-1 font-semibold text-sm mb-1">
+                            Resource & Site
+                        </div>*/}
+                        {/*<div>
+                            <strong>Resource:</strong>{" "}
+                            {row.resourceName ?? "—"}
+                            {row.resourceNiceId && (
+                                <span className="text-muted-foreground ml-1">
+                                    ({row.resourceNiceId})
+                                </span>
+                            )}
+                        </div>*/}
+                        <div>
+                            <strong>Site:</strong> {row.siteName ?? "—"}
+                            {row.siteNiceId && (
+                                <span className="text-muted-foreground ml-1">
+                                    ({row.siteNiceId})
+                                </span>
+                            )}
+                        </div>
+                        <div>
+                            <strong>Site ID:</strong> {row.siteId ?? "—"}
+                        </div>
                         <div>
                             <strong>Started At:</strong>{" "}
                             {row.startedAt
@@ -659,66 +684,29 @@ export default function ConnectionLogsPage() {
                             <strong>Duration:</strong>{" "}
                             {formatDuration(row.startedAt, row.endedAt)}
                         </div>
-                    </div>
-                    <div className="space-y-2">
-                        {/*<div className="flex items-center gap-1 font-semibold text-sm mb-1">
-                            Resource & Site
-                        </div>*/}
-                        <div>
-                            <strong>Resource:</strong>{" "}
-                            {row.resourceName ?? "—"}
-                            {row.resourceNiceId && (
-                                <span className="text-muted-foreground ml-1">
-                                    ({row.resourceNiceId})
-                                </span>
-                            )}
-                        </div>
-                        <div>
-                            <strong>Site:</strong> {row.siteName ?? "—"}
-                            {row.siteNiceId && (
-                                <span className="text-muted-foreground ml-1">
-                                    ({row.siteNiceId})
-                                </span>
-                            )}
-                        </div>
-                        <div>
-                            <strong>Site ID:</strong> {row.siteId ?? "—"}
-                        </div>
-                        <div>
+                        {/*<div>
                             <strong>Resource ID:</strong>{" "}
                             {row.siteResourceId ?? "—"}
-                        </div>
+                        </div>*/}
                     </div>
                     <div className="space-y-2">
                         {/*<div className="flex items-center gap-1 font-semibold text-sm mb-1">
                             Client & Transfer
                         </div>*/}
-                        <div>
-                            <strong>Client:</strong> {row.clientName ?? "—"}
-                            {row.clientId && (
-                                <span className="text-muted-foreground ml-1">
-                                    (ID: {row.clientId})
-                                </span>
-                            )}
-                        </div>
-                        <div>
-                            <strong>User:</strong>{" "}
-                            {row.userEmail ?? row.userId ?? "—"}
-                        </div>
-                        <div>
+                        {/*<div>
                             <strong>Bytes Sent (TX):</strong>{" "}
                             {formatBytes(row.bytesTx)}
-                        </div>
-                        <div>
+                        </div>*/}
+                        {/*<div>
                             <strong>Bytes Received (RX):</strong>{" "}
                             {formatBytes(row.bytesRx)}
-                        </div>
-                        <div>
+                        </div>*/}
+                        {/*<div>
                             <strong>Total Transfer:</strong>{" "}
                             {formatBytes(
                                 (row.bytesTx ?? 0) + (row.bytesRx ?? 0)
                             )}
-                        </div>
+                        </div>*/}
                     </div>
                 </div>
             </div>
