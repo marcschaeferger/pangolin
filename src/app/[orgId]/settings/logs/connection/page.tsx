@@ -449,7 +449,7 @@ export default function ConnectionLogsPage() {
                 if (row.original.resourceName && row.original.resourceNiceId) {
                     return (
                         <Link
-                            href={`/${row.original.orgId}/settings/resources/proxy/${row.original.resourceNiceId}`}
+                            href={`/${row.original.orgId}/settings/resources/client/?query=${row.original.resourceNiceId}`}
                         >
                             <Button
                                 variant="outline"
