@@ -20,6 +20,7 @@ import {
     Newt,
     newts,
     Olm,
+    olms,
     RemoteExitNode,
     remoteExitNodes,
 } from "@server/db";
