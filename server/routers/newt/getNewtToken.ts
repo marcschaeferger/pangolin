@@ -92,25 +92,6 @@ export async function getNewtToken(
             );
         }
 
-        const [existingSession] = await db
-            .select()
-            .from(newtSessions)
-            .where(eq(newtSessions.newtId, existingNewt.newtId));
-
-        // if the session still has time in the expires, reuse it
-        if (existingSession && (existingSession.expiresAt + 30 * 60 * 1000) > Date.now()) {
-            return response<{ token: string; serverVersion: string }>(res, {
-                data: {
-                    token: existingSession.sessionId,
-                    serverVersion: APP_VERSION
-                },
-                success: true,
-                error: false,
-                message: "Token created successfully",
-                status: HttpCode.OK
-            });
-        }
-
         // otherwise generate a new one
         const resToken = generateSessionToken();
         await createNewtSession(resToken, existingNewt.newtId);

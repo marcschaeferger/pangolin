@@ -19,14 +19,9 @@ import { Socket } from "net";
 import {
     Newt,
     newts,
-    NewtSession,
-    olms,
     Olm,
-    OlmSession,
     RemoteExitNode,
-    RemoteExitNodeSession,
     remoteExitNodes,
-    sites
 } from "@server/db";
 import { eq } from "drizzle-orm";
 import { db } from "@server/db";
