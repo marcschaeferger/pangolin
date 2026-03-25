@@ -16,8 +16,10 @@ import { cleanup as wsCleanup } from "#private/routers/ws";
 import { flushBandwidthToDb } from "@server/routers/newt/handleReceiveBandwidthMessage";
 import { flushConnectionLogToDb } from "#dynamic/routers/newt";
 import { flushSiteBandwidthToDb } from "@server/routers/gerbil/receiveBandwidth";
+import { stopPingAccumulator } from "@server/routers/newt/pingAccumulator";
 
 async function cleanup() {
+    await stopPingAccumulator();
     await flushBandwidthToDb();
     await flushConnectionLogToDb();
     await flushSiteBandwidthToDb();

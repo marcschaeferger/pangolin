@@ -8,7 +8,9 @@ import {
     ExitNode,
     exitNodes,
     sites,
-    clientSitesAssociationsCache
+    clientSitesAssociationsCache,
+    olmSessions,
+    olmSessions
 } from "@server/db";
 import { olms } from "@server/db";
 import HttpCode from "@server/types/HttpCode";
