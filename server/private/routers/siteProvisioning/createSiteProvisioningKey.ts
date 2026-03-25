@@ -94,6 +94,7 @@ export async function createSiteProvisioningKey(
     const siteProvisioningKeyHash = await hashPassword(siteProvisioningKey);
     const lastChars = siteProvisioningKey.slice(-4);
     const createdAt = moment().toISOString();
+    const provisioningKey = `${siteProvisioningKeyId}.${siteProvisioningKey}`;
 
     await db.transaction(async (trx) => {
         await trx.insert(siteProvisioningKeys).values({
@@ -120,7 +121,7 @@ export async function createSiteProvisioningKey(
                 siteProvisioningKeyId,
                 orgId,
                 name,
-                siteProvisioningKey,
+                siteProvisioningKey: provisioningKey,
                 lastChars,
                 createdAt,
                 lastUsed: null,
