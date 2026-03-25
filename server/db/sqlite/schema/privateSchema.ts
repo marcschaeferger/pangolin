@@ -2,6 +2,7 @@ import { InferSelectModel } from "drizzle-orm";
 import {
     index,
     integer,
+    primaryKey,
     real,
     sqliteTable,
     text
@@ -357,7 +358,6 @@ export const approvals = sqliteTable("approvals", {
         .notNull()
 });
 
-
 export const bannedEmails = sqliteTable("bannedEmails", {
     email: text("email").primaryKey()
 });
@@ -365,6 +365,33 @@ export const bannedEmails = sqliteTable("bannedEmails", {
 export const bannedIps = sqliteTable("bannedIps", {
     ip: text("ip").primaryKey()
 });
+
+export const siteProvisioningKeys = sqliteTable("siteProvisioningKeys", {
+    siteProvisioningKeyId: text("siteProvisioningKeyId").primaryKey(),
+    name: text("name").notNull(),
+    siteProvisioningKeyHash: text("siteProvisioningKeyHash").notNull(),
+    lastChars: text("lastChars").notNull(),
+    createdAt: text("dateCreated").notNull()
+});
+
+export const siteProvisioningKeyOrg = sqliteTable(
+    "siteProvisioningKeyOrg",
+    {
+        siteProvisioningKeyId: text("siteProvisioningKeyId")
+            .notNull()
+            .references(() => siteProvisioningKeys.siteProvisioningKeyId, {
+                onDelete: "cascade"
+            }),
+        orgId: text("orgId")
+            .notNull()
+            .references(() => orgs.orgId, { onDelete: "cascade" })
+    },
+    (table) => [
+        primaryKey({
+            columns: [table.siteProvisioningKeyId, table.orgId]
+        })
+    ]
+);
 
 export type Approval = InferSelectModel<typeof approvals>;
 export type Limit = InferSelectModel<typeof limits>;

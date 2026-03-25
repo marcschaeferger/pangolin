@@ -2,6 +2,7 @@ import { SidebarNavItem } from "@app/components/SidebarNav";
 import { Env } from "@app/lib/types/env";
 import { build } from "@server/build";
 import {
+    Boxes,
     Building2,
     Cable,
     ChartLine,
@@ -208,6 +209,11 @@ export const orgNavSections = (
                         title: "sidebarApiKeys",
                         href: "/{orgId}/settings/api-keys",
                         icon: <KeyRound className="size-4 flex-none" />
+                    },
+                    {
+                        title: "sidebarProvisioning",
+                        href: "/{orgId}/settings/provisioning",
+                        icon: <Boxes className="size-4 flex-none" />
                     },
                     {
                         title: "sidebarBluePrints",

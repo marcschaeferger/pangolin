@@ -15,6 +15,7 @@ import * as accessToken from "./accessToken";
 import * as idp from "./idp";
 import * as blueprints from "./blueprints";
 import * as apiKeys from "./apiKeys";
+import * as siteProvisioning from "./siteProvisioning";
 import * as logs from "./auditLogs";
 import * as newt from "./newt";
 import * as olm from "./olm";
@@ -42,7 +43,8 @@ import {
     verifyUserIsOrgOwner,
     verifySiteResourceAccess,
     verifyOlmAccess,
-    verifyLimits
+    verifyLimits,
+    verifySiteProvisioningKeyAccess
 } from "@server/middlewares";
 import { ActionsEnum } from "@server/auth/actions";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -991,6 +993,31 @@ authenticated.get(
     `/api-keys`,
     verifyUserIsServerAdmin,
     apiKeys.listRootApiKeys
+);
+
+authenticated.put(
+    `/org/:orgId/site-provisioning-key`,
+    verifyOrgAccess,
+    verifyLimits,
+    verifyUserHasAction(ActionsEnum.createSiteProvisioningKey),
+    logActionAudit(ActionsEnum.createSiteProvisioningKey),
+    siteProvisioning.createSiteProvisioningKey
+);
+
+authenticated.get(
+    `/org/:orgId/site-provisioning-keys`,
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.listSiteProvisioningKeys),
+    siteProvisioning.listSiteProvisioningKeys
+);
+
+authenticated.delete(
+    `/org/:orgId/site-provisioning-key/:siteProvisioningKeyId`,
+    verifyOrgAccess,
+    verifySiteProvisioningKeyAccess,
+    verifyUserHasAction(ActionsEnum.deleteSiteProvisioningKey),
+    logActionAudit(ActionsEnum.deleteSiteProvisioningKey),
+    siteProvisioning.deleteSiteProvisioningKey
 );
 
 authenticated.get(
