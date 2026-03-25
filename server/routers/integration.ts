@@ -27,7 +27,8 @@ import {
     verifyApiKeyClientAccess,
     verifyApiKeySiteResourceAccess,
     verifyApiKeySetResourceClients,
-    verifyLimits
+    verifyLimits,
+    verifyApiKeyDomainAccess
 } from "@server/middlewares";
 import HttpCode from "@server/types/HttpCode";
 import { Router } from "express";
@@ -133,6 +134,13 @@ authenticated.post(
     verifyApiKeyHasAction(ActionsEnum.updateSite),
     logActionAudit(ActionsEnum.updateSite),
     site.updateSite
+);
+authenticated.post(
+    "/org/:orgId/reset-bandwidth",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyHasAction(ActionsEnum.resetSiteBandwidth),
+    logActionAudit(ActionsEnum.resetSiteBandwidth),
+    org.resetOrgBandwidth
 );
 
 authenticated.delete(
@@ -308,6 +316,14 @@ authenticated.post(
     siteResource.removeClientFromSiteResource
 );
 
+authenticated.post(
+    "/client/:clientId/site-resources",
+    verifyLimits,
+    verifyApiKeyHasAction(ActionsEnum.setResourceUsers),
+    logActionAudit(ActionsEnum.setResourceUsers),
+    siteResource.batchAddClientToSiteResources
+);
+
 authenticated.put(
     "/org/:orgId/resource",
     verifyApiKeyOrgAccess,
@@ -345,6 +361,56 @@ authenticated.get(
     verifyApiKeyOrgAccess,
     verifyApiKeyHasAction(ActionsEnum.listOrgDomains),
     domain.listDomains
+);
+
+authenticated.get(
+    "/org/:orgId/domain/:domainId",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyDomainAccess,
+    verifyApiKeyHasAction(ActionsEnum.getDomain),
+    domain.getDomain
+);
+
+authenticated.put(
+    "/org/:orgId/domain",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyHasAction(ActionsEnum.createOrgDomain),
+    logActionAudit(ActionsEnum.createOrgDomain),
+    domain.createOrgDomain
+);
+
+authenticated.patch(
+    "/org/:orgId/domain/:domainId",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyDomainAccess,
+    verifyApiKeyHasAction(ActionsEnum.updateOrgDomain),
+    domain.updateOrgDomain
+);
+
+authenticated.delete(
+    "/org/:orgId/domain/:domainId",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyDomainAccess,
+    verifyApiKeyHasAction(ActionsEnum.deleteOrgDomain),
+    logActionAudit(ActionsEnum.deleteOrgDomain),
+    domain.deleteAccountDomain
+);
+
+authenticated.get(
+    "/org/:orgId/domain/:domainId/dns-records",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyDomainAccess,
+    verifyApiKeyHasAction(ActionsEnum.getDNSRecords),
+    domain.getDNSRecords
+);
+
+authenticated.post(
+    "/org/:orgId/domain/:domainId/restart",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyDomainAccess,
+    verifyApiKeyHasAction(ActionsEnum.restartOrgDomain),
+    logActionAudit(ActionsEnum.restartOrgDomain),
+    domain.restartOrgDomain
 );
 
 authenticated.get(
@@ -697,6 +763,13 @@ authenticated.get(
     verifyApiKeyOrgAccess,
     verifyApiKeyHasAction(ActionsEnum.getOrgUser),
     user.getOrgUser
+);
+
+authenticated.get(
+    "/org/:orgId/user-by-username",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyHasAction(ActionsEnum.getOrgUser),
+    user.getOrgUserByUsername
 );
 
 authenticated.post(

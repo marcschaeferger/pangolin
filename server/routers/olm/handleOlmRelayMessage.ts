@@ -18,7 +18,7 @@ export const handleOlmRelayMessage: MessageHandler = async (context) => {
     }
 
     if (!olm.clientId) {
-        logger.warn("Olm has no site!"); // TODO: Maybe we create the site here?
+        logger.warn("Olm has no client!");
         return;
     }
 
@@ -41,7 +41,7 @@ export const handleOlmRelayMessage: MessageHandler = async (context) => {
         return;
     }
 
-    const { siteId } = message.data;
+    const { siteId, chainId } = message.data;
 
     // Get the site
     const [site] = await db
@@ -90,7 +90,8 @@ export const handleOlmRelayMessage: MessageHandler = async (context) => {
             data: {
                 siteId: siteId,
                 relayEndpoint: exitNode.endpoint,
-                relayPort: config.getRawConfig().gerbil.clients_start_port
+                relayPort: config.getRawConfig().gerbil.clients_start_port,
+                chainId
             }
         },
         broadcast: false,

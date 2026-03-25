@@ -11,7 +11,7 @@ import { fromError } from "zod-validation-error";
 import { ActionsEnum, checkUserActionPermission } from "@server/auth/actions";
 import { OpenAPITags, registry } from "@server/openApi";
 
-async function queryUser(orgId: string, userId: string) {
+export async function queryUser(orgId: string, userId: string) {
     const [userRow] = await db
         .select({
             orgId: userOrgs.orgId,
@@ -79,7 +79,7 @@ registry.registerPath({
     method: "get",
     path: "/org/{orgId}/user/{userId}",
     description: "Get a user in an organization.",
-    tags: [OpenAPITags.Org, OpenAPITags.User],
+    tags: [OpenAPITags.User],
     request: {
         params: getOrgUserParamsSchema
     },

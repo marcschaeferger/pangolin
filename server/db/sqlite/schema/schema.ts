@@ -19,7 +19,8 @@ export const domains = sqliteTable("domains", {
     failed: integer("failed", { mode: "boolean" }).notNull().default(false),
     tries: integer("tries").notNull().default(0),
     certResolver: text("certResolver"),
-    preferWildcardCert: integer("preferWildcardCert", { mode: "boolean" })
+    preferWildcardCert: integer("preferWildcardCert", { mode: "boolean" }),
+    errorMessage: text("errorMessage")
 });
 
 export const dnsRecords = sqliteTable("dnsRecords", {
@@ -95,6 +96,7 @@ export const sites = sqliteTable("sites", {
     lastBandwidthUpdate: text("lastBandwidthUpdate"),
     type: text("type").notNull(), // "newt" or "wireguard"
     online: integer("online", { mode: "boolean" }).notNull().default(false),
+    lastPing: integer("lastPing"),
 
     // exit node stuff that is how to connect to the site when it has a wg server
     address: text("address"), // this is the address of the wireguard interface in newt
@@ -320,6 +322,9 @@ export const users = sqliteTable("user", {
     dateCreated: text("dateCreated").notNull(),
     termsAcceptedTimestamp: text("termsAcceptedTimestamp"),
     termsVersion: text("termsVersion"),
+    marketingEmailConsent: integer("marketingEmailConsent", {
+        mode: "boolean"
+    }).default(false),
     serverAdmin: integer("serverAdmin", { mode: "boolean" })
         .notNull()
         .default(false),
@@ -410,6 +415,9 @@ export const clientSitesAssociationsCache = sqliteTable(
             .notNull(),
         siteId: integer("siteId").notNull(),
         isRelayed: integer("isRelayed", { mode: "boolean" })
+            .notNull()
+            .default(false),
+        isJitMode: integer("isJitMode", { mode: "boolean" })
             .notNull()
             .default(false),
         endpoint: text("endpoint"),

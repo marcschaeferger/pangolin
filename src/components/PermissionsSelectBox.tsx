@@ -26,17 +26,27 @@ function getActionsCategories(root: boolean) {
             [t("actionGetOrg")]: "getOrg",
             [t("actionUpdateOrg")]: "updateOrg",
             [t("actionGetOrgUser")]: "getOrgUser",
+            [t("actionResetSiteBandwidth")]: "resetSiteBandwidth",
             [t("actionInviteUser")]: "inviteUser",
             [t("actionRemoveInvitation")]: "removeInvitation",
             [t("actionListInvitations")]: "listInvitations",
             [t("actionRemoveUser")]: "removeUser",
             [t("actionListUsers")]: "listUsers",
-            [t("actionListOrgDomains")]: "listOrgDomains",
             [t("updateOrgUser")]: "updateOrgUser",
             [t("createOrgUser")]: "createOrgUser",
             [t("actionApplyBlueprint")]: "applyBlueprint",
             [t("actionListBlueprints")]: "listBlueprints",
             [t("actionGetBlueprint")]: "getBlueprint"
+        },
+
+        Domain: {
+            [t("actionListOrgDomains")]: "listOrgDomains",
+            [t("actionGetDomain")]: "getDomain",
+            [t("actionCreateOrgDomain")]: "createOrgDomain",
+            [t("actionUpdateOrgDomain")]: "updateOrgDomain",
+            [t("actionDeleteOrgDomain")]: "deleteOrgDomain",
+            [t("actionGetDNSRecords")]: "getDNSRecords",
+            [t("actionRestartOrgDomain")]: "restartOrgDomain"
         },
 
         Site: {

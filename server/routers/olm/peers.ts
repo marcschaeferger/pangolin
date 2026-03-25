@@ -1,8 +1,9 @@
 import { sendToClient } from "#dynamic/routers/ws";
-import { db, olms } from "@server/db";
+import { clientSitesAssociationsCache, db, olms } from "@server/db";
+import { canCompress } from "@server/lib/clientVersionChecks";
 import config from "@server/lib/config";
 import logger from "@server/logger";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Alias } from "yaml";
 
 export async function addPeer(
@@ -18,7 +19,8 @@ export async function addPeer(
         remoteSubnets: string[] | null; // optional, comma-separated list of subnets that this site can access
         aliases: Alias[];
     },
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -30,6 +32,7 @@ export async function addPeer(
             return; // ignore this because an olm might not be associated with the client anymore
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -48,7 +51,7 @@ export async function addPeer(
                 aliases: peer.aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -60,7 +63,8 @@ export async function deletePeer(
     clientId: number,
     siteId: number,
     publicKey: string,
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -72,6 +76,7 @@ export async function deletePeer(
             return;
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -83,7 +88,7 @@ export async function deletePeer(
                 siteId: siteId
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -103,7 +108,8 @@ export async function updatePeer(
         remoteSubnets?: string[] | null; // optional, comma-separated list of subnets that
         aliases?: Alias[] | null;
     },
-    olmId?: string
+    olmId?: string,
+    version?: string | null
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -115,6 +121,7 @@ export async function updatePeer(
             return;
         }
         olmId = olm.olmId;
+        version = olm.version;
     }
 
     await sendToClient(
@@ -132,7 +139,7 @@ export async function updatePeer(
                 aliases: peer.aliases
             }
         },
-        { incrementConfigVersion: true }
+        { incrementConfigVersion: true, compress: canCompress(version, "olm") }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
@@ -149,7 +156,8 @@ export async function initPeerAddHandshake(
             endpoint: string;
         };
     },
-    olmId?: string
+    olmId?: string,
+    chainId?: string
 ) {
     if (!olmId) {
         const [olm] = await db
@@ -173,13 +181,25 @@ export async function initPeerAddHandshake(
                     publicKey: peer.exitNode.publicKey,
                     relayPort: config.getRawConfig().gerbil.clients_start_port,
                     endpoint: peer.exitNode.endpoint
-                }
+                },
+                chainId
             }
         },
         { incrementConfigVersion: true }
     ).catch((error) => {
         logger.warn(`Error sending message:`, error);
     });
+
+    // update the clientSiteAssociationsCache to make the isJitMode flag false so that JIT mode is disabled for this site if it restarts or something after the connection
+    await db
+        .update(clientSitesAssociationsCache)
+        .set({ isJitMode: false })
+        .where(
+            and(
+                eq(clientSitesAssociationsCache.clientId, clientId),
+                eq(clientSitesAssociationsCache.siteId, peer.siteId)
+            )
+        );
 
     logger.info(
         `Initiated peer add handshake for site ${peer.siteId} to olm ${olmId}`

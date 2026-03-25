@@ -107,7 +107,7 @@ export async function applyBlueprint({
                             [target],
                             matchingHealthcheck ? [matchingHealthcheck] : [],
                             result.proxyResource.protocol,
-                            result.proxyResource.proxyPort
+                            site.newt.version
                         );
                     }
                 }

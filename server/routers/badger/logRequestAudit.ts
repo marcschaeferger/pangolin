@@ -1,9 +1,11 @@
-import { db, orgs, requestAuditLog } from "@server/db";
+import { logsDb, primaryLogsDb, db, orgs, requestAuditLog } from "@server/db";
 import logger from "@server/logger";
 import { and, eq, lt, sql } from "drizzle-orm";
-import cache from "@server/lib/cache";
+import cache from "#dynamic/lib/cache";
 import { calculateCutoffTimestamp } from "@server/lib/cleanupLogs";
 import { stripPortFromHost } from "@server/lib/ip";
+
+import { sanitizeString } from "@server/lib/sanitize";
 
 /**
 
@@ -69,7 +71,7 @@ async function flushAuditLogs() {
     try {
         // Use a transaction to ensure all inserts succeed or fail together
         // This prevents index corruption from partial writes
-        await db.transaction(async (tx) => {
+        await logsDb.transaction(async (tx) => {
             // Batch insert logs in groups of 25 to avoid overwhelming the database
             const BATCH_DB_SIZE = 25;
             for (let i = 0; i < logsToWrite.length; i += BATCH_DB_SIZE) {
@@ -130,7 +132,7 @@ export async function shutdownAuditLogger() {
 
 async function getRetentionDays(orgId: string): Promise<number> {
     // check cache first
-    const cached = cache.get<number>(`org_${orgId}_retentionDays`);
+    const cached = await cache.get<number>(`org_${orgId}_retentionDays`);
     if (cached !== undefined) {
         return cached;
     }
@@ -149,7 +151,7 @@ async function getRetentionDays(orgId: string): Promise<number> {
     }
 
     // store the result in cache
-    cache.set(
+    await cache.set(
         `org_${orgId}_retentionDays`,
         org.settingsLogRetentionDaysRequest,
         300
@@ -162,7 +164,7 @@ export async function cleanUpOldLogs(orgId: string, retentionDays: number) {
     const cutoffTimestamp = calculateCutoffTimestamp(retentionDays);
 
     try {
-        await db
+        await logsDb
             .delete(requestAuditLog)
             .where(
                 and(
@@ -253,24 +255,23 @@ export async function logRequestAudit(
         // Add to buffer instead of writing directly to DB
         auditLogBuffer.push({
             timestamp,
-            orgId: data.orgId,
-            actorType,
-            actor,
-            actorId,
-            metadata,
+            orgId: sanitizeString(data.orgId),
+            actorType: sanitizeString(actorType),
+            actor: sanitizeString(actor),
+            actorId: sanitizeString(actorId),
+            metadata: sanitizeString(metadata),
             action: data.action,
             resourceId: data.resourceId,
             reason: data.reason,
-            location: data.location,
-            originalRequestURL: body.originalRequestURL,
-            scheme: body.scheme,
-            host: body.host,
-            path: body.path,
-            method: body.method,
-            ip: clientIp,
+            location: sanitizeString(data.location),
+            originalRequestURL: sanitizeString(body.originalRequestURL) ?? "",
+            scheme: sanitizeString(body.scheme) ?? "",
+            host: sanitizeString(body.host) ?? "",
+            path: sanitizeString(body.path) ?? "",
+            method: sanitizeString(body.method) ?? "",
+            ip: sanitizeString(clientIp),
             tls: body.tls
         });
-
         // Flush immediately if buffer is full, otherwise schedule a flush
         if (auditLogBuffer.length >= BATCH_SIZE) {
             // Fire and forget - don't block the caller

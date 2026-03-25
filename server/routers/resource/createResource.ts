@@ -79,7 +79,7 @@ registry.registerPath({
     method: "put",
     path: "/org/{orgId}/resource",
     description: "Create a resource.",
-    tags: [OpenAPITags.Org, OpenAPITags.Resource],
+    tags: [OpenAPITags.PublicResource],
     request: {
         params: createResourceParamsSchema,
         body: {
@@ -221,6 +221,20 @@ async function createHttpResource(
                 "Resource with that domain already exists"
             )
         );
+    }
+
+    // Prevent creating resource with same domain as dashboard
+    const dashboardUrl = config.getRawConfig().app.dashboard_url;
+    if (dashboardUrl) {
+        const dashboardHost = new URL(dashboardUrl).hostname;
+        if (fullDomain === dashboardHost) {
+            return next(
+                createHttpError(
+                    HttpCode.CONFLICT,
+                    "Resource domain cannot be the same as the dashboard domain"
+                )
+            );
+        }
     }
 
     if (build != "oss") {

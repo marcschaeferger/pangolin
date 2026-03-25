@@ -8,7 +8,7 @@ import {
     sites,
     userSites
 } from "@server/db";
-import cache from "@server/lib/cache";
+import cache from "#dynamic/lib/cache";
 import response from "@server/lib/response";
 import logger from "@server/logger";
 import { OpenAPITags, registry } from "@server/openApi";
@@ -23,7 +23,7 @@ import { fromError } from "zod-validation-error";
 
 async function getLatestNewtVersion(): Promise<string | null> {
     try {
-        const cachedVersion = cache.get<string>("latestNewtVersion");
+        const cachedVersion = await cache.get<string>("latestNewtVersion");
         if (cachedVersion) {
             return cachedVersion;
         }
@@ -55,7 +55,7 @@ async function getLatestNewtVersion(): Promise<string | null> {
         tags = tags.filter((version) => !version.name.includes("rc"));
         const latestVersion = tags[0].name;
 
-        cache.set("latestNewtVersion", latestVersion);
+        await cache.set("latestNewtVersion", latestVersion, 3600);
 
         return latestVersion;
     } catch (error: any) {
@@ -108,12 +108,12 @@ const listSitesSchema = z.object({
         }),
     query: z.string().optional(),
     sort_by: z
-        .enum(["megabytesIn", "megabytesOut"])
+        .enum(["name", "megabytesIn", "megabytesOut"])
         .optional()
         .catch(undefined)
         .openapi({
             type: "string",
-            enum: ["megabytesIn", "megabytesOut"],
+            enum: ["name", "megabytesIn", "megabytesOut"],
             description: "Field to sort by"
         }),
     order: z
@@ -278,7 +278,7 @@ export async function listSites(
 
         // we need to add `as` so that drizzle filters the result as a subquery
         const countQuery = db.$count(
-            querySitesBase().where(and(...conditions))
+            querySitesBase().where(and(...conditions)).as("filtered_sites")
         );
 
         const siteListQuery = baseQuery
@@ -289,7 +289,7 @@ export async function listSites(
                     ? order === "asc"
                         ? asc(sites[sort_by])
                         : desc(sites[sort_by])
-                    : asc(sites.siteId)
+                    : asc(sites.name)
             );
 
         const [totalCount, rows] = await Promise.all([

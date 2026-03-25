@@ -24,7 +24,7 @@ export interface AuthenticatedWebSocket extends WebSocket {
     clientType?: ClientType;
     connectionId?: string;
     isFullyConnected?: boolean;
-    pendingMessages?: Buffer[];
+    pendingMessages?: { data: Buffer; isBinary: boolean }[];
     configVersion?: number;
 }
 
@@ -73,6 +73,7 @@ export type MessageHandler = (
 // Options for sending messages with config version tracking
 export interface SendMessageOptions {
     incrementConfigVersion?: boolean;
+    compress?: boolean;
 }
 
 // Redis message type for cross-node communication

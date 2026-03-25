@@ -14,7 +14,9 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import {
+    actionAuditLog,
     db,
+    logsDb,
     newts,
     roles,
     roundTripMessageTracker,
@@ -29,12 +31,12 @@ import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
-import { OpenAPITags, registry } from "@server/openApi";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { canUserAccessSiteResource } from "@server/auth/canUserAccessSiteResource";
-import { signPublicKey, getOrgCAKeys } from "#private/lib/sshCA";
+import { signPublicKey, getOrgCAKeys } from "@server/lib/sshCA";
 import config from "@server/lib/config";
 import { sendToClient } from "#private/routers/ws";
+import { ActionsEnum } from "@server/auth/actions";
 
 const paramsSchema = z.strictObject({
     orgId: z.string().nonempty()
@@ -64,6 +66,7 @@ export type SignSshKeyResponse = {
     sshUsername: string;
     sshHost: string;
     resourceId: number;
+    siteId: number;
     keyId: string;
     validPrincipals: string[];
     validAfter: string;
@@ -185,7 +188,7 @@ export async function signSshKey(
             } else if (req.user?.username) {
                 usernameToUse = req.user.username;
                 // We need to clean out any spaces or special characters from the username to ensure it's valid for SSH certificates
-                usernameToUse = usernameToUse.replace(/[^a-zA-Z0-9_-]/g, "");
+                usernameToUse = usernameToUse.replace(/[^a-zA-Z0-9_-]/g, "-");
                 if (!usernameToUse) {
                     return next(
                         createHttpError(
@@ -202,6 +205,9 @@ export async function signSshKey(
                     )
                 );
             }
+
+            // prefix with p-
+            usernameToUse = `p-${usernameToUse}`;
 
             // check if we have a existing user in this org with the same
             const [existingUserWithSameName] = await db
@@ -248,6 +254,16 @@ export async function signSshKey(
                     );
                 }
             }
+
+            await db
+                .update(userOrgs)
+                .set({ pamUsername: usernameToUse })
+                .where(
+                    and(
+                        eq(userOrgs.orgId, orgId),
+                        eq(userOrgs.userId, userId)
+                    )
+                );
         } else {
             usernameToUse = userOrg.pamUsername;
         }
@@ -319,7 +335,16 @@ export async function signSshKey(
             );
         }
 
-        // Check if the user has access to the resource (any of their roles)
+        if (resource.mode == "cidr") {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "SSHing is not supported for CIDR resources"
+                )
+            );
+        }
+
+        // Check if the user has access to the resource
         const hasAccess = await canUserAccessSiteResource({
             userId: userId,
             resourceId: resource.siteResourceId,
@@ -444,6 +469,20 @@ export async function signSshKey(
             sshHost = resource.destination;
         }
 
+        await logsDb.insert(actionAuditLog).values({
+            timestamp: Math.floor(Date.now() / 1000),
+            orgId: orgId,
+            actorType: "user",
+            actor: req.user?.username ?? "",
+            actorId: req.user?.userId ?? "",
+            action: ActionsEnum.signSshKey,
+            metadata: JSON.stringify({
+                resourceId: resource.siteResourceId,
+                resource: resource.name,
+                siteId: resource.siteId,
+            })
+        });
+
         return response<SignSshKeyResponse>(res, {
             data: {
                 certificate: cert.certificate,
@@ -451,6 +490,7 @@ export async function signSshKey(
                 sshUsername: usernameToUse,
                 sshHost: sshHost,
                 resourceId: resource.siteResourceId,
+                siteId: resource.siteId,
                 keyId: cert.keyId,
                 validPrincipals: cert.validPrincipals,
                 validAfter: cert.validAfter.toISOString(),

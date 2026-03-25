@@ -262,7 +262,7 @@ export async function updateTarget(
                     [updatedTarget],
                     [updatedHc],
                     resource.protocol,
-                    resource.proxyPort
+                    newt.version
                 );
             }
         }
