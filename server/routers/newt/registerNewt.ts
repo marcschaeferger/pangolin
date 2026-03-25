@@ -2,7 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "@server/db";
 import {
-    newtProvisioningKeys,
+    siteProvisioningKeys,
+    siteProvisioningKeyOrg,
     newts,
     orgs,
     roles,
@@ -55,7 +56,7 @@ export async function registerNewt(
 
         const { provisioningKey } = parsedBody.data;
 
-        // Keys are in the format "id.secret"
+        // Keys are in the format "siteProvisioningKeyId.secret"
         const dotIndex = provisioningKey.indexOf(".");
         if (dotIndex === -1) {
             return next(
@@ -69,46 +70,51 @@ export async function registerNewt(
         const provisioningKeyId = provisioningKey.substring(0, dotIndex);
         const provisioningKeySecret = provisioningKey.substring(dotIndex + 1);
 
-        // Look up the provisioning key by ID
+        // Look up the provisioning key by ID, joining to get the orgId
         const [keyRecord] = await db
-            .select()
-            .from(newtProvisioningKeys)
+            .select({
+                siteProvisioningKeyId:
+                    siteProvisioningKeys.siteProvisioningKeyId,
+                siteProvisioningKeyHash:
+                    siteProvisioningKeys.siteProvisioningKeyHash,
+                orgId: siteProvisioningKeyOrg.orgId
+            })
+            .from(siteProvisioningKeys)
+            .innerJoin(
+                siteProvisioningKeyOrg,
+                eq(
+                    siteProvisioningKeys.siteProvisioningKeyId,
+                    siteProvisioningKeyOrg.siteProvisioningKeyId
+                )
+            )
             .where(
-                eq(newtProvisioningKeys.provisioningKeyId, provisioningKeyId)
+                eq(
+                    siteProvisioningKeys.siteProvisioningKeyId,
+                    provisioningKeyId
+                )
             )
             .limit(1);
 
         if (!keyRecord) {
             return next(
-                createHttpError(HttpCode.UNAUTHORIZED, "Invalid provisioning key")
-            );
-        }
-
-        // Verify the secret
-        const validSecret = await verifyPassword(
-            provisioningKeySecret,
-            keyRecord.keyHash
-        );
-        if (!validSecret) {
-            return next(
-                createHttpError(HttpCode.UNAUTHORIZED, "Invalid provisioning key")
-            );
-        }
-
-        // Check if key has already been used
-        if (keyRecord.siteId !== null) {
-            return next(
                 createHttpError(
-                    HttpCode.CONFLICT,
-                    "Provisioning key has already been used"
+                    HttpCode.UNAUTHORIZED,
+                    "Invalid provisioning key"
                 )
             );
         }
 
-        // Check expiry
-        if (keyRecord.expiresAt !== null && keyRecord.expiresAt < Date.now()) {
+        // Verify the secret portion against the stored hash
+        const validSecret = await verifyPassword(
+            provisioningKeySecret,
+            keyRecord.siteProvisioningKeyHash
+        );
+        if (!validSecret) {
             return next(
-                createHttpError(HttpCode.GONE, "Provisioning key has expired")
+                createHttpError(
+                    HttpCode.UNAUTHORIZED,
+                    "Invalid provisioning key"
+                )
             );
         }
 
@@ -200,13 +206,12 @@ export async function registerNewt(
                 dateCreated: moment().toISOString()
             });
 
-            // Mark the provisioning key as used
+            // Consume the provisioning key — cascade removes siteProvisioningKeyOrg
             await trx
-                .update(newtProvisioningKeys)
-                .set({ siteId: newSite.siteId })
+                .delete(siteProvisioningKeys)
                 .where(
                     eq(
-                        newtProvisioningKeys.provisioningKeyId,
+                        siteProvisioningKeys.siteProvisioningKeyId,
                         provisioningKeyId
                     )
                 );

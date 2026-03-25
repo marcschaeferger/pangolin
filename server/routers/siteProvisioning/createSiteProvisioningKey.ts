@@ -28,6 +28,7 @@ export type CreateSiteProvisioningKeyResponse = {
     orgId: string;
     name: string;
     siteProvisioningKey: string;
+    provisioningKey: string; // combined "siteProvisioningKeyId.siteProvisioningKey" — put this in your newt config
     lastChars: string;
     createdAt: string;
 };
@@ -65,6 +66,7 @@ export async function createSiteProvisioningKey(
     const siteProvisioningKeyHash = await hashPassword(siteProvisioningKey);
     const lastChars = siteProvisioningKey.slice(-4);
     const createdAt = moment().toISOString();
+    const provisioningKey = `${siteProvisioningKeyId}.${siteProvisioningKey}`;
 
     await db.transaction(async (trx) => {
         await trx.insert(siteProvisioningKeys).values({
@@ -88,6 +90,7 @@ export async function createSiteProvisioningKey(
                 orgId,
                 name,
                 siteProvisioningKey,
+                provisioningKey,
                 lastChars,
                 createdAt
             },

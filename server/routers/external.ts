@@ -105,12 +105,7 @@ authenticated.put(
     site.createSite
 );
 
-authenticated.put(
-    "/org/:orgId/newt/provisioning-key",
-    verifyOrgAccess,
-    verifyUserHasAction(ActionsEnum.createSite),
-    newt.createNewtProvisioningKey
-);
+
 authenticated.get(
     "/org/:orgId/sites",
     verifyOrgAccess,
