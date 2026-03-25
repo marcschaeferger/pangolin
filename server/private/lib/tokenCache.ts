@@ -11,7 +11,7 @@
  * This file is not licensed under the AGPLv3.
  */
 
-import redisManager from "#dynamic/lib/redis";
+import redisManager from "#private/lib/redis";
 import { encrypt, decrypt } from "@server/lib/crypto";
 import logger from "@server/logger";
 
