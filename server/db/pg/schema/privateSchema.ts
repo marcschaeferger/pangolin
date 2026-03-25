@@ -18,7 +18,9 @@ import {
     users,
     exitNodes,
     sessions,
-    clients
+    clients,
+    siteResources,
+    sites
 } from "./schema";
 
 export const certificates = pgTable("certificates", {
@@ -305,6 +307,45 @@ export const accessAuditLog = pgTable(
     ]
 );
 
+export const connectionAuditLog = pgTable(
+    "connectionAuditLog",
+    {
+        id: serial("id").primaryKey(),
+        sessionId: text("sessionId").notNull(),
+        siteResourceId: integer("siteResourceId").references(
+            () => siteResources.siteResourceId,
+            { onDelete: "cascade" }
+        ),
+        orgId: text("orgId").references(() => orgs.orgId, {
+            onDelete: "cascade"
+        }),
+        siteId: integer("siteId").references(() => sites.siteId, {
+            onDelete: "cascade"
+        }),
+        clientId: integer("clientId").references(() => clients.clientId, {
+            onDelete: "cascade"
+        }),
+        userId: text("userId").references(() => users.userId, {
+            onDelete: "cascade"
+        }),
+        sourceAddr: text("sourceAddr").notNull(),
+        destAddr: text("destAddr").notNull(),
+        protocol: text("protocol").notNull(),
+        startedAt: integer("startedAt").notNull(),
+        endedAt: integer("endedAt"),
+        bytesTx: integer("bytesTx"),
+        bytesRx: integer("bytesRx")
+    },
+    (table) => [
+        index("idx_accessAuditLog_startedAt").on(table.startedAt),
+        index("idx_accessAuditLog_org_startedAt").on(
+            table.orgId,
+            table.startedAt
+        ),
+        index("idx_accessAuditLog_siteResourceId").on(table.siteResourceId)
+    ]
+);
+
 export const approvals = pgTable("approvals", {
     approvalId: serial("approvalId").primaryKey(),
     timestamp: integer("timestamp").notNull(), // this is EPOCH time in seconds
@@ -391,3 +432,4 @@ export type LoginPage = InferSelectModel<typeof loginPage>;
 export type LoginPageBranding = InferSelectModel<typeof loginPageBranding>;
 export type ActionAuditLog = InferSelectModel<typeof actionAuditLog>;
 export type AccessAuditLog = InferSelectModel<typeof accessAuditLog>;
+export type ConnectionAuditLog = InferSelectModel<typeof connectionAuditLog>;

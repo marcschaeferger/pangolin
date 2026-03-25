@@ -302,8 +302,8 @@ export const configSchema = z
             .optional()
             .default({
                 block_size: 24,
-                subnet_group: "100.90.128.0/24",
-                utility_subnet_group: "100.96.128.0/24"
+                subnet_group: "100.90.128.0/20",
+                utility_subnet_group: "100.96.128.0/20"
             }),
         rate_limits: z
             .object({

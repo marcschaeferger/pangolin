@@ -47,6 +47,9 @@ export const orgs = sqliteTable("orgs", {
     settingsLogRetentionDaysAction: integer("settingsLogRetentionDaysAction") // where 0 = dont keep logs and -1 = keep forever and 9001 = end of the following year
         .notNull()
         .default(0),
+    settingsLogRetentionDaysConnection: integer("settingsLogRetentionDaysConnection") // where 0 = dont keep logs and -1 = keep forever and 9001 = end of the following year
+        .notNull()
+        .default(0),
     sshCaPrivateKey: text("sshCaPrivateKey"), // Encrypted SSH CA private key (PEM format)
     sshCaPublicKey: text("sshCaPublicKey"), // SSH CA public key (OpenSSH format)
     isBillingOrg: integer("isBillingOrg", { mode: "boolean" }),

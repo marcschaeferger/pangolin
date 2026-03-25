@@ -7,7 +7,7 @@ import {
     sqliteTable,
     text
 } from "drizzle-orm/sqlite-core";
-import { clients, domains, exitNodes, orgs, sessions, users } from "./schema";
+import { clients, domains, exitNodes, orgs, sessions, siteResources, sites, users } from "./schema";
 
 export const certificates = sqliteTable("certificates", {
     certId: integer("certId").primaryKey({ autoIncrement: true }),
@@ -295,6 +295,45 @@ export const accessAuditLog = sqliteTable(
     ]
 );
 
+export const connectionAuditLog = sqliteTable(
+    "connectionAuditLog",
+    {
+        id: integer("id").primaryKey({ autoIncrement: true }),
+        sessionId: text("sessionId").notNull(),
+        siteResourceId: integer("siteResourceId").references(
+            () => siteResources.siteResourceId,
+            { onDelete: "cascade" }
+        ),
+        orgId: text("orgId").references(() => orgs.orgId, {
+            onDelete: "cascade"
+        }),
+        siteId: integer("siteId").references(() => sites.siteId, {
+            onDelete: "cascade"
+        }),
+        clientId: integer("clientId").references(() => clients.clientId, {
+            onDelete: "cascade"
+        }),
+        userId: text("userId").references(() => users.userId, {
+            onDelete: "cascade"
+        }),
+        sourceAddr: text("sourceAddr").notNull(),
+        destAddr: text("destAddr").notNull(),
+        protocol: text("protocol").notNull(),
+        startedAt: integer("startedAt").notNull(),
+        endedAt: integer("endedAt"),
+        bytesTx: integer("bytesTx"),
+        bytesRx: integer("bytesRx")
+    },
+    (table) => [
+        index("idx_accessAuditLog_startedAt").on(table.startedAt),
+        index("idx_accessAuditLog_org_startedAt").on(
+            table.orgId,
+            table.startedAt
+        ),
+        index("idx_accessAuditLog_siteResourceId").on(table.siteResourceId)
+    ]
+);
+
 export const approvals = sqliteTable("approvals", {
     approvalId: integer("approvalId").primaryKey({ autoIncrement: true }),
     timestamp: integer("timestamp").notNull(), // this is EPOCH time in seconds
@@ -375,3 +414,4 @@ export type LoginPage = InferSelectModel<typeof loginPage>;
 export type LoginPageBranding = InferSelectModel<typeof loginPageBranding>;
 export type ActionAuditLog = InferSelectModel<typeof actionAuditLog>;
 export type AccessAuditLog = InferSelectModel<typeof accessAuditLog>;
+export type ConnectionAuditLog = InferSelectModel<typeof connectionAuditLog>;

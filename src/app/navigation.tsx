@@ -4,6 +4,7 @@ import { build } from "@server/build";
 import {
     Boxes,
     Building2,
+    Cable,
     ChartLine,
     Combine,
     CreditCard,
@@ -190,6 +191,11 @@ export const orgNavSections = (
                                   title: "sidebarLogsAction",
                                   href: "/{orgId}/settings/logs/action",
                                   icon: <Logs className="size-4 flex-none" />
+                              },
+                              {
+                                  title: "sidebarLogsConnection",
+                                  href: "/{orgId}/settings/logs/connection",
+                                  icon: <Cable className="size-4 flex-none" />
                               }
                           ]
                         : [])
