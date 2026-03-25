@@ -111,6 +111,7 @@ export enum ActionsEnum {
     getApiKey = "getApiKey",
     createSiteProvisioningKey = "createSiteProvisioningKey",
     listSiteProvisioningKeys = "listSiteProvisioningKeys",
+    updateSiteProvisioningKey = "updateSiteProvisioningKey",
     deleteSiteProvisioningKey = "deleteSiteProvisioningKey",
     getCertificate = "getCertificate",
     restartCertificate = "restartCertificate",

@@ -1,3 +1,16 @@
+/*
+ * This file is part of a proprietary work.
+ *
+ * Copyright (c) 2025 Fossorial, Inc.
+ * All rights reserved.
+ *
+ * This file is licensed under the Fossorial Commercial License.
+ * You may not use this file except in compliance with the License.
+ * Unauthorized use, copying, modification, or distribution is strictly prohibited.
+ *
+ * This file is not licensed under the AGPLv3.
+ */
+
 import { NextFunction, Request, Response } from "express";
 import { db, siteProvisioningKeyOrg, siteProvisioningKeys } from "@server/db";
 import HttpCode from "@server/types/HttpCode";
@@ -12,25 +25,36 @@ import {
 } from "@server/auth/sessions/app";
 import logger from "@server/logger";
 import { hashPassword } from "@server/auth/password";
+import type { CreateSiteProvisioningKeyResponse } from "@server/routers/siteProvisioning/types";
 
 const paramsSchema = z.object({
     orgId: z.string().nonempty()
 });
 
-const bodySchema = z.strictObject({
-    name: z.string().min(1).max(255)
-});
+const bodySchema = z
+    .strictObject({
+        name: z.string().min(1).max(255),
+        maxBatchSize: z.union([
+            z.null(),
+            z.coerce.number().int().positive().max(1_000_000)
+        ]),
+        validUntil: z.string().max(255).optional()
+    })
+    .superRefine((data, ctx) => {
+        const v = data.validUntil;
+        if (v == null || v.trim() === "") {
+            return;
+        }
+        if (Number.isNaN(Date.parse(v))) {
+            ctx.addIssue({
+                code: "custom",
+                message: "Invalid validUntil",
+                path: ["validUntil"]
+            });
+        }
+    });
 
 export type CreateSiteProvisioningKeyBody = z.infer<typeof bodySchema>;
-
-export type CreateSiteProvisioningKeyResponse = {
-    siteProvisioningKeyId: string;
-    orgId: string;
-    name: string;
-    siteProvisioningKey: string;
-    lastChars: string;
-    createdAt: string;
-};
 
 export async function createSiteProvisioningKey(
     req: Request,
@@ -58,7 +82,12 @@ export async function createSiteProvisioningKey(
     }
 
     const { orgId } = parsedParams.data;
-    const { name } = parsedBody.data;
+    const { name, maxBatchSize } = parsedBody.data;
+    const vuRaw = parsedBody.data.validUntil;
+    const validUntil =
+        vuRaw == null || vuRaw.trim() === ""
+            ? null
+            : new Date(Date.parse(vuRaw)).toISOString();
 
     const siteProvisioningKeyId = `spk-${generateId(15)}`;
     const siteProvisioningKey = generateIdFromEntropySize(25);
@@ -72,7 +101,11 @@ export async function createSiteProvisioningKey(
             name,
             siteProvisioningKeyHash,
             createdAt,
-            lastChars
+            lastChars,
+            lastUsed: null,
+            maxBatchSize,
+            numUsed: 0,
+            validUntil
         });
 
         await trx.insert(siteProvisioningKeyOrg).values({
@@ -89,7 +122,11 @@ export async function createSiteProvisioningKey(
                 name,
                 siteProvisioningKey,
                 lastChars,
-                createdAt
+                createdAt,
+                lastUsed: null,
+                maxBatchSize,
+                numUsed: 0,
+                validUntil
             },
             success: true,
             error: false,

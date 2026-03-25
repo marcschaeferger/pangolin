@@ -1,3 +1,16 @@
+/*
+ * This file is part of a proprietary work.
+ *
+ * Copyright (c) 2025 Fossorial, Inc.
+ * All rights reserved.
+ *
+ * This file is licensed under the Fossorial Commercial License.
+ * You may not use this file except in compliance with the License.
+ * Unauthorized use, copying, modification, or distribution is strictly prohibited.
+ *
+ * This file is not licensed under the AGPLv3.
+ */
+
 import {
     db,
     siteProvisioningKeyOrg,
@@ -11,6 +24,7 @@ import createHttpError from "http-errors";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { eq } from "drizzle-orm";
+import type { ListSiteProvisioningKeysResponse } from "@server/routers/siteProvisioning/types";
 
 const paramsSchema = z.object({
     orgId: z.string().nonempty()
@@ -39,7 +53,11 @@ function querySiteProvisioningKeys(orgId: string) {
             orgId: siteProvisioningKeyOrg.orgId,
             lastChars: siteProvisioningKeys.lastChars,
             createdAt: siteProvisioningKeys.createdAt,
-            name: siteProvisioningKeys.name
+            name: siteProvisioningKeys.name,
+            lastUsed: siteProvisioningKeys.lastUsed,
+            maxBatchSize: siteProvisioningKeys.maxBatchSize,
+            numUsed: siteProvisioningKeys.numUsed,
+            validUntil: siteProvisioningKeys.validUntil
         })
         .from(siteProvisioningKeyOrg)
         .innerJoin(
@@ -51,13 +69,6 @@ function querySiteProvisioningKeys(orgId: string) {
         )
         .where(eq(siteProvisioningKeyOrg.orgId, orgId));
 }
-
-export type ListSiteProvisioningKeysResponse = {
-    siteProvisioningKeys: Awaited<
-        ReturnType<typeof querySiteProvisioningKeys>
-    >;
-    pagination: { total: number; limit: number; offset: number };
-};
 
 export async function listSiteProvisioningKeys(
     req: Request,

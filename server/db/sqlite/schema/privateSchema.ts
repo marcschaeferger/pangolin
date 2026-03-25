@@ -371,7 +371,11 @@ export const siteProvisioningKeys = sqliteTable("siteProvisioningKeys", {
     name: text("name").notNull(),
     siteProvisioningKeyHash: text("siteProvisioningKeyHash").notNull(),
     lastChars: text("lastChars").notNull(),
-    createdAt: text("dateCreated").notNull()
+    createdAt: text("dateCreated").notNull(),
+    lastUsed: text("lastUsed"),
+    maxBatchSize: integer("maxBatchSize"), // null = no limit
+    numUsed: integer("numUsed").notNull().default(0),
+    validUntil: text("validUntil")
 });
 
 export const siteProvisioningKeyOrg = sqliteTable(

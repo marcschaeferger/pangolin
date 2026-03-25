@@ -1,12 +1,14 @@
 import { internal } from "@app/lib/api";
 import { authCookieHeader } from "@app/lib/api/cookies";
 import { AxiosResponse } from "axios";
+import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
 import SettingsSectionTitle from "@app/components/SettingsSectionTitle";
 import SiteProvisioningKeysTable, {
     SiteProvisioningKeyRow
 } from "../../../../components/SiteProvisioningKeysTable";
-import { ListSiteProvisioningKeysResponse } from "@server/routers/siteProvisioning/listSiteProvisioningKeys";
+import { ListSiteProvisioningKeysResponse } from "@server/routers/siteProvisioning/types";
 import { getTranslations } from "next-intl/server";
+import { TierFeature, tierMatrix } from "@server/lib/billing/tierMatrix";
 
 type ProvisioningPageProps = {
     params: Promise<{ orgId: string }>;
@@ -34,7 +36,11 @@ export default async function ProvisioningPage(props: ProvisioningPageProps) {
         name: k.name,
         id: k.siteProvisioningKeyId,
         key: `${k.siteProvisioningKeyId}••••••••••••••••••••${k.lastChars}`,
-        createdAt: k.createdAt
+        createdAt: k.createdAt,
+        lastUsed: k.lastUsed,
+        maxBatchSize: k.maxBatchSize,
+        numUsed: k.numUsed,
+        validUntil: k.validUntil
     }));
 
     return (
@@ -42,6 +48,10 @@ export default async function ProvisioningPage(props: ProvisioningPageProps) {
             <SettingsSectionTitle
                 title={t("provisioningKeysManage")}
                 description={t("provisioningKeysDescription")}
+            />
+
+            <PaidFeaturesAlert
+                tiers={tierMatrix[TierFeature.SiteProvisioningKeys]}
             />
 
             <SiteProvisioningKeysTable keys={rows} orgId={params.orgId} />

@@ -13,18 +13,20 @@ import {
 import {
     Form,
     FormControl,
+    FormDescription,
     FormField,
     FormItem,
     FormLabel,
     FormMessage
 } from "@app/components/ui/form";
 import { Button } from "@app/components/ui/button";
+import { Checkbox } from "@app/components/ui/checkbox";
 import { Input } from "@app/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@app/components/ui/alert";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { toast } from "@app/hooks/useToast";
 import { createApiClient, formatAxiosError } from "@app/lib/api";
-import { CreateSiteProvisioningKeyResponse } from "@server/routers/siteProvisioning/createSiteProvisioningKey";
+import { CreateSiteProvisioningKeyResponse } from "@server/routers/siteProvisioning/types";
 import { AxiosResponse } from "axios";
 import { InfoIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -55,30 +57,61 @@ export default function CreateSiteProvisioningKeyCredenza({
     const [created, setCreated] =
         useState<CreateSiteProvisioningKeyResponse | null>(null);
 
-    const createFormSchema = z.object({
-        name: z
-            .string()
-            .min(1, {
-                message: t("nameMin", { len: 1 })
-            })
-            .max(255, {
-                message: t("nameMax", { len: 255 })
-            })
-    });
+    const createFormSchema = z
+        .object({
+            name: z
+                .string()
+                .min(1, {
+                    message: t("nameMin", { len: 1 })
+                })
+                .max(255, {
+                    message: t("nameMax", { len: 255 })
+                }),
+            unlimitedBatchSize: z.boolean(),
+            maxBatchSize: z
+                .number()
+                .int()
+                .min(1, { message: t("provisioningKeysMaxBatchSizeInvalid") })
+                .max(1_000_000, {
+                    message: t("provisioningKeysMaxBatchSizeInvalid")
+                }),
+            validUntil: z.string().optional()
+        })
+        .superRefine((data, ctx) => {
+            const v = data.validUntil;
+            if (v == null || v.trim() === "") {
+                return;
+            }
+            if (Number.isNaN(Date.parse(v))) {
+                ctx.addIssue({
+                    code: "custom",
+                    message: t("provisioningKeysValidUntilInvalid"),
+                    path: ["validUntil"]
+                });
+            }
+        });
 
     type CreateFormValues = z.infer<typeof createFormSchema>;
 
     const form = useForm<CreateFormValues>({
         resolver: zodResolver(createFormSchema),
         defaultValues: {
-            name: ""
+            name: "",
+            unlimitedBatchSize: false,
+            maxBatchSize: 100,
+            validUntil: ""
         }
     });
 
     useEffect(() => {
         if (!open) {
             setCreated(null);
-            form.reset({ name: "" });
+            form.reset({
+                name: "",
+                unlimitedBatchSize: false,
+                maxBatchSize: 100,
+                validUntil: ""
+            });
         }
     }, [open, form]);
 
@@ -88,7 +121,16 @@ export default function CreateSiteProvisioningKeyCredenza({
             const res = await api
                 .put<
                     AxiosResponse<CreateSiteProvisioningKeyResponse>
-                >(`/org/${orgId}/site-provisioning-key`, { name: data.name })
+                >(`/org/${orgId}/site-provisioning-key`, {
+                    name: data.name,
+                    maxBatchSize: data.unlimitedBatchSize
+                        ? null
+                        : data.maxBatchSize,
+                    validUntil:
+                        data.validUntil == null || data.validUntil.trim() === ""
+                            ? undefined
+                            : data.validUntil
+                })
                 .catch((e) => {
                     toast({
                         variant: "destructive",
@@ -109,6 +151,8 @@ export default function CreateSiteProvisioningKeyCredenza({
     const credential =
         created &&
         `${created.siteProvisioningKeyId}.${created.siteProvisioningKey}`;
+
+    const unlimitedBatchSize = form.watch("unlimitedBatchSize");
 
     return (
         <Credenza open={open} onOpenChange={setOpen}>
@@ -145,6 +189,96 @@ export default function CreateSiteProvisioningKeyCredenza({
                                                     {...field}
                                                 />
                                             </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="maxBatchSize"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>
+                                                {t(
+                                                    "provisioningKeysMaxBatchSize"
+                                                )}
+                                            </FormLabel>
+                                            <FormControl>
+                                                <Input
+                                                    type="number"
+                                                    min={1}
+                                                    max={1_000_000}
+                                                    autoComplete="off"
+                                                    disabled={
+                                                        unlimitedBatchSize
+                                                    }
+                                                    name={field.name}
+                                                    ref={field.ref}
+                                                    onBlur={field.onBlur}
+                                                    onChange={(e) => {
+                                                        const v =
+                                                            e.target.value;
+                                                        field.onChange(
+                                                            v === ""
+                                                                ? 100
+                                                                : Number(v)
+                                                        );
+                                                    }}
+                                                    value={field.value}
+                                                />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="unlimitedBatchSize"
+                                    render={({ field }) => (
+                                        <FormItem className="flex flex-row items-center gap-3 space-y-0">
+                                            <FormControl>
+                                                <Checkbox
+                                                    id="provisioning-unlimited-batch"
+                                                    checked={field.value}
+                                                    onCheckedChange={(c) =>
+                                                        field.onChange(
+                                                            c === true
+                                                        )
+                                                    }
+                                                />
+                                            </FormControl>
+                                            <FormLabel
+                                                htmlFor="provisioning-unlimited-batch"
+                                                className="cursor-pointer font-normal !mt-0"
+                                            >
+                                                {t(
+                                                    "provisioningKeysUnlimitedBatchSize"
+                                                )}
+                                            </FormLabel>
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="validUntil"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>
+                                                {t(
+                                                    "provisioningKeysValidUntil"
+                                                )}
+                                            </FormLabel>
+                                            <FormControl>
+                                                <Input
+                                                    type="datetime-local"
+                                                    {...field}
+                                                />
+                                            </FormControl>
+                                            <FormDescription>
+                                                {t(
+                                                    "provisioningKeysValidUntilHint"
+                                                )}
+                                            </FormDescription>
                                             <FormMessage />
                                         </FormItem>
                                     )}
