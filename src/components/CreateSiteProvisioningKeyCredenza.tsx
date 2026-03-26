@@ -150,7 +150,7 @@ export default function CreateSiteProvisioningKeyCredenza({
 
     const credential =
         created &&
-        `${created.siteProvisioningKeyId}.${created.siteProvisioningKey}`;
+        created.siteProvisioningKey;
 
     const unlimitedBatchSize = form.watch("unlimitedBatchSize");
 
