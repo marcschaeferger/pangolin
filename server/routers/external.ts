@@ -39,6 +39,7 @@ import {
     verifyApiKeyAccess,
     verifyDomainAccess,
     verifyUserHasAction,
+    verifyUserCanSetUserOrgRoles,
     verifyUserIsOrgOwner,
     verifySiteResourceAccess,
     verifyOlmAccess,
@@ -835,6 +836,16 @@ authenticated.post(
     verifyUserHasAction(ActionsEnum.updateOrgUser),
     logActionAudit(ActionsEnum.updateOrgUser),
     user.updateOrgUser
+);
+
+authenticated.post(
+    "/org/:orgId/user/:userId/roles",
+    verifyOrgAccess,
+    verifyUserAccess,
+    verifyLimits,
+    verifyUserCanSetUserOrgRoles(),
+    logActionAudit(ActionsEnum.setUserOrgRoles),
+    user.setUserOrgRoles
 );
 
 authenticated.get("/org/:orgId/user/:userId", verifyOrgAccess, user.getOrgUser);

@@ -1150,6 +1150,7 @@
     "actionRemoveUser": "Remove User",
     "actionListUsers": "List Users",
     "actionAddUserRole": "Add User Role",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Generate Access Token",
     "actionDeleteAccessToken": "Delete Access Token",
     "actionListAccessTokens": "List Access Tokens",

@@ -1148,6 +1148,7 @@
     "actionRemoveUser": "Gebruiker verwijderen",
     "actionListUsers": "Gebruikers weergeven",
     "actionAddUserRole": "Gebruikersrol toevoegen",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Genereer Toegangstoken",
     "actionDeleteAccessToken": "Verwijder toegangstoken",
     "actionListAccessTokens": "Lijst toegangstokens",

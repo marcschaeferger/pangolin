@@ -105,48 +105,6 @@ export async function getUserSessionWithUser(
 }
 
 /**
- * Get user organization role (single role; prefer getUserOrgRoleIds + roles for multi-role).
- * @deprecated Use userOrgRoles table and getUserOrgRoleIds for multi-role support.
- */
-export async function getUserOrgRole(userId: string, orgId: string) {
-    const userOrg = await db
-        .select({
-            userId: userOrgs.userId,
-            orgId: userOrgs.orgId,
-            isOwner: userOrgs.isOwner,
-            autoProvisioned: userOrgs.autoProvisioned
-        })
-        .from(userOrgs)
-        .where(and(eq(userOrgs.userId, userId), eq(userOrgs.orgId, orgId)))
-        .limit(1);
-
-    if (userOrg.length === 0) return null;
-
-    const [firstRole] = await db
-        .select({
-            roleId: userOrgRoles.roleId,
-            roleName: roles.name
-        })
-        .from(userOrgRoles)
-        .leftJoin(roles, eq(userOrgRoles.roleId, roles.roleId))
-        .where(
-            and(
-                eq(userOrgRoles.userId, userId),
-                eq(userOrgRoles.orgId, orgId)
-            )
-        )
-        .limit(1);
-
-    return firstRole
-        ? {
-              ...userOrg[0],
-              roleId: firstRole.roleId,
-              roleName: firstRole.roleName
-          }
-        : { ...userOrg[0], roleId: null, roleName: null };
-}
-
-/**
  * Get role name by role ID (for display).
  */
 export async function getRoleName(roleId: number): Promise<string | null> {

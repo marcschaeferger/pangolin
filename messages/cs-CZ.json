@@ -1148,6 +1148,7 @@
     "actionRemoveUser": "Odstranit uživatele",
     "actionListUsers": "Seznam uživatelů",
     "actionAddUserRole": "Přidat uživatelskou roli",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Generovat přístupový token",
     "actionDeleteAccessToken": "Odstranit přístupový token",
     "actionListAccessTokens": "Seznam přístupových tokenů",

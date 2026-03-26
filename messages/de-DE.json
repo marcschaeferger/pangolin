@@ -1148,6 +1148,7 @@
     "actionRemoveUser": "Benutzer entfernen",
     "actionListUsers": "Benutzer auflisten",
     "actionAddUserRole": "Benutzerrolle hinzufügen",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Zugriffstoken generieren",
     "actionDeleteAccessToken": "Zugriffstoken löschen",
     "actionListAccessTokens": "Zugriffstoken auflisten",

@@ -5,11 +5,10 @@ import { idp, roles, userOrgRoles, userOrgs, users } from "@server/db";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import logger from "@server/logger";
 import { fromZodError } from "zod-validation-error";
 import { OpenAPITags, registry } from "@server/openApi";
-import { eq } from "drizzle-orm";
 
 const listUsersParamsSchema = z.strictObject({
     orgId: z.string()
@@ -56,15 +55,24 @@ async function queryUsers(orgId: string, limit: number, offset: number) {
         .limit(limit)
         .offset(offset);
 
-    const roleRows = await db
-        .select({
-            userId: userOrgRoles.userId,
-            roleId: userOrgRoles.roleId,
-            roleName: roles.name
-        })
-        .from(userOrgRoles)
-        .leftJoin(roles, eq(userOrgRoles.roleId, roles.roleId))
-        .where(eq(userOrgRoles.orgId, orgId));
+    const userIds = rows.map((r) => r.id);
+    const roleRows =
+        userIds.length === 0
+            ? []
+            : await db
+                  .select({
+                      userId: userOrgRoles.userId,
+                      roleId: userOrgRoles.roleId,
+                      roleName: roles.name
+                  })
+                  .from(userOrgRoles)
+                  .leftJoin(roles, eq(userOrgRoles.roleId, roles.roleId))
+                  .where(
+                      and(
+                          eq(userOrgRoles.orgId, orgId),
+                          inArray(userOrgRoles.userId, userIds)
+                      )
+                  );
 
     const rolesByUser = new Map<
         string,

@@ -4,6 +4,7 @@ import { userActions, roleActions } from "@server/db";
 import { and, eq, inArray } from "drizzle-orm";
 import createHttpError from "http-errors";
 import HttpCode from "@server/types/HttpCode";
+import { getUserOrgRoleIds } from "@server/lib/userOrgRoles";
 
 export enum ActionsEnum {
     createOrgUser = "createOrgUser",
@@ -54,6 +55,7 @@ export enum ActionsEnum {
     // listRoleActions = "listRoleActions",
     addUserRole = "addUserRole",
     removeUserRole = "removeUserRole",
+    setUserOrgRoles = "setUserOrgRoles",
     // addUserSite = "addUserSite",
     // addUserAction = "addUserAction",
     // removeUserAction = "removeUserAction",
@@ -158,9 +160,6 @@ export async function checkUserActionPermission(
         let userOrgRoleIds = req.userOrgRoleIds;
 
         if (userOrgRoleIds === undefined) {
-            const { getUserOrgRoleIds } = await import(
-                "@server/lib/userOrgRoles"
-            );
             userOrgRoleIds = await getUserOrgRoleIds(userId, req.userOrgId!);
             if (userOrgRoleIds.length === 0) {
                 throw createHttpError(

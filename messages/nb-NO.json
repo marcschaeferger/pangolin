@@ -1148,6 +1148,7 @@
     "actionRemoveUser": "Fjern bruker",
     "actionListUsers": "List opp brukere",
     "actionAddUserRole": "Legg til brukerrolle",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Generer tilgangstoken",
     "actionDeleteAccessToken": "Slett tilgangstoken",
     "actionListAccessTokens": "List opp tilgangstokener",

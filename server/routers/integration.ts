@@ -16,6 +16,7 @@ import {
     verifyApiKey,
     verifyApiKeyOrgAccess,
     verifyApiKeyHasAction,
+    verifyApiKeyCanSetUserOrgRoles,
     verifyApiKeySiteAccess,
     verifyApiKeyResourceAccess,
     verifyApiKeyTargetAccess,
@@ -812,6 +813,16 @@ authenticated.post(
     verifyApiKeyHasAction(ActionsEnum.updateOrgUser),
     logActionAudit(ActionsEnum.updateOrgUser),
     user.updateOrgUser
+);
+
+authenticated.post(
+    "/org/:orgId/user/:userId/roles",
+    verifyApiKeyOrgAccess,
+    verifyApiKeyUserAccess,
+    verifyLimits,
+    verifyApiKeyCanSetUserOrgRoles(),
+    logActionAudit(ActionsEnum.setUserOrgRoles),
+    user.setUserOrgRoles
 );
 
 authenticated.delete(
