@@ -14,7 +14,7 @@ import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { fromError } from "zod-validation-error";
 import { verifyPassword, hashPassword } from "@server/auth/password";
 import {
@@ -26,6 +26,8 @@ import moment from "moment";
 import { build } from "@server/build";
 import { usageService } from "@server/lib/billing/usageService";
 import { FeatureId } from "@server/lib/billing";
+import { INSPECT_MAX_BYTES } from "buffer";
+import { v } from "@faker-js/faker/dist/airline-Dz1uGqgJ";
 
 const bodySchema = z.object({
     provisioningKey: z.string().nonempty()
@@ -77,7 +79,10 @@ export async function registerNewt(
                     siteProvisioningKeys.siteProvisioningKeyId,
                 siteProvisioningKeyHash:
                     siteProvisioningKeys.siteProvisioningKeyHash,
-                orgId: siteProvisioningKeyOrg.orgId
+                orgId: siteProvisioningKeyOrg.orgId,
+                maxBatchSize: siteProvisioningKeys.maxBatchSize,
+                numUsed: siteProvisioningKeys.numUsed,
+                validUntil: siteProvisioningKeys.validUntil
             })
             .from(siteProvisioningKeys)
             .innerJoin(
@@ -118,13 +123,28 @@ export async function registerNewt(
             );
         }
 
+        if (keyRecord.maxBatchSize && keyRecord.numUsed >= keyRecord.maxBatchSize) {
+            return next(
+                createHttpError(
+                    HttpCode.UNAUTHORIZED,
+                    "Provisioning key has reached its maximum usage"
+                )
+            );
+        }
+
+        if (keyRecord.validUntil && new Date(keyRecord.validUntil) < new Date()) {
+            return next(
+                createHttpError(
+                    HttpCode.UNAUTHORIZED,
+                    "Provisioning key has expired"
+                )
+            );
+        }
+
         const { orgId } = keyRecord;
 
         // Verify the org exists
-        const [org] = await db
-            .select()
-            .from(orgs)
-            .where(eq(orgs.orgId, orgId));
+        const [org] = await db.select().from(orgs).where(eq(orgs.orgId, orgId));
         if (!org) {
             return next(
                 createHttpError(HttpCode.NOT_FOUND, "Organization not found")
@@ -208,7 +228,11 @@ export async function registerNewt(
 
             // Consume the provisioning key — cascade removes siteProvisioningKeyOrg
             await trx
-                .delete(siteProvisioningKeys)
+                .update(siteProvisioningKeys)
+                .set({
+                    lastUsed: moment().toISOString(),
+                    numUsed: sql`${siteProvisioningKeys.numUsed} + 1`
+                })
                 .where(
                     eq(
                         siteProvisioningKeys.siteProvisioningKeyId,
@@ -236,10 +260,7 @@ export async function registerNewt(
     } catch (error) {
         logger.error(error);
         return next(
-            createHttpError(
-                HttpCode.INTERNAL_SERVER_ERROR,
-                "An error occurred"
-            )
+            createHttpError(HttpCode.INTERNAL_SERVER_ERROR, "An error occurred")
         );
     }
 }
