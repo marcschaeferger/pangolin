@@ -146,7 +146,7 @@ export async function flushSiteBandwidthToDb(): Promise<void> {
         // support UPDATE … FROM (VALUES …), letting us update the whole chunk
         // in a single query instead of N individual round-trips.
         const valuesList = chunk.map(([publicKey, { bytesIn, bytesOut }]) =>
-            sql`(${publicKey}, ${bytesIn}, ${bytesOut})`
+            sql`(${publicKey}::text, ${bytesIn}::real, ${bytesOut}::real)`
         );
         const valuesClause = sql.join(valuesList, sql`, `);
 
