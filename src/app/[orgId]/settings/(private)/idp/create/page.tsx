@@ -42,6 +42,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import {
+    compileRoleMappingExpression,
+    createMappingBuilderRule,
+    MappingBuilderRule,
+    RoleMappingMode
+} from "@app/lib/idpRoleMapping";
 
 export default function Page() {
     const { env } = useEnvContext();
@@ -49,9 +55,15 @@ export default function Page() {
     const router = useRouter();
     const [createLoading, setCreateLoading] = useState(false);
     const [roles, setRoles] = useState<{ roleId: number; name: string }[]>([]);
-    const [roleMappingMode, setRoleMappingMode] = useState<
-        "role" | "expression"
-    >("role");
+    const [roleMappingMode, setRoleMappingMode] =
+        useState<RoleMappingMode>("fixedRoles");
+    const [fixedRoleNames, setFixedRoleNames] = useState<string[]>([]);
+    const [mappingBuilderClaimPath, setMappingBuilderClaimPath] =
+        useState("groups");
+    const [mappingBuilderRules, setMappingBuilderRules] = useState<
+        MappingBuilderRule[]
+    >([createMappingBuilderRule()]);
+    const [rawRoleExpression, setRawRoleExpression] = useState("");
     const t = useTranslations();
     const { isPaidUser } = usePaidStatus();
 
@@ -228,7 +240,26 @@ export default function Page() {
                 tokenUrl = tokenUrl?.replace("{{TENANT_ID}}", data.tenantId);
             }
 
-            const roleName = roles.find((r) => r.roleId === data.roleId)?.name;
+            const roleMappingExpression = compileRoleMappingExpression({
+                mode: roleMappingMode,
+                fixedRoleNames,
+                mappingBuilder: {
+                    claimPath: mappingBuilderClaimPath,
+                    rules: mappingBuilderRules
+                },
+                rawExpression: rawRoleExpression
+            });
+
+            if (data.autoProvision && !roleMappingExpression) {
+                toast({
+                    title: t("error"),
+                    description:
+                        "A role mapping is required when auto-provisioning is enabled.",
+                    variant: "destructive"
+                });
+                setCreateLoading(false);
+                return;
+            }
 
             const payload = {
                 name: data.name,
@@ -240,10 +271,7 @@ export default function Page() {
                 emailPath: data.emailPath,
                 namePath: data.namePath,
                 autoProvision: data.autoProvision,
-                roleMapping:
-                    roleMappingMode === "role"
-                        ? `'${roleName}'`
-                        : data.roleMapping || "",
+                roleMapping: roleMappingExpression,
                 scopes: data.scopes,
                 variant: data.type
             };
@@ -363,43 +391,44 @@ export default function Page() {
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>
-                        <SettingsSectionForm>
-                            <PaidFeaturesAlert
-                                tiers={tierMatrix.autoProvisioning}
-                            />
-                            <Form {...form}>
-                                <form
-                                    className="space-y-4"
-                                    id="create-idp-form"
-                                    onSubmit={form.handleSubmit(onSubmit)}
-                                >
-                                    <AutoProvisionConfigWidget
-                                        control={form.control}
-                                        autoProvision={
-                                            form.watch(
-                                                "autoProvision"
-                                            ) as boolean
-                                        } // is this right?
-                                        onAutoProvisionChange={(checked) => {
-                                            form.setValue(
-                                                "autoProvision",
-                                                checked
-                                            );
-                                        }}
-                                        roleMappingMode={roleMappingMode}
-                                        onRoleMappingModeChange={(data) => {
-                                            setRoleMappingMode(data);
-                                            // Clear roleId and roleMapping when mode changes
-                                            form.setValue("roleId", null);
-                                            form.setValue("roleMapping", null);
-                                        }}
-                                        roles={roles}
-                                        roleIdFieldName="roleId"
-                                        roleMappingFieldName="roleMapping"
-                                    />
-                                </form>
-                            </Form>
-                        </SettingsSectionForm>
+                        <PaidFeaturesAlert
+                            tiers={tierMatrix.autoProvisioning}
+                        />
+                        <Form {...form}>
+                            <form
+                                className="space-y-4"
+                                id="create-idp-form"
+                                onSubmit={form.handleSubmit(onSubmit)}
+                            >
+                                <AutoProvisionConfigWidget
+                                    autoProvision={
+                                        form.watch("autoProvision") as boolean
+                                    } // is this right?
+                                    onAutoProvisionChange={(checked) => {
+                                        form.setValue("autoProvision", checked);
+                                    }}
+                                    roleMappingMode={roleMappingMode}
+                                    onRoleMappingModeChange={(data) => {
+                                        setRoleMappingMode(data);
+                                    }}
+                                    roles={roles}
+                                    fixedRoleNames={fixedRoleNames}
+                                    onFixedRoleNamesChange={setFixedRoleNames}
+                                    mappingBuilderClaimPath={
+                                        mappingBuilderClaimPath
+                                    }
+                                    onMappingBuilderClaimPathChange={
+                                        setMappingBuilderClaimPath
+                                    }
+                                    mappingBuilderRules={mappingBuilderRules}
+                                    onMappingBuilderRulesChange={
+                                        setMappingBuilderRules
+                                    }
+                                    rawExpression={rawRoleExpression}
+                                    onRawExpressionChange={setRawRoleExpression}
+                                />
+                            </form>
+                        </Form>
                     </SettingsSectionBody>
                 </SettingsSection>
 
