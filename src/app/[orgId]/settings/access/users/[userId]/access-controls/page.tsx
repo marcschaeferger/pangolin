@@ -37,6 +37,9 @@ import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useTranslations } from "next-intl";
 import IdpTypeBadge from "@app/components/IdpTypeBadge";
 import { UserType } from "@server/types/UserTypes";
+import { usePaidStatus } from "@app/hooks/usePaidStatus";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
+import { build } from "@server/build";
 
 const accessControlsFormSchema = z.object({
     username: z.string(),
@@ -51,8 +54,9 @@ const accessControlsFormSchema = z.object({
 
 export default function AccessControlsPage() {
     const { orgUser: user, updateOrgUser } = userOrgUserContext();
+    const { env } = useEnvContext();
 
-    const api = createApiClient(useEnvContext());
+    const api = createApiClient({ env });
 
     const { orgId } = useParams();
 
@@ -63,6 +67,18 @@ export default function AccessControlsPage() {
     );
 
     const t = useTranslations();
+    const { isPaidUser, hasSaasSubscription, hasEnterpriseLicense } =
+        usePaidStatus();
+    const multiRoleFeatureTiers = Array.from(
+        new Set([...tierMatrix.sshPam, ...tierMatrix.orgOidc])
+    );
+    const isPaid = isPaidUser(multiRoleFeatureTiers);
+    const supportsMultipleRolesPerUser = isPaid;
+    const showMultiRolePaywallMessage =
+        !env.flags.disableEnterpriseFeatures &&
+        ((build === "saas" && !isPaid) ||
+            (build === "enterprise" && !isPaid) ||
+            (build === "oss" && !isPaid));
 
     const form = useForm({
         resolver: zodResolver(accessControlsFormSchema),
@@ -124,11 +140,28 @@ export default function AccessControlsPage() {
         [roles]
     );
 
-    function setRoleTags(
-        updater: Tag[] | ((prev: Tag[]) => Tag[])
-    ) {
+    function setRoleTags(updater: Tag[] | ((prev: Tag[]) => Tag[])) {
         const prev = form.getValues("roles");
-        const next = typeof updater === "function" ? updater(prev) : updater;
+        const nextValue =
+            typeof updater === "function" ? updater(prev) : updater;
+        const next = supportsMultipleRolesPerUser
+            ? nextValue
+            : nextValue.length > 1
+              ? [nextValue[nextValue.length - 1]]
+              : nextValue;
+
+        // In single-role mode, selecting the currently selected role can transiently
+        // emit an empty tag list from TagInput; keep the prior selection.
+        if (
+            !supportsMultipleRolesPerUser &&
+            next.length === 0 &&
+            prev.length > 0
+        ) {
+            form.setValue("roles", [prev[prev.length - 1]], {
+                shouldDirty: true
+            });
+            return;
+        }
 
         if (next.length === 0) {
             toast({
@@ -155,11 +188,14 @@ export default function AccessControlsPage() {
         setLoading(true);
         try {
             const roleIds = values.roles.map((r) => parseInt(r.id, 10));
+            const updateRoleRequest = supportsMultipleRolesPerUser
+                ? api.post(`/user/${user.userId}/org/${orgId}/roles`, {
+                      roleIds
+                  })
+                : api.post(`/role/${roleIds[0]}/add/${user.userId}`);
 
             await Promise.all([
-                api.post(`/org/${orgId}/user/${user.userId}/roles`, {
-                    roleIds
-                }),
+                updateRoleRequest,
                 api.post(`/org/${orgId}/user/${user.userId}`, {
                     autoProvisioned: values.autoProvisioned
                 })
@@ -233,7 +269,7 @@ export default function AccessControlsPage() {
                                     name="roles"
                                     render={({ field }) => (
                                         <FormItem className="flex flex-col items-start">
-                                            <FormLabel>{t("role")}</FormLabel>
+                                            <FormLabel>{t("roles")}</FormLabel>
                                             <FormControl>
                                                 <TagInput
                                                     {...field}
@@ -261,6 +297,17 @@ export default function AccessControlsPage() {
                                                     disabled={loading}
                                                 />
                                             </FormControl>
+                                            {showMultiRolePaywallMessage && (
+                                                <FormDescription>
+                                                    {build === "saas"
+                                                        ? t(
+                                                              "singleRolePerUserPlanNotice"
+                                                          )
+                                                        : t(
+                                                              "singleRolePerUserEditionNotice"
+                                                          )}
+                                                </FormDescription>
+                                            )}
                                             <FormMessage />
                                         </FormItem>
                                     )}

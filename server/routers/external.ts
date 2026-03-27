@@ -39,7 +39,6 @@ import {
     verifyApiKeyAccess,
     verifyDomainAccess,
     verifyUserHasAction,
-    verifyUserCanSetUserOrgRoles,
     verifyUserIsOrgOwner,
     verifySiteResourceAccess,
     verifyOlmAccess,
@@ -645,6 +644,7 @@ authenticated.delete(
     logActionAudit(ActionsEnum.deleteRole),
     role.deleteRole
 );
+
 authenticated.post(
     "/role/:roleId/add/:userId",
     verifyRoleAccess,
@@ -652,17 +652,7 @@ authenticated.post(
     verifyLimits,
     verifyUserHasAction(ActionsEnum.addUserRole),
     logActionAudit(ActionsEnum.addUserRole),
-    user.addUserRole
-);
-
-authenticated.delete(
-    "/role/:roleId/remove/:userId",
-    verifyRoleAccess,
-    verifyUserAccess,
-    verifyLimits,
-    verifyUserHasAction(ActionsEnum.removeUserRole),
-    logActionAudit(ActionsEnum.removeUserRole),
-    user.removeUserRole
+    user.addUserRoleLegacy
 );
 
 authenticated.post(
@@ -836,16 +826,6 @@ authenticated.post(
     verifyUserHasAction(ActionsEnum.updateOrgUser),
     logActionAudit(ActionsEnum.updateOrgUser),
     user.updateOrgUser
-);
-
-authenticated.post(
-    "/org/:orgId/user/:userId/roles",
-    verifyOrgAccess,
-    verifyUserAccess,
-    verifyLimits,
-    verifyUserCanSetUserOrgRoles(),
-    logActionAudit(ActionsEnum.setUserOrgRoles),
-    user.setUserOrgRoles
 );
 
 authenticated.get("/org/:orgId/user/:userId", verifyOrgAccess, user.getOrgUser);

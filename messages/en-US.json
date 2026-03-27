@@ -512,6 +512,8 @@
     "autoProvisionedDescription": "Allow this user to be automatically managed by identity provider",
     "accessControlsDescription": "Manage what this user can access and do in the organization",
     "accessControlsSubmit": "Save Access Controls",
+    "singleRolePerUserPlanNotice": "Your plan only supports one role per user.",
+    "singleRolePerUserEditionNotice": "This edition only supports one role per user.",
     "roles": "Roles",
     "accessUsersRoles": "Manage Users & Roles",
     "accessUsersRolesDescription": "Invite users and add them to roles to manage access to the organization",

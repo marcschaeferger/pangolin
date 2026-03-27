@@ -596,17 +596,7 @@ authenticated.post(
     verifyLimits,
     verifyApiKeyHasAction(ActionsEnum.addUserRole),
     logActionAudit(ActionsEnum.addUserRole),
-    user.addUserRole
-);
-
-authenticated.delete(
-    "/role/:roleId/remove/:userId",
-    verifyApiKeyRoleAccess,
-    verifyApiKeyUserAccess,
-    verifyLimits,
-    verifyApiKeyHasAction(ActionsEnum.removeUserRole),
-    logActionAudit(ActionsEnum.removeUserRole),
-    user.removeUserRole
+    user.addUserRoleLegacy
 );
 
 authenticated.post(
@@ -813,16 +803,6 @@ authenticated.post(
     verifyApiKeyHasAction(ActionsEnum.updateOrgUser),
     logActionAudit(ActionsEnum.updateOrgUser),
     user.updateOrgUser
-);
-
-authenticated.post(
-    "/org/:orgId/user/:userId/roles",
-    verifyApiKeyOrgAccess,
-    verifyApiKeyUserAccess,
-    verifyLimits,
-    verifyApiKeyCanSetUserOrgRoles(),
-    logActionAudit(ActionsEnum.setUserOrgRoles),
-    user.setUserOrgRoles
 );
 
 authenticated.delete(

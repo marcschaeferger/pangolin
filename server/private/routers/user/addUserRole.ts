@@ -1,40 +1,53 @@
+/*
+ * This file is part of a proprietary work.
+ *
+ * Copyright (c) 2025 Fossorial, Inc.
+ * All rights reserved.
+ *
+ * This file is licensed under the Fossorial Commercial License.
+ * You may not use this file except in compliance with the License.
+ * Unauthorized use, copying, modification, or distribution is strictly prohibited.
+ *
+ * This file is not licensed under the AGPLv3.
+ */
+
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { db } from "@server/db";
-import { userOrgRoles, userOrgs, roles, clients } from "@server/db";
+import stoi from "@server/lib/stoi";
+import { clients, db } from "@server/db";
+import { userOrgRoles, userOrgs, roles } from "@server/db";
 import { eq, and } from "drizzle-orm";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
-import stoi from "@server/lib/stoi";
 import { OpenAPITags, registry } from "@server/openApi";
 import { rebuildClientAssociationsFromClient } from "@server/lib/rebuildClientAssociations";
 
-const removeUserRoleParamsSchema = z.strictObject({
+const addUserRoleParamsSchema = z.strictObject({
     userId: z.string(),
     roleId: z.string().transform(stoi).pipe(z.number())
 });
 
 registry.registerPath({
-    method: "delete",
-    path: "/role/{roleId}/remove/{userId}",
-    description: "Remove a role from a user. User must have at least one role left in the org.",
+    method: "post",
+    path: "/user/{userId}/add-role/{roleId}",
+    description: "Add a role to a user.",
     tags: [OpenAPITags.Role, OpenAPITags.User],
     request: {
-        params: removeUserRoleParamsSchema
+        params: addUserRoleParamsSchema
     },
     responses: {}
 });
 
-export async function removeUserRole(
+export async function addUserRole(
     req: Request,
     res: Response,
     next: NextFunction
 ): Promise<any> {
     try {
-        const parsedParams = removeUserRoleParamsSchema.safeParse(req.params);
+        const parsedParams = addUserRoleParamsSchema.safeParse(req.params);
         if (!parsedParams.success) {
             return next(
                 createHttpError(
@@ -55,6 +68,7 @@ export async function removeUserRole(
             );
         }
 
+        // get the role
         const [role] = await db
             .select()
             .from(roles)
@@ -67,7 +81,7 @@ export async function removeUserRole(
             );
         }
 
-        const [existingUser] = await db
+        const existingUser = await db
             .select()
             .from(userOrgs)
             .where(
@@ -75,7 +89,7 @@ export async function removeUserRole(
             )
             .limit(1);
 
-        if (!existingUser) {
+        if (existingUser.length === 0) {
             return next(
                 createHttpError(
                     HttpCode.NOT_FOUND,
@@ -84,47 +98,46 @@ export async function removeUserRole(
             );
         }
 
-        if (existingUser.isOwner) {
+        if (existingUser[0].isOwner) {
             return next(
                 createHttpError(
                     HttpCode.FORBIDDEN,
-                    "Cannot change the roles of the owner of the organization"
+                    "Cannot change the role of the owner of the organization"
                 )
             );
         }
 
-        const remainingRoles = await db
-            .select({ roleId: userOrgRoles.roleId })
-            .from(userOrgRoles)
-            .where(
-                and(
-                    eq(userOrgRoles.userId, userId),
-                    eq(userOrgRoles.orgId, role.orgId)
+        const roleExists = await db
+            .select()
+            .from(roles)
+            .where(and(eq(roles.roleId, roleId), eq(roles.orgId, role.orgId)))
+            .limit(1);
+
+        if (roleExists.length === 0) {
+            return next(
+                createHttpError(
+                    HttpCode.NOT_FOUND,
+                    "Role not found or does not belong to the specified organization"
                 )
             );
-
-        if (remainingRoles.length <= 1) {
-            const hasThisRole = remainingRoles.some((r) => r.roleId === roleId);
-            if (hasThisRole) {
-                return next(
-                    createHttpError(
-                        HttpCode.FORBIDDEN,
-                        "User must have at least one role in the organization. Remove the last role is not allowed."
-                    )
-                );
-            }
         }
 
+        let newUserRole: { userId: string; orgId: string; roleId: number } | null =
+            null;
         await db.transaction(async (trx) => {
-            await trx
-                .delete(userOrgRoles)
-                .where(
-                    and(
-                        eq(userOrgRoles.userId, userId),
-                        eq(userOrgRoles.orgId, role.orgId),
-                        eq(userOrgRoles.roleId, roleId)
-                    )
-                );
+            const inserted = await trx
+                .insert(userOrgRoles)
+                .values({
+                    userId,
+                    orgId: role.orgId,
+                    roleId
+                })
+                .onConflictDoNothing()
+                .returning();
+
+            if (inserted.length > 0) {
+                newUserRole = inserted[0];
+            }
 
             const orgClients = await trx
                 .select()
@@ -142,10 +155,10 @@ export async function removeUserRole(
         });
 
         return response(res, {
-            data: { userId, orgId: role.orgId, roleId },
+            data: newUserRole ?? { userId, orgId: role.orgId, roleId },
             success: true,
             error: false,
-            message: "Role removed from user successfully",
+            message: "Role added to user successfully",
             status: HttpCode.OK
         });
     } catch (error) {

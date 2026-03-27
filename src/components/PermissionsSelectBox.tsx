@@ -96,7 +96,7 @@ function getActionsCategories(root: boolean) {
             [t("actionUpdateRole")]: "updateRole",
             [t("actionListAllowedRoleResources")]: "listRoleResources",
             [t("actionAddUserRole")]: "addUserRole",
-            [t("actionSetUserOrgRoles")]: "setUserOrgRoles"
+            [t("actionRemoveUserRole")]: "removeUserRole"
         },
         "Access Token": {
             [t("actionGenerateAccessToken")]: "generateAccessToken",

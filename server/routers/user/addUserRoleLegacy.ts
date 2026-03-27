@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
+import stoi from "@server/lib/stoi";
 import { clients, db } from "@server/db";
 import { userOrgRoles, userOrgs, roles } from "@server/db";
 import { eq, and } from "drizzle-orm";
@@ -8,35 +9,36 @@ import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
-import stoi from "@server/lib/stoi";
 import { OpenAPITags, registry } from "@server/openApi";
 import { rebuildClientAssociationsFromClient } from "@server/lib/rebuildClientAssociations";
 
-const addUserRoleParamsSchema = z.strictObject({
-    userId: z.string(),
-    roleId: z.string().transform(stoi).pipe(z.number())
+/** Legacy path param order: /role/:roleId/add/:userId */
+const addUserRoleLegacyParamsSchema = z.strictObject({
+    roleId: z.string().transform(stoi).pipe(z.number()),
+    userId: z.string()
 });
-
-export type AddUserRoleResponse = z.infer<typeof addUserRoleParamsSchema>;
 
 registry.registerPath({
     method: "post",
     path: "/role/{roleId}/add/{userId}",
-    description: "Add a role to a user.",
+    description:
+        "Legacy: set exactly one role for the user (replaces any other roles the user has in the org).",
     tags: [OpenAPITags.Role, OpenAPITags.User],
     request: {
-        params: addUserRoleParamsSchema
+        params: addUserRoleLegacyParamsSchema
     },
     responses: {}
 });
 
-export async function addUserRole(
+export async function addUserRoleLegacy(
     req: Request,
     res: Response,
     next: NextFunction
 ): Promise<any> {
     try {
-        const parsedParams = addUserRoleParamsSchema.safeParse(req.params);
+        const parsedParams = addUserRoleLegacyParamsSchema.safeParse(
+            req.params
+        );
         if (!parsedParams.success) {
             return next(
                 createHttpError(
@@ -57,7 +59,6 @@ export async function addUserRole(
             );
         }
 
-        // get the role
         const [role] = await db
             .select()
             .from(roles)
@@ -70,7 +71,7 @@ export async function addUserRole(
             );
         }
 
-        const existingUser = await db
+        const [existingUser] = await db
             .select()
             .from(userOrgs)
             .where(
@@ -78,7 +79,7 @@ export async function addUserRole(
             )
             .limit(1);
 
-        if (existingUser.length === 0) {
+        if (!existingUser) {
             return next(
                 createHttpError(
                     HttpCode.NOT_FOUND,
@@ -87,7 +88,7 @@ export async function addUserRole(
             );
         }
 
-        if (existingUser[0].isOwner) {
+        if (existingUser.isOwner) {
             return next(
                 createHttpError(
                     HttpCode.FORBIDDEN,
@@ -96,13 +97,13 @@ export async function addUserRole(
             );
         }
 
-        const roleExists = await db
+        const [roleInOrg] = await db
             .select()
             .from(roles)
             .where(and(eq(roles.roleId, roleId), eq(roles.orgId, role.orgId)))
             .limit(1);
 
-        if (roleExists.length === 0) {
+        if (!roleInOrg) {
             return next(
                 createHttpError(
                     HttpCode.NOT_FOUND,
@@ -111,22 +112,21 @@ export async function addUserRole(
             );
         }
 
-        let newUserRole: { userId: string; orgId: string; roleId: number } | null =
-            null;
         await db.transaction(async (trx) => {
-            const inserted = await trx
-                .insert(userOrgRoles)
-                .values({
-                    userId,
-                    orgId: role.orgId,
-                    roleId
-                })
-                .onConflictDoNothing()
-                .returning();
+            await trx
+                .delete(userOrgRoles)
+                .where(
+                    and(
+                        eq(userOrgRoles.userId, userId),
+                        eq(userOrgRoles.orgId, role.orgId)
+                    )
+                );
 
-            if (inserted.length > 0) {
-                newUserRole = inserted[0];
-            }
+            await trx.insert(userOrgRoles).values({
+                userId,
+                orgId: role.orgId,
+                roleId
+            });
 
             const orgClients = await trx
                 .select()
@@ -144,7 +144,7 @@ export async function addUserRole(
         });
 
         return response(res, {
-            data: newUserRole ?? { userId, orgId: role.orgId, roleId },
+            data: { ...existingUser, roleId },
             success: true,
             error: false,
             message: "Role added to user successfully",

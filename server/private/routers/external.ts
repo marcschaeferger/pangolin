@@ -26,6 +26,7 @@ import * as misc from "#private/routers/misc";
 import * as reKey from "#private/routers/re-key";
 import * as approval from "#private/routers/approvals";
 import * as ssh from "#private/routers/ssh";
+import * as user from "#private/routers/user";
 
 import {
     verifyOrgAccess,
@@ -33,7 +34,10 @@ import {
     verifyUserIsServerAdmin,
     verifySiteAccess,
     verifyClientAccess,
-    verifyLimits
+    verifyLimits,
+    verifyRoleAccess,
+    verifyUserAccess,
+    verifyUserCanSetUserOrgRoles
 } from "@server/middlewares";
 import { ActionsEnum } from "@server/auth/actions";
 import {
@@ -517,4 +521,34 @@ authenticated.post(
     verifyUserHasAction(ActionsEnum.signSshKey),
     // logActionAudit(ActionsEnum.signSshKey), // it is handled inside of the function below so we can include more metadata
     ssh.signSshKey
+);
+
+authenticated.post(
+    "/user/:userId/add-role/:roleId",
+    verifyRoleAccess,
+    verifyUserAccess,
+    verifyLimits,
+    verifyUserHasAction(ActionsEnum.addUserRole),
+    logActionAudit(ActionsEnum.addUserRole),
+    user.addUserRole
+);
+
+authenticated.delete(
+    "/user/:userId/remove-role/:roleId",
+    verifyRoleAccess,
+    verifyUserAccess,
+    verifyLimits,
+    verifyUserHasAction(ActionsEnum.removeUserRole),
+    logActionAudit(ActionsEnum.removeUserRole),
+    user.removeUserRole
+);
+
+authenticated.post(
+    "/user/:userId/org/:orgId/roles",
+    verifyOrgAccess,
+    verifyUserAccess,
+    verifyLimits,
+    verifyUserCanSetUserOrgRoles(),
+    logActionAudit(ActionsEnum.setUserOrgRoles),
+    user.setUserOrgRoles
 );
