@@ -33,7 +33,10 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import moment from "moment";
+import {
+    DateTimePicker,
+    DateTimeValue
+} from "@app/components/DateTimePicker";
 
 const FORM_ID = "edit-site-provisioning-key-form";
 
@@ -109,9 +112,7 @@ export default function EditSiteProvisioningKeyCredenza({
             name: provisioningKey.name,
             unlimitedBatchSize: provisioningKey.maxBatchSize == null,
             maxBatchSize: provisioningKey.maxBatchSize ?? 100,
-            validUntil: provisioningKey.validUntil
-                ? moment(provisioningKey.validUntil).format("YYYY-MM-DDTHH:mm")
-                : ""
+            validUntil: provisioningKey.validUntil ?? ""
         });
     }, [open, provisioningKey, form]);
 
@@ -257,23 +258,73 @@ export default function EditSiteProvisioningKeyCredenza({
                             <FormField
                                 control={form.control}
                                 name="validUntil"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>
-                                            {t("provisioningKeysValidUntil")}
-                                        </FormLabel>
-                                        <FormControl>
-                                            <Input
-                                                type="datetime-local"
-                                                {...field}
-                                            />
-                                        </FormControl>
-                                        <FormDescription>
-                                            {t("provisioningKeysValidUntilHint")}
-                                        </FormDescription>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
+                                render={({ field }) => {
+                                    const dateTimeValue: DateTimeValue =
+                                        (() => {
+                                            if (!field.value) return {};
+                                            const d = new Date(field.value);
+                                            if (isNaN(d.getTime())) return {};
+                                            const hours = d
+                                                .getHours()
+                                                .toString()
+                                                .padStart(2, "0");
+                                            const minutes = d
+                                                .getMinutes()
+                                                .toString()
+                                                .padStart(2, "0");
+                                            const seconds = d
+                                                .getSeconds()
+                                                .toString()
+                                                .padStart(2, "0");
+                                            return {
+                                                date: d,
+                                                time: `${hours}:${minutes}:${seconds}`
+                                            };
+                                        })();
+
+                                    return (
+                                        <FormItem>
+                                            <FormLabel>
+                                                {t("provisioningKeysValidUntil")}
+                                            </FormLabel>
+                                            <FormControl>
+                                                <DateTimePicker
+                                                    value={dateTimeValue}
+                                                    onChange={(value) => {
+                                                        if (!value.date) {
+                                                            field.onChange("");
+                                                            return;
+                                                        }
+                                                        const d = new Date(
+                                                            value.date
+                                                        );
+                                                        if (value.time) {
+                                                            const [h, m, s] =
+                                                                value.time.split(
+                                                                    ":"
+                                                                );
+                                                            d.setHours(
+                                                                parseInt(h, 10),
+                                                                parseInt(m, 10),
+                                                                parseInt(
+                                                                    s || "0",
+                                                                    10
+                                                                )
+                                                            );
+                                                        }
+                                                        field.onChange(
+                                                            d.toISOString()
+                                                        );
+                                                    }}
+                                                />
+                                            </FormControl>
+                                            <FormDescription>
+                                                {t("provisioningKeysValidUntilHint")}
+                                            </FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    );
+                                }}
                             />
                         </form>
                     </Form>
