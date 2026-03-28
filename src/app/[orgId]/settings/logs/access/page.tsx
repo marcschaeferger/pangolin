@@ -493,7 +493,8 @@ export default function GeneralPage() {
                                 {
                                     value: "whitelistedEmail",
                                     label: "Whitelisted Email"
-                                }
+                                },
+                                { value: "ssh", label: "SSH" }
                             ]}
                             selectedValue={filters.type}
                             onValueChange={(value) =>
@@ -507,13 +508,12 @@ export default function GeneralPage() {
                 );
             },
             cell: ({ row }) => {
-                // should be capitalized first letter
-                return (
-                    <span>
-                        {row.original.type.charAt(0).toUpperCase() +
-                            row.original.type.slice(1) || "-"}
-                    </span>
-                );
+                const typeLabel =
+                    row.original.type === "ssh"
+                        ? "SSH"
+                        : row.original.type.charAt(0).toUpperCase() +
+                          row.original.type.slice(1);
+                return <span>{typeLabel || "-"}</span>;
             }
         },
         {

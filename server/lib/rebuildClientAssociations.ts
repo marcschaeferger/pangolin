@@ -33,7 +33,7 @@ import logger from "@server/logger";
 import {
     generateAliasConfig,
     generateRemoteSubnets,
-    generateSubnetProxyTargets,
+    generateSubnetProxyTargetV2,
     parseEndpoint,
     formatEndpoint
 } from "@server/lib/ip";
@@ -661,19 +661,16 @@ async function handleSubnetProxyTargetUpdates(
         );
 
         if (addedClients.length > 0) {
-            const targetsToAdd = generateSubnetProxyTargets(
+            const targetToAdd = generateSubnetProxyTargetV2(
                 siteResource,
                 addedClients
             );
 
-            if (targetsToAdd.length > 0) {
-                logger.info(
-                    `Adding ${targetsToAdd.length} subnet proxy targets for siteResource ${siteResource.siteResourceId}`
-                );
+            if (targetToAdd) {
                 proxyJobs.push(
                     addSubnetProxyTargets(
                         newt.newtId,
-                        targetsToAdd,
+                        [targetToAdd],
                         newt.version
                     )
                 );
@@ -701,19 +698,16 @@ async function handleSubnetProxyTargetUpdates(
         );
 
         if (removedClients.length > 0) {
-            const targetsToRemove = generateSubnetProxyTargets(
+            const targetToRemove = generateSubnetProxyTargetV2(
                 siteResource,
                 removedClients
             );
 
-            if (targetsToRemove.length > 0) {
-                logger.info(
-                    `Removing ${targetsToRemove.length} subnet proxy targets for siteResource ${siteResource.siteResourceId}`
-                );
+            if (targetToRemove) {
                 proxyJobs.push(
                     removeSubnetProxyTargets(
                         newt.newtId,
-                        targetsToRemove,
+                        [targetToRemove],
                         newt.version
                     )
                 );
@@ -1170,7 +1164,7 @@ async function handleMessagesForClientResources(
             }
 
             for (const resource of resources) {
-                const targets = generateSubnetProxyTargets(resource, [
+                const target = generateSubnetProxyTargetV2(resource, [
                     {
                         clientId: client.clientId,
                         pubKey: client.pubKey,
@@ -1178,11 +1172,11 @@ async function handleMessagesForClientResources(
                     }
                 ]);
 
-                if (targets.length > 0) {
+                if (target) {
                     proxyJobs.push(
                         addSubnetProxyTargets(
                             newt.newtId,
-                            targets,
+                            [target],
                             newt.version
                         )
                     );
@@ -1247,7 +1241,7 @@ async function handleMessagesForClientResources(
             }
 
             for (const resource of resources) {
-                const targets = generateSubnetProxyTargets(resource, [
+                const target = generateSubnetProxyTargetV2(resource, [
                     {
                         clientId: client.clientId,
                         pubKey: client.pubKey,
@@ -1255,11 +1249,11 @@ async function handleMessagesForClientResources(
                     }
                 ]);
 
-                if (targets.length > 0) {
+                if (target) {
                     proxyJobs.push(
                         removeSubnetProxyTargets(
                             newt.newtId,
-                            targets,
+                            [target],
                             newt.version
                         )
                     );

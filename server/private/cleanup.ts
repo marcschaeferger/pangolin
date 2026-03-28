@@ -15,8 +15,10 @@ import { rateLimitService } from "#private/lib/rateLimit";
 import { cleanup as wsCleanup } from "#private/routers/ws";
 import { flushBandwidthToDb } from "@server/routers/newt/handleReceiveBandwidthMessage";
 import { flushSiteBandwidthToDb } from "@server/routers/gerbil/receiveBandwidth";
+import { stopPingAccumulator } from "@server/routers/newt/pingAccumulator";
 
 async function cleanup() {
+    await stopPingAccumulator();
     await flushBandwidthToDb();
     await flushSiteBandwidthToDb();
     await rateLimitService.cleanup();

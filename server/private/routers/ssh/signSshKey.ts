@@ -24,6 +24,7 @@ import {
     sites,
     userOrgs
 } from "@server/db";
+import { logAccessAudit } from "#private/lib/logAccessAudit";
 import { isLicensedOrSubscribed } from "#private/lib/isLicencedOrSubscribed";
 import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import response from "@server/lib/response";
@@ -481,6 +482,24 @@ export async function signSshKey(
                 resource: resource.name,
                 siteId: resource.siteId,
             })
+        });
+
+        await logAccessAudit({
+            action: true,
+            type: "ssh",
+            orgId: orgId,
+            resourceId: resource.siteResourceId,
+            user: req.user
+                ? { username: req.user.username ?? "", userId: req.user.userId }
+                : undefined,
+            metadata: {
+                resourceName: resource.name,
+                siteId: resource.siteId,
+                sshUsername: usernameToUse,
+                sshHost: sshHost
+            },
+            userAgent: req.headers["user-agent"],
+            requestIp: req.ip
         });
 
         return response<SignSshKeyResponse>(res, {

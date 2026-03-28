@@ -303,6 +303,8 @@ export default function Page() {
         }
     }
 
+    const disabled = !isPaidUser(tierMatrix.orgOidc);
+
     return (
         <>
             <div className="flex justify-between">
@@ -320,6 +322,9 @@ export default function Page() {
                 </Button>
             </div>
 
+            <PaidFeaturesAlert tiers={tierMatrix.orgOidc} />
+
+            <fieldset disabled={disabled} className={disabled ? "opacity-50 pointer-events-none" : ""}>
             <SettingsContainer>
                 <SettingsSection>
                     <SettingsSectionHeader>
@@ -841,9 +846,10 @@ export default function Page() {
                 </Button>
                 <Button
                     type="submit"
-                    disabled={createLoading || !isPaidUser(tierMatrix.orgOidc)}
+                    disabled={createLoading || disabled}
                     loading={createLoading}
                     onClick={() => {
+                        if (disabled) return;
                         // log any issues with the form
                         console.log(form.formState.errors);
                         form.handleSubmit(onSubmit)();
@@ -852,6 +858,7 @@ export default function Page() {
                     {t("idpSubmit")}
                 </Button>
             </div>
+            </fieldset>
         </>
     );
 }
