@@ -52,7 +52,9 @@ import {
     userOrgs,
     roleResources,
     userResources,
-    resourceRules
+    resourceRules,
+    userOrgRoles,
+    roles
 } from "@server/db";
 import { eq, and, inArray, isNotNull, ne } from "drizzle-orm";
 import { response } from "@server/lib/response";
@@ -102,6 +104,13 @@ const getUserOrgSessionVerifySchema = z.strictObject({
     userId: z.string().min(1, "User ID is required"),
     orgId: z.string().min(1, "Organization ID is required"),
     sessionId: z.string().min(1, "Session ID is required")
+});
+
+const getRoleNameParamsSchema = z.strictObject({
+    roleId: z
+        .string()
+        .transform(Number)
+        .pipe(z.int().positive("Role ID must be a positive integer"))
 });
 
 const getRoleResourceAccessParamsSchema = z.strictObject({
@@ -796,23 +805,26 @@ hybridRouter.get(
                 );
             }
 
-            const userOrgRole = await db
-                .select()
-                .from(userOrgs)
+            const userOrgRoleRows = await db
+                .select({ roleId: userOrgRoles.roleId })
+                .from(userOrgRoles)
                 .where(
-                    and(eq(userOrgs.userId, userId), eq(userOrgs.orgId, orgId))
-                )
-                .limit(1);
+                    and(
+                        eq(userOrgRoles.userId, userId),
+                        eq(userOrgRoles.orgId, orgId)
+                    )
+                );
 
-            const result = userOrgRole.length > 0 ? userOrgRole[0] : null;
+            const roleIds = userOrgRoleRows.map((r) => r.roleId);
 
-            return response<typeof userOrgs.$inferSelect | null>(res, {
-                data: result,
+            return response<number[]>(res, {
+                data: roleIds,
                 success: true,
                 error: false,
-                message: result
-                    ? "User org role retrieved successfully"
-                    : "User org role not found",
+                message:
+                    roleIds.length > 0
+                        ? "User org roles retrieved successfully"
+                        : "User has no roles in this organization",
                 status: HttpCode.OK
             });
         } catch (error) {
@@ -884,6 +896,58 @@ hybridRouter.get(
                 createHttpError(
                     HttpCode.INTERNAL_SERVER_ERROR,
                     "Failed to get user org role"
+                )
+            );
+        }
+    }
+);
+
+// Get role name by ID
+hybridRouter.get(
+    "/role/:roleId/name",
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const parsedParams = getRoleNameParamsSchema.safeParse(req.params);
+            if (!parsedParams.success) {
+                return next(
+                    createHttpError(
+                        HttpCode.BAD_REQUEST,
+                        fromError(parsedParams.error).toString()
+                    )
+                );
+            }
+
+            const { roleId } = parsedParams.data;
+            const remoteExitNode = req.remoteExitNode;
+
+            if (!remoteExitNode?.exitNodeId) {
+                return next(
+                    createHttpError(
+                        HttpCode.BAD_REQUEST,
+                        "Remote exit node not found"
+                    )
+                );
+            }
+
+            const [role] = await db
+                .select({ name: roles.name })
+                .from(roles)
+                .where(eq(roles.roleId, roleId))
+                .limit(1);
+
+            return response<string | null>(res, {
+                data: role?.name ?? null,
+                success: true,
+                error: false,
+                message: role ? "Role name retrieved successfully" : "Role not found",
+                status: HttpCode.OK
+            });
+        } catch (error) {
+            logger.error(error);
+            return next(
+                createHttpError(
+                    HttpCode.INTERNAL_SERVER_ERROR,
+                    "Failed to get role name"
                 )
             );
         }
