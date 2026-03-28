@@ -13,7 +13,7 @@ import {
     SettingsSectionTitle
 } from "@app/components/Settings";
 import HeaderTitle from "@app/components/SettingsSectionTitle";
-import { StrategySelect } from "@app/components/StrategySelect";
+import { OidcIdpProviderTypeSelect } from "@app/components/idp/OidcIdpProviderTypeSelect";
 import { Alert, AlertDescription, AlertTitle } from "@app/components/ui/alert";
 import { Button } from "@app/components/ui/button";
 import {
@@ -27,17 +27,16 @@ import {
 } from "@app/components/ui/form";
 import { Input } from "@app/components/ui/input";
 import { useEnvContext } from "@app/hooks/useEnvContext";
-import { useLicenseStatusContext } from "@app/hooks/useLicenseStatusContext";
 import { usePaidStatus } from "@app/hooks/usePaidStatus";
 import { toast } from "@app/hooks/useToast";
 import { createApiClient, formatAxiosError } from "@app/lib/api";
+import { applyOidcIdpProviderType } from "@app/lib/idp/oidcIdpProviderDefaults";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import { ListRolesResponse } from "@server/routers/role";
 import { AxiosResponse } from "axios";
 import { InfoIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -96,49 +95,6 @@ export default function Page() {
 
     type CreateIdpFormValues = z.infer<typeof createIdpFormSchema>;
 
-    interface ProviderTypeOption {
-        id: "oidc" | "google" | "azure";
-        title: string;
-        description: string;
-        icon?: React.ReactNode;
-    }
-
-    const providerTypes: ReadonlyArray<ProviderTypeOption> = [
-        {
-            id: "oidc",
-            title: "OAuth2/OIDC",
-            description: t("idpOidcDescription")
-        },
-        {
-            id: "google",
-            title: t("idpGoogleTitle"),
-            description: t("idpGoogleDescription"),
-            icon: (
-                <Image
-                    src="/idp/google.png"
-                    alt={t("idpGoogleAlt")}
-                    width={24}
-                    height={24}
-                    className="rounded"
-                />
-            )
-        },
-        {
-            id: "azure",
-            title: t("idpAzureTitle"),
-            description: t("idpAzureDescription"),
-            icon: (
-                <Image
-                    src="/idp/azure.png"
-                    alt={t("idpAzureAlt")}
-                    width={24}
-                    height={24}
-                    className="rounded"
-                />
-            )
-        }
-    ];
-
     const form = useForm({
         resolver: zodResolver(createIdpFormSchema),
         defaultValues: {
@@ -185,47 +141,6 @@ export default function Page() {
 
         fetchRoles();
     }, []);
-
-    // Handle provider type changes and set defaults
-    const handleProviderChange = (value: "oidc" | "google" | "azure") => {
-        form.setValue("type", value);
-
-        if (value === "google") {
-            // Set Google defaults
-            form.setValue(
-                "authUrl",
-                "https://accounts.google.com/o/oauth2/v2/auth"
-            );
-            form.setValue("tokenUrl", "https://oauth2.googleapis.com/token");
-            form.setValue("identifierPath", "email");
-            form.setValue("emailPath", "email");
-            form.setValue("namePath", "name");
-            form.setValue("scopes", "openid profile email");
-        } else if (value === "azure") {
-            // Set Azure Entra ID defaults (URLs will be constructed dynamically)
-            form.setValue(
-                "authUrl",
-                "https://login.microsoftonline.com/{{TENANT_ID}}/oauth2/v2.0/authorize"
-            );
-            form.setValue(
-                "tokenUrl",
-                "https://login.microsoftonline.com/{{TENANT_ID}}/oauth2/v2.0/token"
-            );
-            form.setValue("identifierPath", "email");
-            form.setValue("emailPath", "email");
-            form.setValue("namePath", "name");
-            form.setValue("scopes", "openid profile email");
-            form.setValue("tenantId", "");
-        } else {
-            // Reset to OIDC defaults
-            form.setValue("authUrl", "");
-            form.setValue("tokenUrl", "");
-            form.setValue("identifierPath", "sub");
-            form.setValue("namePath", "name");
-            form.setValue("emailPath", "email");
-            form.setValue("scopes", "openid profile email");
-        }
-    };
 
     async function onSubmit(data: CreateIdpFormValues) {
         setCreateLoading(true);
@@ -304,6 +219,7 @@ export default function Page() {
     }
 
     const disabled = !isPaidUser(tierMatrix.orgOidc);
+    const templatesPaid = isPaidUser(tierMatrix.orgOidc);
 
     return (
         <>
@@ -336,23 +252,13 @@ export default function Page() {
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>
-                        <div>
-                            <div className="mb-2">
-                                <span className="text-sm font-medium">
-                                    {t("idpType")}
-                                </span>
-                            </div>
-                            <StrategySelect
-                                options={providerTypes}
-                                defaultValue={form.getValues("type")}
-                                onChange={(value) => {
-                                    handleProviderChange(
-                                        value as "oidc" | "google" | "azure"
-                                    );
-                                }}
-                                cols={3}
-                            />
-                        </div>
+                        <OidcIdpProviderTypeSelect
+                            value={form.watch("type")}
+                            templatesPaid={templatesPaid}
+                            onTypeChange={(next) => {
+                                applyOidcIdpProviderType(form.setValue, next);
+                            }}
+                        />
 
                         <SettingsSectionForm>
                             <Form {...form}>
@@ -708,16 +614,6 @@ export default function Page() {
                                         />
                                     </form>
                                 </Form>
-
-                                <Alert variant="neutral">
-                                    <InfoIcon className="h-4 w-4" />
-                                    <AlertTitle className="font-semibold">
-                                        {t("idpOidcConfigureAlert")}
-                                    </AlertTitle>
-                                    <AlertDescription>
-                                        {t("idpOidcConfigureAlertDescription")}
-                                    </AlertDescription>
-                                </Alert>
                             </SettingsSectionBody>
                         </SettingsSection>
 

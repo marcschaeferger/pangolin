@@ -1,5 +1,7 @@
 "use client";
 
+import { OidcIdpProviderTypeSelect } from "@app/components/idp/OidcIdpProviderTypeSelect";
+import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
 import {
     SettingsContainer,
     SettingsSection,
@@ -20,70 +22,63 @@ import {
     FormMessage
 } from "@app/components/ui/form";
 import HeaderTitle from "@app/components/SettingsSectionTitle";
-import { z } from "zod";
-import { createElement, useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Input } from "@app/components/ui/input";
+import { SwitchInput } from "@app/components/SwitchInput";
+import { Alert, AlertDescription, AlertTitle } from "@app/components/ui/alert";
 import { Button } from "@app/components/ui/button";
-import { createApiClient, formatAxiosError } from "@app/lib/api";
+import { Input } from "@app/components/ui/input";
+import { usePaidStatus } from "@app/hooks/usePaidStatus";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { toast } from "@app/hooks/useToast";
-import { useRouter } from "next/navigation";
-import { Checkbox } from "@app/components/ui/checkbox";
-import { Alert, AlertDescription, AlertTitle } from "@app/components/ui/alert";
-import { InfoIcon, ExternalLink } from "lucide-react";
-import { StrategySelect } from "@app/components/StrategySelect";
-import { SwitchInput } from "@app/components/SwitchInput";
-import { Badge } from "@app/components/ui/badge";
-import { useLicenseStatusContext } from "@app/hooks/useLicenseStatusContext";
+import { createApiClient, formatAxiosError } from "@app/lib/api";
+import { applyOidcIdpProviderType } from "@app/lib/idp/oidcIdpProviderDefaults";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
+import { InfoIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 export default function Page() {
     const { env } = useEnvContext();
     const api = createApiClient({ env });
     const router = useRouter();
     const [createLoading, setCreateLoading] = useState(false);
-    const { isUnlocked } = useLicenseStatusContext();
     const t = useTranslations();
+    const { isPaidUser } = usePaidStatus();
+    const templatesPaid = isPaidUser(tierMatrix.orgOidc);
 
     const createIdpFormSchema = z.object({
         name: z.string().min(2, { message: t("nameMin", { len: 2 }) }),
-        type: z.enum(["oidc"]),
+        type: z.enum(["oidc", "google", "azure"]),
         clientId: z.string().min(1, { message: t("idpClientIdRequired") }),
         clientSecret: z
             .string()
             .min(1, { message: t("idpClientSecretRequired") }),
-        authUrl: z.url({ message: t("idpErrorAuthUrlInvalid") }),
-        tokenUrl: z.url({ message: t("idpErrorTokenUrlInvalid") }),
-        identifierPath: z.string().min(1, { message: t("idpPathRequired") }),
+        authUrl: z.url({ message: t("idpErrorAuthUrlInvalid") }).optional(),
+        tokenUrl: z.url({ message: t("idpErrorTokenUrlInvalid") }).optional(),
+        identifierPath: z
+            .string()
+            .min(1, { message: t("idpPathRequired") })
+            .optional(),
         emailPath: z.string().optional(),
         namePath: z.string().optional(),
-        scopes: z.string().min(1, { message: t("idpScopeRequired") }),
+        scopes: z
+            .string()
+            .min(1, { message: t("idpScopeRequired") })
+            .optional(),
+        tenantId: z.string().optional(),
         autoProvision: z.boolean().default(false)
     });
 
     type CreateIdpFormValues = z.infer<typeof createIdpFormSchema>;
 
-    interface ProviderTypeOption {
-        id: "oidc";
-        title: string;
-        description: string;
-    }
-
-    const providerTypes: ReadonlyArray<ProviderTypeOption> = [
-        {
-            id: "oidc",
-            title: "OAuth2/OIDC",
-            description: t("idpOidcDescription")
-        }
-    ];
-
     const form = useForm({
         resolver: zodResolver(createIdpFormSchema),
         defaultValues: {
             name: "",
-            type: "oidc",
+            type: "oidc" as const,
             clientId: "",
             clientSecret: "",
             authUrl: "",
@@ -92,25 +87,46 @@ export default function Page() {
             namePath: "name",
             emailPath: "email",
             scopes: "openid profile email",
+            tenantId: "",
             autoProvision: false
         }
     });
+
+    const watchedType = form.watch("type");
+
+    useEffect(() => {
+        if (
+            !templatesPaid &&
+            (watchedType === "google" || watchedType === "azure")
+        ) {
+            applyOidcIdpProviderType(form.setValue, "oidc");
+        }
+    }, [templatesPaid, watchedType, form.setValue]);
 
     async function onSubmit(data: CreateIdpFormValues) {
         setCreateLoading(true);
 
         try {
+            let authUrl = data.authUrl;
+            let tokenUrl = data.tokenUrl;
+
+            if (data.type === "azure" && data.tenantId) {
+                authUrl = authUrl?.replace("{{TENANT_ID}}", data.tenantId);
+                tokenUrl = tokenUrl?.replace("{{TENANT_ID}}", data.tenantId);
+            }
+
             const payload = {
                 name: data.name,
                 clientId: data.clientId,
                 clientSecret: data.clientSecret,
-                authUrl: data.authUrl,
-                tokenUrl: data.tokenUrl,
+                authUrl: authUrl,
+                tokenUrl: tokenUrl,
                 identifierPath: data.identifierPath,
                 emailPath: data.emailPath,
                 namePath: data.namePath,
                 autoProvision: data.autoProvision,
-                scopes: data.scopes
+                scopes: data.scopes,
+                variant: data.type
             };
 
             const res = await api.put("/idp/oidc", payload);
@@ -150,6 +166,10 @@ export default function Page() {
                 </Button>
             </div>
 
+            {!templatesPaid ? (
+                <PaidFeaturesAlert tiers={tierMatrix.orgOidc} />
+            ) : null}
+
             <SettingsContainer>
                 <SettingsSection>
                     <SettingsSectionHeader>
@@ -161,6 +181,14 @@ export default function Page() {
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>
+                        <OidcIdpProviderTypeSelect
+                            value={watchedType}
+                            templatesPaid={templatesPaid}
+                            onTypeChange={(next) => {
+                                applyOidcIdpProviderType(form.setValue, next);
+                            }}
+                        />
+
                         <SettingsSectionForm>
                             <Form {...form}>
                                 <form
@@ -208,27 +236,169 @@ export default function Page() {
                                 </form>
                             </Form>
                         </SettingsSectionForm>
-
-                        {/* <div> */}
-                        {/*     <div className="mb-2"> */}
-                        {/*         <span className="text-sm font-medium"> */}
-                        {/*             {t("idpType")} */}
-                        {/*         </span> */}
-                        {/*     </div> */}
-                        {/*  */}
-                        {/*     <StrategySelect */}
-                        {/*         options={providerTypes} */}
-                        {/*         defaultValue={form.getValues("type")} */}
-                        {/*         onChange={(value) => { */}
-                        {/*             form.setValue("type", value as "oidc"); */}
-                        {/*         }} */}
-                        {/*         cols={3} */}
-                        {/*     /> */}
-                        {/* </div> */}
                     </SettingsSectionBody>
                 </SettingsSection>
 
-                {form.watch("type") === "oidc" && (
+                {watchedType === "google" && (
+                    <SettingsSection>
+                        <SettingsSectionHeader>
+                            <SettingsSectionTitle>
+                                {t("idpGoogleConfigurationTitle")}
+                            </SettingsSectionTitle>
+                            <SettingsSectionDescription>
+                                {t("idpGoogleConfigurationDescription")}
+                            </SettingsSectionDescription>
+                        </SettingsSectionHeader>
+                        <SettingsSectionBody>
+                            <SettingsSectionForm>
+                                <Form {...form}>
+                                    <form
+                                        className="space-y-4"
+                                        id="create-idp-form"
+                                        onSubmit={form.handleSubmit(onSubmit)}
+                                    >
+                                        <FormField
+                                            control={form.control}
+                                            name="clientId"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>
+                                                        {t("idpClientId")}
+                                                    </FormLabel>
+                                                    <FormControl>
+                                                        <Input {...field} />
+                                                    </FormControl>
+                                                    <FormDescription>
+                                                        {t(
+                                                            "idpGoogleClientIdDescription"
+                                                        )}
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="clientSecret"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>
+                                                        {t("idpClientSecret")}
+                                                    </FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="password"
+                                                            {...field}
+                                                        />
+                                                    </FormControl>
+                                                    <FormDescription>
+                                                        {t(
+                                                            "idpGoogleClientSecretDescription"
+                                                        )}
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </form>
+                                </Form>
+                            </SettingsSectionForm>
+                        </SettingsSectionBody>
+                    </SettingsSection>
+                )}
+
+                {watchedType === "azure" && (
+                    <SettingsSection>
+                        <SettingsSectionHeader>
+                            <SettingsSectionTitle>
+                                {t("idpAzureConfigurationTitle")}
+                            </SettingsSectionTitle>
+                            <SettingsSectionDescription>
+                                {t("idpAzureConfigurationDescription")}
+                            </SettingsSectionDescription>
+                        </SettingsSectionHeader>
+                        <SettingsSectionBody>
+                            <SettingsSectionForm>
+                                <Form {...form}>
+                                    <form
+                                        className="space-y-4"
+                                        id="create-idp-form"
+                                        onSubmit={form.handleSubmit(onSubmit)}
+                                    >
+                                        <FormField
+                                            control={form.control}
+                                            name="tenantId"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>
+                                                        {t("idpTenantIdLabel")}
+                                                    </FormLabel>
+                                                    <FormControl>
+                                                        <Input {...field} />
+                                                    </FormControl>
+                                                    <FormDescription>
+                                                        {t(
+                                                            "idpAzureTenantIdDescription"
+                                                        )}
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="clientId"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>
+                                                        {t("idpClientId")}
+                                                    </FormLabel>
+                                                    <FormControl>
+                                                        <Input {...field} />
+                                                    </FormControl>
+                                                    <FormDescription>
+                                                        {t(
+                                                            "idpAzureClientIdDescription2"
+                                                        )}
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="clientSecret"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>
+                                                        {t("idpClientSecret")}
+                                                    </FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="password"
+                                                            {...field}
+                                                        />
+                                                    </FormControl>
+                                                    <FormDescription>
+                                                        {t(
+                                                            "idpAzureClientSecretDescription2"
+                                                        )}
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </form>
+                                </Form>
+                            </SettingsSectionForm>
+                        </SettingsSectionBody>
+                    </SettingsSection>
+                )}
+
+                {watchedType === "oidc" && (
                     <SettingsSectionGrid cols={2}>
                         <SettingsSection>
                             <SettingsSectionHeader>

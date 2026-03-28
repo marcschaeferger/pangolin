@@ -575,7 +575,7 @@ export default function PoliciesPage() {
                     }
                 }}
             >
-                <CredenzaContent className="max-w-4xl w-[calc(100vw-2rem)] sm:w-full">
+                <CredenzaContent className="max-w-4xl sm:w-full">
                     <CredenzaHeader>
                         <CredenzaTitle>
                             {editingPolicy

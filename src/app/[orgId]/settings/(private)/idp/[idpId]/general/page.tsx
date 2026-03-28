@@ -448,16 +448,6 @@ export default function GeneralPage() {
                             </InfoSection>
                         </InfoSections>
 
-                        <Alert variant="neutral" className="">
-                            <InfoIcon className="h-4 w-4" />
-                            <AlertTitle className="font-semibold">
-                                {t("redirectUrlAbout")}
-                            </AlertTitle>
-                            <AlertDescription>
-                                {t("redirectUrlAboutDescription")}
-                            </AlertDescription>
-                        </Alert>
-
                         {/* IDP Type Indicator */}
                         <div className="flex items-center space-x-2 mb-4">
                             <span className="text-sm font-medium text-muted-foreground">
@@ -843,29 +833,6 @@ export default function GeneralPage() {
                                             className="space-y-4"
                                             id="general-settings-form"
                                         >
-                                            <Alert variant="neutral">
-                                                <InfoIcon className="h-4 w-4" />
-                                                <AlertTitle className="font-semibold">
-                                                    {t("idpJmespathAbout")}
-                                                </AlertTitle>
-                                                <AlertDescription>
-                                                    {t(
-                                                        "idpJmespathAboutDescription"
-                                                    )}{" "}
-                                                    <a
-                                                        href="https://jmespath.org"
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-primary hover:underline inline-flex items-center"
-                                                    >
-                                                        {t(
-                                                            "idpJmespathAboutDescriptionLink"
-                                                        )}{" "}
-                                                        <ExternalLink className="ml-1 h-4 w-4" />
-                                                    </a>
-                                                </AlertDescription>
-                                            </Alert>
-
                                             <FormField
                                                 control={form.control}
                                                 name="identifierPath"

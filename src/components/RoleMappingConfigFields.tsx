@@ -166,7 +166,7 @@ export default function RoleMappingConfigFields({
             )}
 
             {roleMappingMode === "mappingBuilder" && (
-                <div className="space-y-4 rounded-md border p-3 min-w-0 max-w-full">
+                <div className="space-y-4 min-w-0 max-w-full">
                     <div className="space-y-2">
                         <FormLabel>{t("roleMappingClaimPath")}</FormLabel>
                         <Input
