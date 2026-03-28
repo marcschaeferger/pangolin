@@ -15,7 +15,8 @@ import {
 import { Input } from "@app/components/ui/input";
 import { useForm } from "react-hook-form";
 import { toast } from "@app/hooks/useToast";
-import { useRouter, useParams, redirect } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
+import Link from "next/link";
 import {
     SettingsContainer,
     SettingsSection,
@@ -189,15 +190,6 @@ export default function GeneralPage() {
                             </InfoSection>
                         </InfoSections>
 
-                        <Alert variant="neutral" className="">
-                            <InfoIcon className="h-4 w-4" />
-                            <AlertTitle className="font-semibold">
-                                {t("redirectUrlAbout")}
-                            </AlertTitle>
-                            <AlertDescription>
-                                {t("redirectUrlAboutDescription")}
-                            </AlertDescription>
-                        </Alert>
                         <SettingsSectionForm>
                             <Form {...form}>
                                 <form
@@ -239,9 +231,32 @@ export default function GeneralPage() {
                                             }}
                                         />
                                     </div>
-                                    <span className="text-sm text-muted-foreground">
-                                        {t("idpAutoProvisionUsersDescription")}
-                                    </span>
+                                    <div className="flex flex-col gap-2">
+                                        <span className="text-sm text-muted-foreground">
+                                            {t(
+                                                "idpAutoProvisionUsersDescription"
+                                            )}
+                                        </span>
+                                        {form.watch("autoProvision") && (
+                                            <FormDescription>
+                                                {t.rich(
+                                                    "idpAdminAutoProvisionPoliciesTabHint",
+                                                    {
+                                                        policiesTabLink: (
+                                                            chunks
+                                                        ) => (
+                                                            <Link
+                                                                href={`/admin/idp/${idpId}/policies`}
+                                                                className="text-primary hover:underline inline-flex items-center gap-1"
+                                                            >
+                                                                {chunks}
+                                                            </Link>
+                                                        )
+                                                    }
+                                                )}
+                                            </FormDescription>
+                                        )}
+                                    </div>
                                 </form>
                             </Form>
                         </SettingsSectionForm>
@@ -375,29 +390,6 @@ export default function GeneralPage() {
                                         className="space-y-4"
                                         id="general-settings-form"
                                     >
-                                        <Alert variant="neutral">
-                                            <InfoIcon className="h-4 w-4" />
-                                            <AlertTitle className="font-semibold">
-                                                {t("idpJmespathAbout")}
-                                            </AlertTitle>
-                                            <AlertDescription>
-                                                {t(
-                                                    "idpJmespathAboutDescription"
-                                                )}
-                                                <a
-                                                    href="https://jmespath.org"
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-primary hover:underline inline-flex items-center"
-                                                >
-                                                    {t(
-                                                        "idpJmespathAboutDescriptionLink"
-                                                    )}{" "}
-                                                    <ExternalLink className="ml-1 h-4 w-4" />
-                                                </a>
-                                            </AlertDescription>
-                                        </Alert>
-
                                         <FormField
                                             control={form.control}
                                             name="identifierPath"

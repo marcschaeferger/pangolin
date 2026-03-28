@@ -340,16 +340,6 @@ export default function Page() {
                                         />
                                     </form>
                                 </Form>
-
-                                <Alert variant="neutral">
-                                    <InfoIcon className="h-4 w-4" />
-                                    <AlertTitle className="font-semibold">
-                                        {t("idpOidcConfigureAlert")}
-                                    </AlertTitle>
-                                    <AlertDescription>
-                                        {t("idpOidcConfigureAlertDescription")}
-                                    </AlertDescription>
-                                </Alert>
                             </SettingsSectionBody>
                         </SettingsSection>
 
@@ -369,29 +359,6 @@ export default function Page() {
                                         id="create-idp-form"
                                         onSubmit={form.handleSubmit(onSubmit)}
                                     >
-                                        <Alert variant="neutral">
-                                            <InfoIcon className="h-4 w-4" />
-                                            <AlertTitle className="font-semibold">
-                                                {t("idpJmespathAbout")}
-                                            </AlertTitle>
-                                            <AlertDescription>
-                                                {t(
-                                                    "idpJmespathAboutDescription"
-                                                )}{" "}
-                                                <a
-                                                    href="https://jmespath.org"
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-primary hover:underline inline-flex items-center"
-                                                >
-                                                    {t(
-                                                        "idpJmespathAboutDescriptionLink"
-                                                    )}{" "}
-                                                    <ExternalLink className="ml-1 h-4 w-4" />
-                                                </a>
-                                            </AlertDescription>
-                                        </Alert>
-
                                         <FormField
                                             control={form.control}
                                             name="identifierPath"
