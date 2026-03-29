@@ -36,6 +36,7 @@ import { usageService } from "@server/lib/billing/usageService";
 import { build } from "@server/build";
 import { calculateUserClientsForOrgs } from "@server/lib/calculateUserClientsForOrgs";
 import { isSubscribed } from "#dynamic/lib/isSubscribed";
+import { isLicensedOrSubscribed } from "#dynamic/lib/isLicencedOrSubscribed";
 import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import {
     assignUserToOrg,
@@ -415,7 +416,15 @@ export async function validateOidcCallback(
                         roleMappingResult
                     );
 
-                    if (!roleNames.length) {
+                    const supportsMultiRole = await isLicensedOrSubscribed(
+                        org.orgId,
+                        tierMatrix.fullRbac
+                    );
+                    const effectiveRoleNames = supportsMultiRole
+                        ? roleNames
+                        : roleNames.slice(0, 1);
+
+                    if (!effectiveRoleNames.length) {
                         logger.error("Role mapping returned no valid roles", {
                             roleMappingResult
                         });
@@ -428,14 +437,14 @@ export async function validateOidcCallback(
                         .where(
                             and(
                                 eq(roles.orgId, org.orgId),
-                                inArray(roles.name, roleNames)
+                                inArray(roles.name, effectiveRoleNames)
                             )
                         );
 
                     if (!roleRes.length) {
                         logger.error("No mapped roles found in organization", {
                             orgId: org.orgId,
-                            roleNames
+                            roleNames: effectiveRoleNames
                         });
                         continue;
                     }

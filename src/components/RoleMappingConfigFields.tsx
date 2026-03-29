@@ -5,13 +5,17 @@ import { RadioGroup, RadioGroupItem } from "@app/components/ui/radio-group";
 import { Button } from "@app/components/ui/button";
 import { Input } from "@app/components/ui/input";
 import { useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Tag, TagInput } from "@app/components/tags/tag-input";
 import {
     createMappingBuilderRule,
     MappingBuilderRule,
     RoleMappingMode
 } from "@app/lib/idpRoleMapping";
+import { usePaidStatus } from "@app/hooks/usePaidStatus";
+import { useEnvContext } from "@app/hooks/useEnvContext";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
+import { build } from "@server/build";
 
 export type RoleMappingRoleOption = {
     roleId: number;
@@ -52,9 +56,16 @@ export default function RoleMappingConfigFields({
     showFreeformRoleNamesHint = false
 }: RoleMappingConfigFieldsProps) {
     const t = useTranslations();
+    const { env } = useEnvContext();
+    const { isPaidUser } = usePaidStatus();
     const [activeFixedRoleTagIndex, setActiveFixedRoleTagIndex] = useState<
         number | null
     >(null);
+
+    const supportsMultipleRolesPerUser = isPaidUser(tierMatrix.fullRbac);
+    const showSingleRoleDisclaimer =
+        !env.flags.disableEnterpriseFeatures &&
+        !isPaidUser(tierMatrix.fullRbac);
 
     const restrictToOrgRoles = roles.length > 0;
 
@@ -67,13 +78,40 @@ export default function RoleMappingConfigFields({
         [roles]
     );
 
+    useEffect(() => {
+        if (
+            !supportsMultipleRolesPerUser &&
+            mappingBuilderRules.length > 1
+        ) {
+            onMappingBuilderRulesChange([mappingBuilderRules[0]]);
+        }
+    }, [
+        supportsMultipleRolesPerUser,
+        mappingBuilderRules,
+        onMappingBuilderRulesChange
+    ]);
+
+    useEffect(() => {
+        if (!supportsMultipleRolesPerUser && fixedRoleNames.length > 1) {
+            onFixedRoleNamesChange([fixedRoleNames[0]]);
+        }
+    }, [
+        supportsMultipleRolesPerUser,
+        fixedRoleNames,
+        onFixedRoleNamesChange
+    ]);
+
     const fixedRadioId = `${fieldIdPrefix}-fixed-roles-mode`;
     const builderRadioId = `${fieldIdPrefix}-mapping-builder-mode`;
     const rawRadioId = `${fieldIdPrefix}-raw-expression-mode`;
 
+    const mappingBuilderShowsRemoveColumn =
+        supportsMultipleRolesPerUser || mappingBuilderRules.length > 1;
+
     /** Same template on header + rows so 1fr/1.75fr columns line up (auto third col differs per row otherwise). */
-    const mappingRulesGridClass =
-        "md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.75fr)_6rem] md:gap-x-3";
+    const mappingRulesGridClass = mappingBuilderShowsRemoveColumn
+        ? "md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.75fr)_6rem] md:gap-x-3"
+        : "md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.75fr)] md:gap-x-3";
 
     return (
         <div className="space-y-4">
@@ -119,6 +157,13 @@ export default function RoleMappingConfigFields({
                         </label>
                     </div>
                 </RadioGroup>
+                {showSingleRoleDisclaimer && (
+                    <FormDescription className="mt-3">
+                        {build === "saas"
+                            ? t("singleRolePerUserPlanNotice")
+                            : t("singleRolePerUserEditionNotice")}
+                    </FormDescription>
+                )}
             </div>
 
             {roleMappingMode === "fixedRoles" && (
@@ -129,19 +174,37 @@ export default function RoleMappingConfigFields({
                             text: name
                         }))}
                         setTags={(nextTags) => {
+                            const prevTags = fixedRoleNames.map((name) => ({
+                                id: name,
+                                text: name
+                            }));
                             const next =
                                 typeof nextTags === "function"
-                                    ? nextTags(
-                                          fixedRoleNames.map((name) => ({
-                                              id: name,
-                                              text: name
-                                          }))
-                                      )
+                                    ? nextTags(prevTags)
                                     : nextTags;
 
-                            onFixedRoleNamesChange([
+                            let names = [
                                 ...new Set(next.map((tag) => tag.text))
-                            ]);
+                            ];
+
+                            if (!supportsMultipleRolesPerUser) {
+                                if (
+                                    names.length === 0 &&
+                                    fixedRoleNames.length > 0
+                                ) {
+                                    onFixedRoleNamesChange([
+                                        fixedRoleNames[
+                                            fixedRoleNames.length - 1
+                                        ]!
+                                    ]);
+                                    return;
+                                }
+                                if (names.length > 1) {
+                                    names = [names[names.length - 1]!];
+                                }
+                            }
+
+                            onFixedRoleNamesChange(names);
                         }}
                         activeTagIndex={activeFixedRoleTagIndex}
                         setActiveTagIndex={setActiveFixedRoleTagIndex}
@@ -191,7 +254,9 @@ export default function RoleMappingConfigFields({
                             <FormLabel className="min-w-0">
                                 {t("roleMappingAssignRoles")}
                             </FormLabel>
-                            <span aria-hidden className="min-w-0" />
+                            {mappingBuilderShowsRemoveColumn ? (
+                                <span aria-hidden className="min-w-0" />
+                            ) : null}
                         </div>
 
                         {mappingBuilderRules.map((rule, index) => (
@@ -204,6 +269,10 @@ export default function RoleMappingConfigFields({
                                 showFreeformRoleNamesHint={
                                     showFreeformRoleNamesHint
                                 }
+                                supportsMultipleRolesPerUser={
+                                    supportsMultipleRolesPerUser
+                                }
+                                showRemoveButton={mappingBuilderShowsRemoveColumn}
                                 rule={rule}
                                 onChange={(nextRule) => {
                                     const nextRules = mappingBuilderRules.map(
@@ -227,18 +296,20 @@ export default function RoleMappingConfigFields({
                         ))}
                     </div>
 
-                    <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                            onMappingBuilderRulesChange([
-                                ...mappingBuilderRules,
-                                createMappingBuilderRule()
-                            ]);
-                        }}
-                    >
-                        {t("roleMappingAddMappingRule")}
-                    </Button>
+                    {supportsMultipleRolesPerUser ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                onMappingBuilderRulesChange([
+                                    ...mappingBuilderRules,
+                                    createMappingBuilderRule()
+                                ]);
+                            }}
+                        >
+                            {t("roleMappingAddMappingRule")}
+                        </Button>
+                    ) : null}
                 </div>
             )}
 
@@ -250,7 +321,11 @@ export default function RoleMappingConfigFields({
                         placeholder={t("roleMappingExpressionPlaceholder")}
                     />
                     <FormDescription>
-                        {t("roleMappingRawExpressionResultDescription")}
+                        {supportsMultipleRolesPerUser
+                            ? t("roleMappingRawExpressionResultDescription")
+                            : t(
+                                  "roleMappingRawExpressionResultDescriptionSingleRole"
+                              )}
                     </FormDescription>
                 </div>
             )}
@@ -265,6 +340,8 @@ function BuilderRuleRow({
     showFreeformRoleNamesHint,
     fieldIdPrefix,
     mappingRulesGridClass,
+    supportsMultipleRolesPerUser,
+    showRemoveButton,
     onChange,
     onRemove
 }: {
@@ -274,6 +351,8 @@ function BuilderRuleRow({
     showFreeformRoleNamesHint: boolean;
     fieldIdPrefix: string;
     mappingRulesGridClass: string;
+    supportsMultipleRolesPerUser: boolean;
+    showRemoveButton: boolean;
     onChange: (rule: MappingBuilderRule) => void;
     onRemove: () => void;
 }) {
@@ -311,20 +390,44 @@ function BuilderRuleRow({
                             text: name
                         }))}
                         setTags={(nextTags) => {
+                            const prevRoleTags = rule.roleNames.map(
+                                (name) => ({
+                                    id: name,
+                                    text: name
+                                })
+                            );
                             const next =
                                 typeof nextTags === "function"
-                                    ? nextTags(
-                                          rule.roleNames.map((name) => ({
-                                              id: name,
-                                              text: name
-                                          }))
-                                      )
+                                    ? nextTags(prevRoleTags)
                                     : nextTags;
+
+                            let names = [
+                                ...new Set(next.map((tag) => tag.text))
+                            ];
+
+                            if (!supportsMultipleRolesPerUser) {
+                                if (
+                                    names.length === 0 &&
+                                    rule.roleNames.length > 0
+                                ) {
+                                    onChange({
+                                        ...rule,
+                                        roleNames: [
+                                            rule.roleNames[
+                                                rule.roleNames.length - 1
+                                            ]!
+                                        ]
+                                    });
+                                    return;
+                                }
+                                if (names.length > 1) {
+                                    names = [names[names.length - 1]!];
+                                }
+                            }
+
                             onChange({
                                 ...rule,
-                                roleNames: [
-                                    ...new Set(next.map((tag) => tag.text))
-                                ]
+                                roleNames: names
                             });
                         }}
                         activeTagIndex={activeTagIndex}
@@ -351,16 +454,18 @@ function BuilderRuleRow({
                     </p>
                 )}
             </div>
-            <div className="flex min-w-0 justify-end md:justify-start md:pt-0">
-                <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9 shrink-0 px-2"
-                    onClick={onRemove}
-                >
-                    {t("roleMappingRemoveRule")}
-                </Button>
-            </div>
+            {showRemoveButton ? (
+                <div className="flex min-w-0 justify-end md:justify-start md:pt-0">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 shrink-0 px-2"
+                        onClick={onRemove}
+                    >
+                        {t("roleMappingRemoveRule")}
+                    </Button>
+                </div>
+            ) : null}
         </div>
     );
 }

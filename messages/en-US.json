@@ -1956,6 +1956,7 @@
     "roleMappingAssignRoles": "Assign Roles",
     "roleMappingAddMappingRule": "Add Mapping Rule",
     "roleMappingRawExpressionResultDescription": "Expression must evaluate to a string or string array.",
+    "roleMappingRawExpressionResultDescriptionSingleRole": "Expression must evaluate to a string (a single role name).",
     "roleMappingMatchValuePlaceholder": "Match value (for example: admin)",
     "roleMappingAssignRolesPlaceholderFreeform": "Type role names (exact per org)",
     "roleMappingBuilderFreeformRowHint": "Role names must match a role in each target organization.",

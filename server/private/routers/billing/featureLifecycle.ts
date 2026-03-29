@@ -26,9 +26,10 @@ import {
     orgs,
     resources,
     roles,
-    siteResources
+    siteResources,
+    userOrgRoles
 } from "@server/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 /**
  * Get the maximum allowed retention days for a given tier
@@ -291,6 +292,10 @@ async function disableFeature(
                 await disableSshPam(orgId);
                 break;
 
+            case TierFeature.FullRbac:
+                await disableFullRbac(orgId);
+                break;
+
             default:
                 logger.warn(
                     `Unknown feature ${feature} for org ${orgId}, skipping`
@@ -324,6 +329,10 @@ async function disableSshPam(orgId: string): Promise<void> {
     logger.info(
         `Disabled SSH PAM options on all roles and site resources for org ${orgId}`
     );
+}
+
+async function disableFullRbac(orgId: string): Promise<void> {
+    logger.info(`Disabled full RBAC for org ${orgId}`);
 }
 
 async function disableLoginPageBranding(orgId: string): Promise<void> {

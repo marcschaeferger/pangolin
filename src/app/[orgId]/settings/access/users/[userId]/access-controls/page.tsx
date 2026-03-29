@@ -69,10 +69,7 @@ export default function AccessControlsPage() {
     const t = useTranslations();
     const { isPaidUser, hasSaasSubscription, hasEnterpriseLicense } =
         usePaidStatus();
-    const multiRoleFeatureTiers = Array.from(
-        new Set([...tierMatrix.sshPam, ...tierMatrix.orgOidc])
-    );
-    const isPaid = isPaidUser(multiRoleFeatureTiers);
+    const isPaid = isPaidUser(tierMatrix.fullRbac);
     const supportsMultipleRolesPerUser = isPaid;
     const showMultiRolePaywallMessage =
         !env.flags.disableEnterpriseFeatures &&
