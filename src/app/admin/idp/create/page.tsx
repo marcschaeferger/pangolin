@@ -36,7 +36,7 @@ import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import { InfoIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -93,17 +93,18 @@ export default function Page() {
     });
 
     const watchedType = form.watch("type");
-
-    useEffect(() => {
-        if (
-            !templatesPaid &&
-            (watchedType === "google" || watchedType === "azure")
-        ) {
-            applyOidcIdpProviderType(form.setValue, "oidc");
-        }
-    }, [templatesPaid, watchedType, form.setValue]);
+    const templatesLocked =
+        !templatesPaid &&
+        (watchedType === "google" || watchedType === "azure");
 
     async function onSubmit(data: CreateIdpFormValues) {
+        if (
+            !templatesPaid &&
+            (data.type === "google" || data.type === "azure")
+        ) {
+            return;
+        }
+
         setCreateLoading(true);
 
         try {
@@ -166,10 +167,6 @@ export default function Page() {
                 </Button>
             </div>
 
-            {!templatesPaid ? (
-                <PaidFeaturesAlert tiers={tierMatrix.orgOidc} />
-            ) : null}
-
             <SettingsContainer>
                 <SettingsSection>
                     <SettingsSectionHeader>
@@ -181,64 +178,79 @@ export default function Page() {
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>
+                        {templatesLocked ? (
+                            <div className="mb-4">
+                                <PaidFeaturesAlert tiers={tierMatrix.orgOidc} />
+                            </div>
+                        ) : null}
                         <OidcIdpProviderTypeSelect
                             value={watchedType}
-                            templatesPaid={templatesPaid}
                             onTypeChange={(next) => {
                                 applyOidcIdpProviderType(form.setValue, next);
                             }}
                         />
 
-                        <SettingsSectionForm>
-                            <Form {...form}>
-                                <form
-                                    className="space-y-4"
-                                    id="create-idp-form"
-                                    onSubmit={form.handleSubmit(onSubmit)}
-                                >
-                                    <FormField
-                                        control={form.control}
-                                        name="name"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>
-                                                    {t("name")}
-                                                </FormLabel>
-                                                <FormControl>
-                                                    <Input {...field} />
-                                                </FormControl>
-                                                <FormDescription>
-                                                    {t("idpDisplayName")}
-                                                </FormDescription>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-
-                                    <div className="flex items-start mb-0">
-                                        <SwitchInput
-                                            id="auto-provision-toggle"
-                                            label={t("idpAutoProvisionUsers")}
-                                            defaultChecked={form.getValues(
-                                                "autoProvision"
+                        <fieldset
+                            disabled={templatesLocked}
+                            className="min-w-0 border-0 p-0 m-0 disabled:pointer-events-none disabled:opacity-60"
+                        >
+                            <SettingsSectionForm>
+                                <Form {...form}>
+                                    <form
+                                        className="space-y-4"
+                                        id="create-idp-form"
+                                        onSubmit={form.handleSubmit(onSubmit)}
+                                    >
+                                        <FormField
+                                            control={form.control}
+                                            name="name"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>
+                                                        {t("name")}
+                                                    </FormLabel>
+                                                    <FormControl>
+                                                        <Input {...field} />
+                                                    </FormControl>
+                                                    <FormDescription>
+                                                        {t("idpDisplayName")}
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
                                             )}
-                                            onCheckedChange={(checked) => {
-                                                form.setValue(
-                                                    "autoProvision",
-                                                    checked
-                                                );
-                                            }}
                                         />
-                                    </div>
-                                    <span className="text-sm text-muted-foreground">
-                                        {t("idpAutoProvisionUsersDescription")}
-                                    </span>
-                                </form>
-                            </Form>
-                        </SettingsSectionForm>
+
+                                        <div className="flex items-start mb-0">
+                                            <SwitchInput
+                                                id="auto-provision-toggle"
+                                                label={t("idpAutoProvisionUsers")}
+                                                defaultChecked={form.getValues(
+                                                    "autoProvision"
+                                                )}
+                                                onCheckedChange={(checked) => {
+                                                    form.setValue(
+                                                        "autoProvision",
+                                                        checked
+                                                    );
+                                                }}
+                                            />
+                                        </div>
+                                        <span className="text-sm text-muted-foreground">
+                                            {t(
+                                                "idpAutoProvisionUsersDescription"
+                                            )}
+                                        </span>
+                                    </form>
+                                </Form>
+                            </SettingsSectionForm>
+                        </fieldset>
                     </SettingsSectionBody>
                 </SettingsSection>
 
+                <fieldset
+                    disabled={templatesLocked}
+                    className="min-w-0 border-0 p-0 m-0 disabled:pointer-events-none disabled:opacity-60"
+                >
                 {watchedType === "google" && (
                     <SettingsSection>
                         <SettingsSectionHeader>
@@ -624,6 +636,7 @@ export default function Page() {
                         </SettingsSection>
                     </SettingsSectionGrid>
                 )}
+                </fieldset>
             </SettingsContainer>
 
             <div className="flex justify-end space-x-2 mt-8">
@@ -638,7 +651,7 @@ export default function Page() {
                 </Button>
                 <Button
                     type="submit"
-                    disabled={createLoading}
+                    disabled={createLoading || templatesLocked}
                     loading={createLoading}
                     onClick={form.handleSubmit(onSubmit)}
                 >

@@ -219,7 +219,6 @@ export default function Page() {
     }
 
     const disabled = !isPaidUser(tierMatrix.orgOidc);
-    const templatesPaid = isPaidUser(tierMatrix.orgOidc);
 
     return (
         <>
@@ -254,7 +253,6 @@ export default function Page() {
                     <SettingsSectionBody>
                         <OidcIdpProviderTypeSelect
                             value={form.watch("type")}
-                            templatesPaid={templatesPaid}
                             onTypeChange={(next) => {
                                 applyOidcIdpProviderType(form.setValue, next);
                             }}

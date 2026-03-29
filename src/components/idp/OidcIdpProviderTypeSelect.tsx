@@ -4,60 +4,72 @@ import {
     StrategySelect,
     type StrategyOption
 } from "@app/components/StrategySelect";
+import { useEnvContext } from "@app/hooks/useEnvContext";
 import type { IdpOidcProviderType } from "@app/lib/idp/oidcIdpProviderDefaults";
 import { useTranslations } from "next-intl";
 import Image from "next/image";
+import { useEffect, useMemo } from "react";
 
 type Props = {
     value: IdpOidcProviderType;
     onTypeChange: (type: IdpOidcProviderType) => void;
-    templatesPaid: boolean;
 };
 
-export function OidcIdpProviderTypeSelect({
-    value,
-    onTypeChange,
-    templatesPaid
-}: Props) {
+export function OidcIdpProviderTypeSelect({ value, onTypeChange }: Props) {
     const t = useTranslations();
+    const { env } = useEnvContext();
+    const hideTemplates = env.flags.disableEnterpriseFeatures;
 
-    const options: ReadonlyArray<StrategyOption<IdpOidcProviderType>> = [
-        {
-            id: "oidc",
-            title: "OAuth2/OIDC",
-            description: t("idpOidcDescription")
-        },
-        {
-            id: "google",
-            title: t("idpGoogleTitle"),
-            description: t("idpGoogleDescription"),
-            disabled: !templatesPaid,
-            icon: (
-                <Image
-                    src="/idp/google.png"
-                    alt={t("idpGoogleAlt")}
-                    width={24}
-                    height={24}
-                    className="rounded"
-                />
-            )
-        },
-        {
-            id: "azure",
-            title: t("idpAzureTitle"),
-            description: t("idpAzureDescription"),
-            disabled: !templatesPaid,
-            icon: (
-                <Image
-                    src="/idp/azure.png"
-                    alt={t("idpAzureAlt")}
-                    width={24}
-                    height={24}
-                    className="rounded"
-                />
-            )
+    useEffect(() => {
+        if (hideTemplates && (value === "google" || value === "azure")) {
+            onTypeChange("oidc");
         }
-    ];
+    }, [hideTemplates, value, onTypeChange]);
+
+    const options: ReadonlyArray<StrategyOption<IdpOidcProviderType>> =
+        useMemo(() => {
+            const base: StrategyOption<IdpOidcProviderType>[] = [
+                {
+                    id: "oidc",
+                    title: "OAuth2/OIDC",
+                    description: t("idpOidcDescription")
+                }
+            ];
+            if (hideTemplates) {
+                return base;
+            }
+            return [
+                ...base,
+                {
+                    id: "google",
+                    title: t("idpGoogleTitle"),
+                    description: t("idpGoogleDescription"),
+                    icon: (
+                        <Image
+                            src="/idp/google.png"
+                            alt={t("idpGoogleAlt")}
+                            width={24}
+                            height={24}
+                            className="rounded"
+                        />
+                    )
+                },
+                {
+                    id: "azure",
+                    title: t("idpAzureTitle"),
+                    description: t("idpAzureDescription"),
+                    icon: (
+                        <Image
+                            src="/idp/azure.png"
+                            alt={t("idpAzureAlt")}
+                            width={24}
+                            height={24}
+                            className="rounded"
+                        />
+                    )
+                }
+            ];
+        }, [hideTemplates, t]);
 
     return (
         <div>
