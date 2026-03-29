@@ -126,16 +126,10 @@ export default function AccessControlsPage() {
         form.setValue("autoProvisioned", user.autoProvisioned || false);
     }, []);
 
-    const allRoleOptions = useMemo(
-        () =>
-            roles
-                .map((role) => ({
-                    id: role.roleId.toString(),
-                    text: role.name
-                }))
-                .filter((role) => role.text !== "Admin"),
-        [roles]
-    );
+    const allRoleOptions = roles.map((role) => ({
+        id: role.roleId.toString(),
+        text: role.name
+    }));
 
     function setRoleTags(updater: Tag[] | ((prev: Tag[]) => Tag[])) {
         const prev = form.getValues("roles");
