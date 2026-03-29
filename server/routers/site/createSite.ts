@@ -298,7 +298,8 @@ export async function createSite(
                         niceId,
                         address: updatedAddress || null,
                         type,
-                        dockerSocketEnabled: true
+                        dockerSocketEnabled: true,
+                        status: "accepted"
                     })
                     .returning();
             } else if (type == "wireguard") {
@@ -355,7 +356,8 @@ export async function createSite(
                         niceId,
                         subnet,
                         type,
-                        pubKey: pubKey || null
+                        pubKey: pubKey || null,
+                        status: "accepted"
                     })
                     .returning();
             } else if (type == "local") {
@@ -370,7 +372,8 @@ export async function createSite(
                         type,
                         dockerSocketEnabled: false,
                         online: true,
-                        subnet: "0.0.0.0/32"
+                        subnet: "0.0.0.0/32",
+                        status: "accepted"
                     })
                     .returning();
             } else {

@@ -100,7 +100,8 @@ export const sites = pgTable("sites", {
     publicKey: varchar("publicKey"),
     lastHolePunch: bigint("lastHolePunch", { mode: "number" }),
     listenPort: integer("listenPort"),
-    dockerSocketEnabled: boolean("dockerSocketEnabled").notNull().default(true)
+    dockerSocketEnabled: boolean("dockerSocketEnabled").notNull().default(true),
+    status: varchar("status").$type<"pending" | "accepted">()
 });
 
 export const resources = pgTable("resources", {

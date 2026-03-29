@@ -196,7 +196,8 @@ export async function registerNewt(
                     name: niceId,
                     niceId,
                     type: "newt",
-                    dockerSocketEnabled: true
+                    dockerSocketEnabled: true,
+                    status: "pending"
                 })
                 .returning();
 
