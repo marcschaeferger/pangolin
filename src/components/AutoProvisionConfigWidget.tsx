@@ -1,14 +1,12 @@
 "use client";
 
+import IdpAutoProvisionUsersDescription from "@app/components/IdpAutoProvisionUsersDescription";
 import { FormDescription } from "@app/components/ui/form";
 import { SwitchInput } from "@app/components/SwitchInput";
 import { useTranslations } from "next-intl";
 import { usePaidStatus } from "@app/hooks/usePaidStatus";
 import { tierMatrix } from "@server/lib/billing/tierMatrix";
-import {
-    MappingBuilderRule,
-    RoleMappingMode
-} from "@app/lib/idpRoleMapping";
+import { MappingBuilderRule, RoleMappingMode } from "@app/lib/idpRoleMapping";
 import RoleMappingConfigFields from "@app/components/RoleMappingConfigFields";
 
 type Role = {
@@ -60,9 +58,6 @@ export default function AutoProvisionConfigWidget({
                     onCheckedChange={onAutoProvisionChange}
                     disabled={!isPaidUser(tierMatrix.autoProvisioning)}
                 />
-                <FormDescription className="text-sm text-muted-foreground">
-                    {t("idpAutoProvisionUsersDescription")}
-                </FormDescription>
             </div>
 
             {autoProvision && (

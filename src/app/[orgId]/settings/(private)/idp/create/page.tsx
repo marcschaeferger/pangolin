@@ -1,6 +1,7 @@
 "use client";
 
 import AutoProvisionConfigWidget from "@app/components/AutoProvisionConfigWidget";
+import IdpAutoProvisionUsersDescription from "@app/components/IdpAutoProvisionUsersDescription";
 import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
 import {
     SettingsContainer,
@@ -296,7 +297,7 @@ export default function Page() {
                             {t("idpAutoProvisionUsers")}
                         </SettingsSectionTitle>
                         <SettingsSectionDescription>
-                            {t("idpAutoProvisionUsersDescription")}
+                            <IdpAutoProvisionUsersDescription />
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>

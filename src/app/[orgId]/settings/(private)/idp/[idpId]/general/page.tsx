@@ -45,6 +45,7 @@ import { useTranslations } from "next-intl";
 import { AxiosResponse } from "axios";
 import { ListRolesResponse } from "@server/routers/role";
 import AutoProvisionConfigWidget from "@app/components/AutoProvisionConfigWidget";
+import IdpAutoProvisionUsersDescription from "@app/components/IdpAutoProvisionUsersDescription";
 import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
 import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import {
@@ -493,7 +494,7 @@ export default function GeneralPage() {
                             {t("idpAutoProvisionUsers")}
                         </SettingsSectionTitle>
                         <SettingsSectionDescription>
-                            {t("idpAutoProvisionUsersDescription")}
+                            <IdpAutoProvisionUsersDescription />
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>

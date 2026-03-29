@@ -31,6 +31,7 @@ import { formatAxiosError } from "@app/lib/api";
 import { createApiClient } from "@app/lib/api";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useState, useEffect } from "react";
+import IdpAutoProvisionUsersDescription from "@app/components/IdpAutoProvisionUsersDescription";
 import { SwitchInput } from "@app/components/SwitchInput";
 import {
     InfoSection,
@@ -349,7 +350,7 @@ export default function GeneralPage() {
                             {t("idpAutoProvisionUsers")}
                         </SettingsSectionTitle>
                         <SettingsSectionDescription>
-                            {t("idpAutoProvisionUsersDescription")}
+                            <IdpAutoProvisionUsersDescription />
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>
@@ -375,9 +376,6 @@ export default function GeneralPage() {
                                     />
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                    <span className="text-sm text-muted-foreground">
-                                        {t("idpAutoProvisionUsersDescription")}
-                                    </span>
                                     {form.watch("autoProvision") && (
                                         <FormDescription>
                                             {t.rich(
