@@ -9,7 +9,7 @@ import {
     getOrgLoginPage,
     getUserSessionWithUser
 } from "@server/db/queries/verifySessionQueries";
-import { getUserOrgRoleIds } from "@server/lib/userOrgRoles";
+import { getUserOrgRoles } from "@server/lib/userOrgRoles";
 import {
     LoginPage,
     Org,
@@ -798,7 +798,8 @@ async function notAllowed(
 ) {
     let loginPage: LoginPage | null = null;
     if (orgId) {
-        const subscribed = await isSubscribed( // this is fine because the org login page is only a saas feature
+        const subscribed = await isSubscribed(
+            // this is fine because the org login page is only a saas feature
             orgId,
             tierMatrix.loginPageDomain
         );
@@ -855,7 +856,10 @@ async function headerAuthChallenged(
 ) {
     let loginPage: LoginPage | null = null;
     if (orgId) {
-        const subscribed = await isSubscribed(orgId, tierMatrix.loginPageDomain); // this is fine because the org login page is only a saas feature
+        const subscribed = await isSubscribed(
+            orgId,
+            tierMatrix.loginPageDomain
+        ); // this is fine because the org login page is only a saas feature
         if (subscribed) {
             loginPage = await getOrgLoginPage(orgId);
         }
@@ -917,9 +921,9 @@ async function isUserAllowedToAccessResource(
         return null;
     }
 
-    const userOrgRoleIds = await getUserOrgRoleIds(user.userId, resource.orgId);
+    const userOrgRoles = await getUserOrgRoles(user.userId, resource.orgId);
 
-    if (!userOrgRoleIds.length) {
+    if (!userOrgRoles.length) {
         return null;
     }
 
@@ -935,23 +939,16 @@ async function isUserAllowedToAccessResource(
         return null;
     }
 
-    const roleNames: string[] = [];
-    for (const roleId of userOrgRoleIds) {
-        const roleResourceAccess = await getRoleResourceAccess(
-            resource.resourceId,
-            roleId
-        );
-        if (roleResourceAccess) {
-            const roleName = await getRoleName(roleId);
-            if (roleName) roleNames.push(roleName);
-        }
-    }
-    if (roleNames.length > 0) {
+    const roleResourceAccess = await getRoleResourceAccess(
+        resource.resourceId,
+        userOrgRoles.map((r) => r.roleId)
+    );
+    if (roleResourceAccess && roleResourceAccess.length > 0) {
         return {
             username: user.username,
             email: user.email,
             name: user.name,
-            role: roleNames.join(", ")
+            role: userOrgRoles.map((r) => r.roleName).join(", ")
         };
     }
 
@@ -961,15 +958,11 @@ async function isUserAllowedToAccessResource(
     );
 
     if (userResourceAccess) {
-        const names = await Promise.all(
-            userOrgRoleIds.map((id) => getRoleName(id))
-        );
-        const role = names.filter(Boolean).join(", ") || "";
         return {
             username: user.username,
             email: user.email,
             name: user.name,
-            role
+            role: userOrgRoles.map((r) => r.roleName).join(", ")
         };
     }
 

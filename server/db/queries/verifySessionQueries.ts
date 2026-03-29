@@ -1,4 +1,12 @@
-import { db, loginPage, LoginPage, loginPageOrg, Org, orgs, roles } from "@server/db";
+import {
+    db,
+    loginPage,
+    LoginPage,
+    loginPageOrg,
+    Org,
+    orgs,
+    roles
+} from "@server/db";
 import {
     Resource,
     ResourcePassword,
@@ -12,14 +20,12 @@ import {
     resources,
     roleResources,
     sessions,
-    userOrgRoles,
-    userOrgs,
     userResources,
     users,
     ResourceHeaderAuthExtendedCompatibility,
     resourceHeaderAuthExtendedCompatibility
 } from "@server/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 export type ResourceWithAuth = {
     resource: Resource | null;
@@ -121,7 +127,7 @@ export async function getRoleName(roleId: number): Promise<string | null> {
  */
 export async function getRoleResourceAccess(
     resourceId: number,
-    roleId: number
+    roleIds: number[]
 ) {
     const roleResourceAccess = await db
         .select()
@@ -129,12 +135,11 @@ export async function getRoleResourceAccess(
         .where(
             and(
                 eq(roleResources.resourceId, resourceId),
-                eq(roleResources.roleId, roleId)
+                inArray(roleResources.roleId, roleIds)
             )
-        )
-        .limit(1);
+        );
 
-    return roleResourceAccess.length > 0 ? roleResourceAccess[0] : null;
+    return roleResourceAccess.length > 0 ? roleResourceAccess : null;
 }
 
 /**
