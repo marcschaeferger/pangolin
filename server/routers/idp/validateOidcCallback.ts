@@ -579,30 +579,28 @@ export async function validateOidcCallback(
                     }
                 }
 
-                // Ensure IDP-provided role exists for existing auto-provisioned orgs (add only; never delete other roles)
-                const userRolesInOrgs = await trx
-                    .select()
-                    .from(userOrgRoles)
-                    .where(eq(userOrgRoles.userId, userId!));
+                // Sync roles 1:1 with IdP policy for existing auto-provisioned orgs
                 for (const currentOrg of autoProvisionedOrgs) {
                     const newRole = userOrgInfo.find(
                         (newOrg) => newOrg.orgId === currentOrg.orgId
                     );
                     if (!newRole) continue;
-                    const currentRolesInOrg = userRolesInOrgs.filter(
-                        (r) => r.orgId === currentOrg.orgId
-                    );
-                    for (const roleId of newRole.roleIds) {
-                        const hasIdpRole = currentRolesInOrg.some(
-                            (r) => r.roleId === roleId
+
+                    await trx
+                        .delete(userOrgRoles)
+                        .where(
+                            and(
+                                eq(userOrgRoles.userId, userId!),
+                                eq(userOrgRoles.orgId, currentOrg.orgId)
+                            )
                         );
-                        if (!hasIdpRole) {
-                            await trx.insert(userOrgRoles).values({
-                                userId: userId!,
-                                orgId: currentOrg.orgId,
-                                roleId
-                            });
-                        }
+
+                    for (const roleId of newRole.roleIds) {
+                        await trx.insert(userOrgRoles).values({
+                            userId: userId!,
+                            orgId: currentOrg.orgId,
+                            roleId
+                        });
                     }
                 }
 
