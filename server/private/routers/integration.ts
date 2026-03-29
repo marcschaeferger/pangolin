@@ -94,6 +94,25 @@ authenticated.get(
     logs.exportAccessAuditLogs
 );
 
+authenticated.get(
+    "/org/:orgId/logs/connection",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.connectionLogs),
+    verifyApiKeyOrgAccess,
+    verifyApiKeyHasAction(ActionsEnum.exportLogs),
+    logs.queryConnectionAuditLogs
+);
+
+authenticated.get(
+    "/org/:orgId/logs/connection/export",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.logExport),
+    verifyApiKeyOrgAccess,
+    verifyApiKeyHasAction(ActionsEnum.exportLogs),
+    logActionAudit(ActionsEnum.exportLogs),
+    logs.exportConnectionAuditLogs
+);
+
 authenticated.put(
     "/org/:orgId/idp/oidc",
     verifyValidLicense,

@@ -27,7 +27,9 @@ import {
     resources,
     roles,
     siteResources,
-    userOrgRoles
+    userOrgRoles,
+    siteProvisioningKeyOrg,
+    siteProvisioningKeys,
 } from "@server/db";
 import { and, eq } from "drizzle-orm";
 
@@ -296,6 +298,10 @@ async function disableFeature(
                 await disableFullRbac(orgId);
                 break;
 
+            case TierFeature.SiteProvisioningKeys:
+                await disableSiteProvisioningKeys(orgId);
+                break;
+
             default:
                 logger.warn(
                     `Unknown feature ${feature} for org ${orgId}, skipping`
@@ -333,6 +339,57 @@ async function disableSshPam(orgId: string): Promise<void> {
 
 async function disableFullRbac(orgId: string): Promise<void> {
     logger.info(`Disabled full RBAC for org ${orgId}`);
+}
+
+async function disableSiteProvisioningKeys(orgId: string): Promise<void> {
+    const rows = await db
+        .select({
+            siteProvisioningKeyId:
+                siteProvisioningKeyOrg.siteProvisioningKeyId
+        })
+        .from(siteProvisioningKeyOrg)
+        .where(eq(siteProvisioningKeyOrg.orgId, orgId));
+
+    for (const { siteProvisioningKeyId } of rows) {
+        await db.transaction(async (trx) => {
+            await trx
+                .delete(siteProvisioningKeyOrg)
+                .where(
+                    and(
+                        eq(
+                            siteProvisioningKeyOrg.siteProvisioningKeyId,
+                            siteProvisioningKeyId
+                        ),
+                        eq(siteProvisioningKeyOrg.orgId, orgId)
+                    )
+                );
+
+            const remaining = await trx
+                .select()
+                .from(siteProvisioningKeyOrg)
+                .where(
+                    eq(
+                        siteProvisioningKeyOrg.siteProvisioningKeyId,
+                        siteProvisioningKeyId
+                    )
+                );
+
+            if (remaining.length === 0) {
+                await trx
+                    .delete(siteProvisioningKeys)
+                    .where(
+                        eq(
+                            siteProvisioningKeys.siteProvisioningKeyId,
+                            siteProvisioningKeyId
+                        )
+                    );
+            }
+        });
+    }
+
+    logger.info(
+        `Removed site provisioning keys for org ${orgId} after tier downgrade`
+    );
 }
 
 async function disableLoginPageBranding(orgId: string): Promise<void> {

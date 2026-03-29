@@ -27,6 +27,7 @@ import * as reKey from "#private/routers/re-key";
 import * as approval from "#private/routers/approvals";
 import * as ssh from "#private/routers/ssh";
 import * as user from "#private/routers/user";
+import * as siteProvisioning from "#private/routers/siteProvisioning";
 
 import {
     verifyOrgAccess,
@@ -37,7 +38,8 @@ import {
     verifyLimits,
     verifyRoleAccess,
     verifyUserAccess,
-    verifyUserCanSetUserOrgRoles
+    verifyUserCanSetUserOrgRoles,
+    verifySiteProvisioningKeyAccess
 } from "@server/middlewares";
 import { ActionsEnum } from "@server/auth/actions";
 import {
@@ -482,6 +484,25 @@ authenticated.get(
     logs.exportAccessAuditLogs
 );
 
+authenticated.get(
+    "/org/:orgId/logs/connection",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.connectionLogs),
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.exportLogs),
+    logs.queryConnectionAuditLogs
+);
+
+authenticated.get(
+    "/org/:orgId/logs/connection/export",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.logExport),
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.exportLogs),
+    logActionAudit(ActionsEnum.exportLogs),
+    logs.exportConnectionAuditLogs
+);
+
 authenticated.post(
     "/re-key/:clientId/regenerate-client-secret",
     verifyClientAccess, // this is first to set the org id
@@ -551,4 +572,46 @@ authenticated.post(
     verifyUserCanSetUserOrgRoles(),
     logActionAudit(ActionsEnum.setUserOrgRoles),
     user.setUserOrgRoles
+);
+
+authenticated.put(
+    "/org/:orgId/site-provisioning-key",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.siteProvisioningKeys),
+    verifyOrgAccess,
+    verifyLimits,
+    verifyUserHasAction(ActionsEnum.createSiteProvisioningKey),
+    logActionAudit(ActionsEnum.createSiteProvisioningKey),
+    siteProvisioning.createSiteProvisioningKey
+);
+
+authenticated.get(
+    "/org/:orgId/site-provisioning-keys",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.siteProvisioningKeys),
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.listSiteProvisioningKeys),
+    siteProvisioning.listSiteProvisioningKeys
+);
+
+authenticated.delete(
+    "/org/:orgId/site-provisioning-key/:siteProvisioningKeyId",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.siteProvisioningKeys),
+    verifyOrgAccess,
+    verifySiteProvisioningKeyAccess,
+    verifyUserHasAction(ActionsEnum.deleteSiteProvisioningKey),
+    logActionAudit(ActionsEnum.deleteSiteProvisioningKey),
+    siteProvisioning.deleteSiteProvisioningKey
+);
+
+authenticated.patch(
+    "/org/:orgId/site-provisioning-key/:siteProvisioningKeyId",
+    verifyValidLicense,
+    verifyValidSubscription(tierMatrix.siteProvisioningKeys),
+    verifyOrgAccess,
+    verifySiteProvisioningKeyAccess,
+    verifyUserHasAction(ActionsEnum.updateSiteProvisioningKey),
+    logActionAudit(ActionsEnum.updateSiteProvisioningKey),
+    siteProvisioning.updateSiteProvisioningKey
 );

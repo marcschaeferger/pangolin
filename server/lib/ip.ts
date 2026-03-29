@@ -581,6 +581,7 @@ export type SubnetProxyTargetV2 = {
         max: number;
         protocol: "tcp" | "udp";
     }[];
+    resourceId?: number;
 };
 
 export function generateSubnetProxyTargetV2(
@@ -617,7 +618,8 @@ export function generateSubnetProxyTargetV2(
                 sourcePrefixes: [],
                 destPrefix: destination,
                 portRange,
-                disableIcmp
+                disableIcmp,
+                resourceId: siteResource.siteResourceId,
             };
         }
 
@@ -628,7 +630,8 @@ export function generateSubnetProxyTargetV2(
                 destPrefix: `${siteResource.aliasAddress}/32`,
                 rewriteTo: destination,
                 portRange,
-                disableIcmp
+                disableIcmp,
+                resourceId: siteResource.siteResourceId,
             };
         }
     } else if (siteResource.mode == "cidr") {
@@ -636,7 +639,8 @@ export function generateSubnetProxyTargetV2(
             sourcePrefixes: [],
             destPrefix: siteResource.destination,
             portRange,
-            disableIcmp
+            disableIcmp,
+            resourceId: siteResource.siteResourceId,
         };
     }
 

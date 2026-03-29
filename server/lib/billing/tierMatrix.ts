@@ -8,6 +8,7 @@ export enum TierFeature {
     LogExport = "logExport",
     AccessLogs = "accessLogs", // set the retention period to none on downgrade
     ActionLogs = "actionLogs", // set the retention period to none on downgrade
+    ConnectionLogs = "connectionLogs",
     RotateCredentials = "rotateCredentials",
     MaintencePage = "maintencePage", // handle downgrade
     DevicePosture = "devicePosture",
@@ -16,7 +17,8 @@ export enum TierFeature {
     PasswordExpirationPolicies = "passwordExpirationPolicies", // handle downgrade by setting to default duration
     AutoProvisioning = "autoProvisioning", // handle downgrade by disabling auto provisioning
     SshPam = "sshPam",
-    FullRbac = "fullRbac"
+    FullRbac = "fullRbac",
+    SiteProvisioningKeys = "siteProvisioningKeys" // handle downgrade by revoking keys if needed
 }
 
 export const tierMatrix: Record<TierFeature, Tier[]> = {
@@ -27,6 +29,7 @@ export const tierMatrix: Record<TierFeature, Tier[]> = {
     [TierFeature.LogExport]: ["tier3", "enterprise"],
     [TierFeature.AccessLogs]: ["tier2", "tier3", "enterprise"],
     [TierFeature.ActionLogs]: ["tier2", "tier3", "enterprise"],
+    [TierFeature.ConnectionLogs]: ["tier2", "tier3", "enterprise"],
     [TierFeature.RotateCredentials]: ["tier1", "tier2", "tier3", "enterprise"],
     [TierFeature.MaintencePage]: ["tier1", "tier2", "tier3", "enterprise"],
     [TierFeature.DevicePosture]: ["tier2", "tier3", "enterprise"],
@@ -50,5 +53,6 @@ export const tierMatrix: Record<TierFeature, Tier[]> = {
     ],
     [TierFeature.AutoProvisioning]: ["tier1", "tier3", "enterprise"],
     [TierFeature.SshPam]: ["tier1", "tier3", "enterprise"],
-    [TierFeature.FullRbac]: ["tier1", "tier2", "tier3", "enterprise"]
+    [TierFeature.FullRbac]: ["tier1", "tier2", "tier3", "enterprise"],
+    [TierFeature.SiteProvisioningKeys]: ["enterprise"]
 };

@@ -11,9 +11,7 @@
  * This file is not licensed under the AGPLv3.
  */
 
-export * from "./queryActionAuditLog";
-export * from "./exportActionAuditLog";
-export * from "./queryAccessAuditLog";
-export * from "./exportAccessAuditLog";
-export * from "./queryConnectionAuditLog";
-export * from "./exportConnectionAuditLog";
+export * from "./createSiteProvisioningKey";
+export * from "./listSiteProvisioningKeys";
+export * from "./deleteSiteProvisioningKey";
+export * from "./updateSiteProvisioningKey";
