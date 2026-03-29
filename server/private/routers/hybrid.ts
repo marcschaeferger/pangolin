@@ -833,6 +833,8 @@ hybridRouter.get(
                     )
                 );
 
+            logger.debug(`User ${userId} has roles in org ${orgId}:`, userOrgRoleRows);
+
             return response<{ roleId: number, roleName: string }[]>(res, {
                 data: userOrgRoleRows,
                 success: true,
