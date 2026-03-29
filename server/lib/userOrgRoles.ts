@@ -1,4 +1,4 @@
-import { db, userOrgRoles } from "@server/db";
+import { db, roles, userOrgRoles } from "@server/db";
 import { and, eq } from "drizzle-orm";
 
 /**
@@ -19,4 +19,18 @@ export async function getUserOrgRoleIds(
             )
         );
     return rows.map((r) => r.roleId);
+}
+
+export async function getUserOrgRoles(
+    userId: string,
+    orgId: string
+): Promise<{ roleId: number; roleName: string }[]> {
+    const rows = await db
+        .select({ roleId: userOrgRoles.roleId, roleName: roles.name })
+        .from(userOrgRoles)
+        .innerJoin(roles, eq(userOrgRoles.roleId, roles.roleId))
+        .where(
+            and(eq(userOrgRoles.userId, userId), eq(userOrgRoles.orgId, orgId))
+        );
+    return rows;
 }
