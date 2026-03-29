@@ -1148,6 +1148,7 @@
     "actionRemoveUser": "Удалить пользователя",
     "actionListUsers": "Список пользователей",
     "actionAddUserRole": "Добавить роль пользователя",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Сгенерировать токен доступа",
     "actionDeleteAccessToken": "Удалить токен доступа",
     "actionListAccessTokens": "Список токенов доступа",

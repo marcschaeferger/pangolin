@@ -17,6 +17,7 @@ export * from "./verifyAccessTokenAccess";
 export * from "./requestTimeout";
 export * from "./verifyClientAccess";
 export * from "./verifyUserHasAction";
+export * from "./verifyUserCanSetUserOrgRoles";
 export * from "./verifyUserIsServerAdmin";
 export * from "./verifyIsLoggedInUser";
 export * from "./verifyIsLoggedInUser";

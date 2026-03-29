@@ -16,6 +16,7 @@ import {
     verifyApiKey,
     verifyApiKeyOrgAccess,
     verifyApiKeyHasAction,
+    verifyApiKeyCanSetUserOrgRoles,
     verifyApiKeySiteAccess,
     verifyApiKeyResourceAccess,
     verifyApiKeyTargetAccess,
@@ -595,7 +596,7 @@ authenticated.post(
     verifyLimits,
     verifyApiKeyHasAction(ActionsEnum.addUserRole),
     logActionAudit(ActionsEnum.addUserRole),
-    user.addUserRole
+    user.addUserRoleLegacy
 );
 
 authenticated.post(

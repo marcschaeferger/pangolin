@@ -1148,6 +1148,7 @@
     "actionRemoveUser": "Изтрийте потребител",
     "actionListUsers": "Изброяване на потребители",
     "actionAddUserRole": "Добавяне на роля на потребител",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Генериране на токен за достъп",
     "actionDeleteAccessToken": "Изтриване на токен за достъп",
     "actionListAccessTokens": "Изброяване на токени за достъп",

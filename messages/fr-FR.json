@@ -1148,6 +1148,7 @@
     "actionRemoveUser": "Supprimer un utilisateur",
     "actionListUsers": "Lister les utilisateurs",
     "actionAddUserRole": "Ajouter un rôle utilisateur",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Générer un jeton d'accès",
     "actionDeleteAccessToken": "Supprimer un jeton d'accès",
     "actionListAccessTokens": "Lister les jetons d'accès",

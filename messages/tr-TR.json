@@ -1148,6 +1148,7 @@
     "actionRemoveUser": "Kullanıcıyı Kaldır",
     "actionListUsers": "Kullanıcıları Listele",
     "actionAddUserRole": "Kullanıcı Rolü Ekle",
+    "actionSetUserOrgRoles": "Set User Roles",
     "actionGenerateAccessToken": "Erişim Jetonu Oluştur",
     "actionDeleteAccessToken": "Erişim Jetonunu Sil",
     "actionListAccessTokens": "Erişim Jetonlarını Listele",

@@ -644,6 +644,7 @@ authenticated.delete(
     logActionAudit(ActionsEnum.deleteRole),
     role.deleteRole
 );
+
 authenticated.post(
     "/role/:roleId/add/:userId",
     verifyRoleAccess,
@@ -651,7 +652,7 @@ authenticated.post(
     verifyLimits,
     verifyUserHasAction(ActionsEnum.addUserRole),
     logActionAudit(ActionsEnum.addUserRole),
-    user.addUserRole
+    user.addUserRoleLegacy
 );
 
 authenticated.post(

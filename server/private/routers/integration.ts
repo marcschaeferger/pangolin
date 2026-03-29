@@ -20,8 +20,11 @@ import {
     verifyApiKeyIsRoot,
     verifyApiKeyOrgAccess,
     verifyApiKeyIdpAccess,
+    verifyApiKeyRoleAccess,
+    verifyApiKeyUserAccess,
     verifyLimits
 } from "@server/middlewares";
+import * as user from "#private/routers/user";
 import {
     verifyValidSubscription,
     verifyValidLicense
@@ -139,4 +142,24 @@ authenticated.get(
     verifyApiKeyOrgAccess,
     verifyApiKeyHasAction(ActionsEnum.listIdps),
     orgIdp.listOrgIdps
+);
+
+authenticated.post(
+    "/user/:userId/add-role/:roleId",
+    verifyApiKeyRoleAccess,
+    verifyApiKeyUserAccess,
+    verifyLimits,
+    verifyApiKeyHasAction(ActionsEnum.addUserRole),
+    logActionAudit(ActionsEnum.addUserRole),
+    user.addUserRole
+);
+
+authenticated.delete(
+    "/user/:userId/remove-role/:roleId",
+    verifyApiKeyRoleAccess,
+    verifyApiKeyUserAccess,
+    verifyLimits,
+    verifyApiKeyHasAction(ActionsEnum.removeUserRole),
+    logActionAudit(ActionsEnum.removeUserRole),
+    user.removeUserRole
 );
