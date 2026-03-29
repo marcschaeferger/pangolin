@@ -623,9 +623,7 @@ export async function validateOidcCallback(
 
                 if (orgsToAdd.length > 0) {
                     for (const org of orgsToAdd) {
-                        const [initialRoleId, ...additionalRoleIds] =
-                            org.roleIds;
-                        if (!initialRoleId) {
+                        if (org.roleIds.length === 0) {
                             continue;
                         }
 
@@ -641,17 +639,9 @@ export async function validateOidcCallback(
                                     userId: userId!,
                                     autoProvisioned: true,
                                 },
-                                initialRoleId,
+                                org.roleIds,
                                 trx
                             );
-
-                            for (const roleId of additionalRoleIds) {
-                                await trx.insert(userOrgRoles).values({
-                                    userId: userId!,
-                                    orgId: org.orgId,
-                                    roleId
-                                });
-                            }
                         }
                     }
                 }

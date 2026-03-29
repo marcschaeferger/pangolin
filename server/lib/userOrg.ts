@@ -19,15 +19,22 @@ import { FeatureId } from "@server/lib/billing";
 export async function assignUserToOrg(
     org: Org,
     values: typeof userOrgs.$inferInsert,
-    roleId: number,
+    roleIds: number[],
     trx: Transaction | typeof db = db
 ) {
+    const uniqueRoleIds = [...new Set(roleIds)];
+    if (uniqueRoleIds.length === 0) {
+        throw new Error("assignUserToOrg requires at least one roleId");
+    }
+
     const [userOrg] = await trx.insert(userOrgs).values(values).returning();
-    await trx.insert(userOrgRoles).values({
-        userId: userOrg.userId,
-        orgId: userOrg.orgId,
-        roleId
-    });
+    await trx.insert(userOrgRoles).values(
+        uniqueRoleIds.map((roleId) => ({
+            userId: userOrg.userId,
+            orgId: userOrg.orgId,
+            roleId
+        }))
+    );
 
     // calculate if the user is in any other of the orgs before we count it as an add to the billing org
     if (org.billingOrgId) {

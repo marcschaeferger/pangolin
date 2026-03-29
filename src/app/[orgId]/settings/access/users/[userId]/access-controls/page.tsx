@@ -3,18 +3,17 @@
 import {
     Form,
     FormControl,
-    FormDescription,
     FormField,
     FormItem,
     FormLabel,
     FormMessage
 } from "@app/components/ui/form";
 import { Checkbox } from "@app/components/ui/checkbox";
-import { Tag, TagInput } from "@app/components/tags/tag-input";
+import OrgRolesTagField from "@app/components/OrgRolesTagField";
 import { toast } from "@app/hooks/useToast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AxiosResponse } from "axios";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ListRolesResponse } from "@server/routers/role";
@@ -67,8 +66,7 @@ export default function AccessControlsPage() {
     );
 
     const t = useTranslations();
-    const { isPaidUser, hasSaasSubscription, hasEnterpriseLicense } =
-        usePaidStatus();
+    const { isPaidUser } = usePaidStatus();
     const isPaid = isPaidUser(tierMatrix.fullRbac);
     const supportsMultipleRolesPerUser = isPaid;
     const showMultiRolePaywallMessage =
@@ -131,40 +129,10 @@ export default function AccessControlsPage() {
         text: role.name
     }));
 
-    function setRoleTags(updater: Tag[] | ((prev: Tag[]) => Tag[])) {
-        const prev = form.getValues("roles");
-        const nextValue =
-            typeof updater === "function" ? updater(prev) : updater;
-        const next = supportsMultipleRolesPerUser
-            ? nextValue
-            : nextValue.length > 1
-              ? [nextValue[nextValue.length - 1]]
-              : nextValue;
-
-        // In single-role mode, selecting the currently selected role can transiently
-        // emit an empty tag list from TagInput; keep the prior selection.
-        if (
-            !supportsMultipleRolesPerUser &&
-            next.length === 0 &&
-            prev.length > 0
-        ) {
-            form.setValue("roles", [prev[prev.length - 1]], {
-                shouldDirty: true
-            });
-            return;
-        }
-
-        if (next.length === 0) {
-            toast({
-                variant: "destructive",
-                title: t("accessRoleErrorAdd"),
-                description: t("accessRoleSelectPlease")
-            });
-            return;
-        }
-
-        form.setValue("roles", next, { shouldDirty: true });
-    }
+    const paywallMessage =
+        build === "saas"
+            ? t("singleRolePerUserPlanNotice")
+            : t("singleRolePerUserEditionNotice");
 
     async function onSubmit(values: z.infer<typeof accessControlsFormSchema>) {
         if (values.roles.length === 0) {
@@ -255,53 +223,22 @@ export default function AccessControlsPage() {
                                         </div>
                                     )}
 
-                                <FormField
-                                    control={form.control}
+                                <OrgRolesTagField
+                                    form={form}
                                     name="roles"
-                                    render={({ field }) => (
-                                        <FormItem className="flex flex-col items-start">
-                                            <FormLabel>{t("roles")}</FormLabel>
-                                            <FormControl>
-                                                <TagInput
-                                                    {...field}
-                                                    activeTagIndex={
-                                                        activeRoleTagIndex
-                                                    }
-                                                    setActiveTagIndex={
-                                                        setActiveRoleTagIndex
-                                                    }
-                                                    placeholder={t(
-                                                        "accessRoleSelect2"
-                                                    )}
-                                                    size="sm"
-                                                    tags={field.value}
-                                                    setTags={setRoleTags}
-                                                    enableAutocomplete={true}
-                                                    autocompleteOptions={
-                                                        allRoleOptions
-                                                    }
-                                                    allowDuplicates={false}
-                                                    restrictTagsToAutocompleteOptions={
-                                                        true
-                                                    }
-                                                    sortTags={true}
-                                                    disabled={loading}
-                                                />
-                                            </FormControl>
-                                            {showMultiRolePaywallMessage && (
-                                                <FormDescription>
-                                                    {build === "saas"
-                                                        ? t(
-                                                              "singleRolePerUserPlanNotice"
-                                                          )
-                                                        : t(
-                                                              "singleRolePerUserEditionNotice"
-                                                          )}
-                                                </FormDescription>
-                                            )}
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
+                                    label={t("roles")}
+                                    placeholder={t("accessRoleSelect2")}
+                                    allRoleOptions={allRoleOptions}
+                                    supportsMultipleRolesPerUser={
+                                        supportsMultipleRolesPerUser
+                                    }
+                                    showMultiRolePaywallMessage={
+                                        showMultiRolePaywallMessage
+                                    }
+                                    paywallMessage={paywallMessage}
+                                    loading={loading}
+                                    activeTagIndex={activeRoleTagIndex}
+                                    setActiveTagIndex={setActiveRoleTagIndex}
                                 />
 
                                 {user.idpAutoProvision && (

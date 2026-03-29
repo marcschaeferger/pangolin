@@ -6,6 +6,7 @@ import {
     index,
     integer,
     pgTable,
+    primaryKey,
     real,
     serial,
     text,
@@ -467,11 +468,21 @@ export const userInvites = pgTable("userInvites", {
         .references(() => orgs.orgId, { onDelete: "cascade" }),
     email: varchar("email").notNull(),
     expiresAt: bigint("expiresAt", { mode: "number" }).notNull(),
-    tokenHash: varchar("token").notNull(),
-    roleId: integer("roleId")
-        .notNull()
-        .references(() => roles.roleId, { onDelete: "cascade" })
+    tokenHash: varchar("token").notNull()
 });
+
+export const userInviteRoles = pgTable(
+    "userInviteRoles",
+    {
+        inviteId: varchar("inviteId")
+            .notNull()
+            .references(() => userInvites.inviteId, { onDelete: "cascade" }),
+        roleId: integer("roleId")
+            .notNull()
+            .references(() => roles.roleId, { onDelete: "cascade" })
+    },
+    (t) => [primaryKey({ columns: [t.inviteId, t.roleId] })]
+);
 
 export const resourcePincode = pgTable("resourcePincode", {
     pincodeId: serial("pincodeId").primaryKey(),
@@ -1048,6 +1059,7 @@ export type UserSite = InferSelectModel<typeof userSites>;
 export type RoleResource = InferSelectModel<typeof roleResources>;
 export type UserResource = InferSelectModel<typeof userResources>;
 export type UserInvite = InferSelectModel<typeof userInvites>;
+export type UserInviteRole = InferSelectModel<typeof userInviteRoles>;
 export type UserOrg = InferSelectModel<typeof userOrgs>;
 export type UserOrgRole = InferSelectModel<typeof userOrgRoles>;
 export type ResourceSession = InferSelectModel<typeof resourceSessions>;

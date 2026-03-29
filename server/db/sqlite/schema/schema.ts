@@ -3,6 +3,7 @@ import { InferSelectModel } from "drizzle-orm";
 import {
     index,
     integer,
+    primaryKey,
     sqliteTable,
     text,
     unique
@@ -804,11 +805,21 @@ export const userInvites = sqliteTable("userInvites", {
         .references(() => orgs.orgId, { onDelete: "cascade" }),
     email: text("email").notNull(),
     expiresAt: integer("expiresAt").notNull(),
-    tokenHash: text("token").notNull(),
-    roleId: integer("roleId")
-        .notNull()
-        .references(() => roles.roleId, { onDelete: "cascade" })
+    tokenHash: text("token").notNull()
 });
+
+export const userInviteRoles = sqliteTable(
+    "userInviteRoles",
+    {
+        inviteId: text("inviteId")
+            .notNull()
+            .references(() => userInvites.inviteId, { onDelete: "cascade" }),
+        roleId: integer("roleId")
+            .notNull()
+            .references(() => roles.roleId, { onDelete: "cascade" })
+    },
+    (t) => [primaryKey({ columns: [t.inviteId, t.roleId] })]
+);
 
 export const resourcePincode = sqliteTable("resourcePincode", {
     pincodeId: integer("pincodeId").primaryKey({
@@ -1152,6 +1163,7 @@ export type UserSite = InferSelectModel<typeof userSites>;
 export type RoleResource = InferSelectModel<typeof roleResources>;
 export type UserResource = InferSelectModel<typeof userResources>;
 export type UserInvite = InferSelectModel<typeof userInvites>;
+export type UserInviteRole = InferSelectModel<typeof userInviteRoles>;
 export type UserOrg = InferSelectModel<typeof userOrgs>;
 export type UserOrgRole = InferSelectModel<typeof userOrgRoles>;
 export type ResourceSession = InferSelectModel<typeof resourceSessions>;
