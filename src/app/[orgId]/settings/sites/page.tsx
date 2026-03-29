@@ -18,7 +18,7 @@ export default async function SitesPage(props: SitesPageProps) {
     const params = await props.params;
 
     const searchParams = new URLSearchParams(await props.searchParams);
-    searchParams.set("status", "accepted");
+    searchParams.set("status", "approved");
 
     let sites: ListSitesResponse["sites"] = [];
     let pagination: ListSitesResponse["pagination"] = {

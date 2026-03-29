@@ -137,12 +137,12 @@ const listSitesSchema = z.object({
             description: "Filter by online status"
         }),
     status: z
-        .enum(["pending", "accepted"])
+        .enum(["pending", "approved"])
         .optional()
         .catch(undefined)
         .openapi({
             type: "string",
-            enum: ["pending", "accepted"],
+            enum: ["pending", "approved"],
             description: "Filter by site status"
         })
 });

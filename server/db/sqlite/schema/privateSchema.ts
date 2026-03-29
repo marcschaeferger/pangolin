@@ -375,7 +375,10 @@ export const siteProvisioningKeys = sqliteTable("siteProvisioningKeys", {
     lastUsed: text("lastUsed"),
     maxBatchSize: integer("maxBatchSize"), // null = no limit
     numUsed: integer("numUsed").notNull().default(0),
-    validUntil: text("validUntil")
+    validUntil: text("validUntil"),
+    approveNewSites: integer("approveNewSites", { mode: "boolean" })
+        .notNull()
+        .default(true)
 });
 
 export const siteProvisioningKeyOrg = sqliteTable(

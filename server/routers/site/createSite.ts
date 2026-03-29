@@ -299,7 +299,7 @@ export async function createSite(
                         address: updatedAddress || null,
                         type,
                         dockerSocketEnabled: true,
-                        status: "accepted"
+                        status: "approved"
                     })
                     .returning();
             } else if (type == "wireguard") {
@@ -357,7 +357,7 @@ export async function createSite(
                         subnet,
                         type,
                         pubKey: pubKey || null,
-                        status: "accepted"
+                        status: "approved"
                     })
                     .returning();
             } else if (type == "local") {
@@ -373,7 +373,7 @@ export async function createSite(
                         dockerSocketEnabled: false,
                         online: true,
                         subnet: "0.0.0.0/32",
-                        status: "accepted"
+                        status: "approved"
                     })
                     .returning();
             } else {

@@ -111,7 +111,7 @@ export const sites = sqliteTable("sites", {
     dockerSocketEnabled: integer("dockerSocketEnabled", { mode: "boolean" })
         .notNull()
         .default(true),
-    status: text("status").$type<"pending" | "accepted">()
+    status: text("status").$type<"pending" | "approved">()
 });
 
 export const resources = sqliteTable("resources", {
