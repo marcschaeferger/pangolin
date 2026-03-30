@@ -110,7 +110,8 @@ export const sites = sqliteTable("sites", {
     listenPort: integer("listenPort"),
     dockerSocketEnabled: integer("dockerSocketEnabled", { mode: "boolean" })
         .notNull()
-        .default(true)
+        .default(true),
+    status: text("status").$type<"pending" | "approved">()
 });
 
 export const resources = sqliteTable("resources", {

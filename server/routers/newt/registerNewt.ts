@@ -82,7 +82,8 @@ export async function registerNewt(
                 orgId: siteProvisioningKeyOrg.orgId,
                 maxBatchSize: siteProvisioningKeys.maxBatchSize,
                 numUsed: siteProvisioningKeys.numUsed,
-                validUntil: siteProvisioningKeys.validUntil
+                validUntil: siteProvisioningKeys.validUntil,
+                approveNewSites: siteProvisioningKeys.approveNewSites,
             })
             .from(siteProvisioningKeys)
             .innerJoin(
@@ -196,7 +197,8 @@ export async function registerNewt(
                     name: niceId,
                     niceId,
                     type: "newt",
-                    dockerSocketEnabled: true
+                    dockerSocketEnabled: true,
+                    status: keyRecord.approveNewSites ? "approved" : "pending",
                 })
                 .returning();
 

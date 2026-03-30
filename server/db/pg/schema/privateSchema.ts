@@ -392,7 +392,8 @@ export const siteProvisioningKeys = pgTable("siteProvisioningKeys", {
     lastUsed: varchar("lastUsed", { length: 255 }),
     maxBatchSize: integer("maxBatchSize"), // null = no limit
     numUsed: integer("numUsed").notNull().default(0),
-    validUntil: varchar("validUntil", { length: 255 })
+    validUntil: varchar("validUntil", { length: 255 }),
+    approveNewSites: boolean("approveNewSites").notNull().default(true)
 });
 
 export const siteProvisioningKeyOrg = pgTable(
