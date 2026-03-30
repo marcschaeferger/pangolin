@@ -2,6 +2,12 @@
 
 import { Badge } from "@app/components/ui/badge";
 import { Button } from "@app/components/ui/button";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger
+} from "@app/components/ui/dropdown-menu";
 import { InfoPopup } from "@app/components/ui/info-popup";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useNavigationContext } from "@app/hooks/useNavigationContext";
@@ -15,7 +21,8 @@ import {
     ArrowUp10Icon,
     ArrowUpRight,
     Check,
-    ChevronsUpDownIcon
+    ChevronsUpDownIcon,
+    MoreHorizontal
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
@@ -93,7 +100,7 @@ export default function PendingSitesTable({
     async function approveSite(siteId: number) {
         setApprovingIds((prev) => new Set(prev).add(siteId));
         try {
-            await api.post(`/site/${siteId}`, { status: "approved" });
+            await api.post(`/site/${siteId}`, { status: "accepted" });
             toast({
                 title: t("success"),
                 description: t("siteApproveSuccess"),
@@ -201,56 +208,56 @@ export default function PendingSitesTable({
                 }
             }
         },
-        {
-            accessorKey: "mbIn",
-            friendlyName: t("dataIn"),
-            header: () => {
-                const dataInOrder = getSortDirection(
-                    "megabytesIn",
-                    searchParams
-                );
-                const Icon =
-                    dataInOrder === "asc"
-                        ? ArrowDown01Icon
-                        : dataInOrder === "desc"
-                          ? ArrowUp10Icon
-                          : ChevronsUpDownIcon;
-                return (
-                    <Button
-                        variant="ghost"
-                        onClick={() => toggleSort("megabytesIn")}
-                    >
-                        {t("dataIn")}
-                        <Icon className="ml-2 h-4 w-4" />
-                    </Button>
-                );
-            }
-        },
-        {
-            accessorKey: "mbOut",
-            friendlyName: t("dataOut"),
-            header: () => {
-                const dataOutOrder = getSortDirection(
-                    "megabytesOut",
-                    searchParams
-                );
-                const Icon =
-                    dataOutOrder === "asc"
-                        ? ArrowDown01Icon
-                        : dataOutOrder === "desc"
-                          ? ArrowUp10Icon
-                          : ChevronsUpDownIcon;
-                return (
-                    <Button
-                        variant="ghost"
-                        onClick={() => toggleSort("megabytesOut")}
-                    >
-                        {t("dataOut")}
-                        <Icon className="ml-2 h-4 w-4" />
-                    </Button>
-                );
-            }
-        },
+        // {
+        //     accessorKey: "mbIn",
+        //     friendlyName: t("dataIn"),
+        //     header: () => {
+        //         const dataInOrder = getSortDirection(
+        //             "megabytesIn",
+        //             searchParams
+        //         );
+        //         const Icon =
+        //             dataInOrder === "asc"
+        //                 ? ArrowDown01Icon
+        //                 : dataInOrder === "desc"
+        //                   ? ArrowUp10Icon
+        //                   : ChevronsUpDownIcon;
+        //         return (
+        //             <Button
+        //                 variant="ghost"
+        //                 onClick={() => toggleSort("megabytesIn")}
+        //             >
+        //                 {t("dataIn")}
+        //                 <Icon className="ml-2 h-4 w-4" />
+        //             </Button>
+        //         );
+        //     }
+        // },
+        // {
+        //     accessorKey: "mbOut",
+        //     friendlyName: t("dataOut"),
+        //     header: () => {
+        //         const dataOutOrder = getSortDirection(
+        //             "megabytesOut",
+        //             searchParams
+        //         );
+        //         const Icon =
+        //             dataOutOrder === "asc"
+        //                 ? ArrowDown01Icon
+        //                 : dataOutOrder === "desc"
+        //                   ? ArrowUp10Icon
+        //                   : ChevronsUpDownIcon;
+        //         return (
+        //             <Button
+        //                 variant="ghost"
+        //                 onClick={() => toggleSort("megabytesOut")}
+        //             >
+        //                 {t("dataOut")}
+        //                 <Icon className="ml-2 h-4 w-4" />
+        //             </Button>
+        //         );
+        //     }
+        // },
         {
             accessorKey: "type",
             friendlyName: t("type"),
@@ -375,6 +382,24 @@ export default function PendingSitesTable({
                 const isApproving = approvingIds.has(siteRow.id);
                 return (
                     <div className="flex items-center gap-2 justify-end">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <span className="sr-only">Open menu</span>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <Link
+                                    className="block w-full"
+                                    href={`/${siteRow.orgId}/settings/sites/${siteRow.nice}`}
+                                >
+                                    <DropdownMenuItem>
+                                        {t("viewSettings")}
+                                    </DropdownMenuItem>
+                                </Link>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button
                             variant="outline"
                             disabled={isApproving}
