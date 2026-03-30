@@ -14,7 +14,7 @@
 import { rateLimitService } from "#private/lib/rateLimit";
 import { cleanup as wsCleanup } from "#private/routers/ws";
 import { flushBandwidthToDb } from "@server/routers/newt/handleReceiveBandwidthMessage";
-import { flushConnectionLogToDb } from "#dynamic/routers/newt";
+import { flushConnectionLogToDb } from "#private/routers/newt";
 import { flushSiteBandwidthToDb } from "@server/routers/gerbil/receiveBandwidth";
 import { stopPingAccumulator } from "@server/routers/newt/pingAccumulator";
 

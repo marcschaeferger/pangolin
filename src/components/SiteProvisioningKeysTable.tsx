@@ -36,6 +36,7 @@ export type SiteProvisioningKeyRow = {
     maxBatchSize: number | null;
     numUsed: number;
     validUntil: string | null;
+    approveNewSites: boolean;
 };
 
 type SiteProvisioningKeysTableProps = {

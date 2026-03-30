@@ -45,7 +45,8 @@ export default async function ProvisioningKeysPage(
         lastUsed: k.lastUsed,
         maxBatchSize: k.maxBatchSize,
         numUsed: k.numUsed,
-        validUntil: k.validUntil
+        validUntil: k.validUntil,
+        approveNewSites: k.approveNewSites
     }));
 
     return (
