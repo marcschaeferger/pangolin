@@ -150,7 +150,7 @@ export default function ResourceRules(props: {
         resolver: zodResolver(addRuleSchema),
         defaultValues: {
             action: "ACCEPT",
-            match: "IP",
+            match: "PATH",
             value: ""
         }
     });
