@@ -287,7 +287,8 @@ export const users = pgTable("user", {
     termsVersion: varchar("termsVersion"),
     marketingEmailConsent: boolean("marketingEmailConsent").default(false),
     serverAdmin: boolean("serverAdmin").notNull().default(false),
-    lastPasswordChange: bigint("lastPasswordChange", { mode: "number" })
+    lastPasswordChange: bigint("lastPasswordChange", { mode: "number" }),
+    locale: varchar("locale")
 });
 
 export const newts = pgTable("newt", {
