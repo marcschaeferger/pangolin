@@ -291,6 +291,7 @@ export const accessAuditLog = pgTable(
         actor: varchar("actor", { length: 255 }),
         actorId: varchar("actorId", { length: 255 }),
         resourceId: integer("resourceId"),
+        siteResourceId: integer("siteResourceId"),
         ip: varchar("ip", { length: 45 }),
         type: varchar("type", { length: 100 }).notNull(),
         action: boolean("action").notNull(),

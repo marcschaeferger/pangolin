@@ -279,6 +279,7 @@ export const accessAuditLog = sqliteTable(
         actor: text("actor"),
         actorId: text("actorId"),
         resourceId: integer("resourceId"),
+        siteResourceId: integer("siteResourceId"),
         ip: text("ip"),
         location: text("location"),
         type: text("type").notNull(),
