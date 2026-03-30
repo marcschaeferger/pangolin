@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -430,9 +429,9 @@ func createConfigFiles(config Config) error {
 	}
 
 	// Walk through all embedded files
-	err := fs.WalkDir(configFiles, "config", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	err := fs.WalkDir(configFiles, "config", func(path string, d fs.DirEntry, walkErr error) (err error) {
+		if walkErr != nil {
+			return walkErr
 		}
 
 		// Skip the root fs directory itself
@@ -483,7 +482,11 @@ func createConfigFiles(config Config) error {
 		if err != nil {
 			return fmt.Errorf("failed to create %s: %v", path, err)
 		}
-		defer outFile.Close()
+		defer func() {
+			if cerr := outFile.Close(); cerr != nil && err == nil {
+				err = cerr
+			}
+		}()
 
 		// Execute template
 		if err := tmpl.Execute(outFile, config); err != nil {
@@ -499,18 +502,26 @@ func createConfigFiles(config Config) error {
 	return nil
 }
 
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (err error) {
 	source, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() {
+		if cerr := source.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	destination, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer destination.Close()
+	defer func() {
+		if cerr := destination.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	_, err = io.Copy(destination, source)
 	return err
@@ -620,32 +631,6 @@ func generateRandomSecretKey() string {
 		panic(fmt.Sprintf("Failed to generate random secret key: %v", err))
 	}
 	return base64.StdEncoding.EncodeToString(secret)
-}
-
-func getPublicIP() string {
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Get("https://ifconfig.io/ip")
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return ""
-	}
-
-	ip := strings.TrimSpace(string(body))
-
-	// Validate that it's a valid IP address
-	if net.ParseIP(ip) != nil {
-		return ip
-	}
-
-	return ""
 }
 
 // Run external commands with stdio/stderr attached.
