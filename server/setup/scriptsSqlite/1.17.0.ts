@@ -27,6 +27,77 @@ export default async function migration() {
         db.transaction(() => {
             db.prepare(
                 `
+                CREATE TABLE 'bannedEmails' (
+                   	'email' text PRIMARY KEY NOT NULL
+                );
+            `
+            ).run();
+            db.prepare(
+                `
+                CREATE TABLE 'bannedIps' (
+                   	'ip' text PRIMARY KEY NOT NULL
+                );
+            `
+            ).run();
+            db.prepare(
+                `
+                CREATE TABLE 'connectionAuditLog' (
+                   	'id' integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+                   	'sessionId' text NOT NULL,
+                   	'siteResourceId' integer,
+                   	'orgId' text,
+                   	'siteId' integer,
+                   	'clientId' integer,
+                   	'userId' text,
+                   	'sourceAddr' text NOT NULL,
+                   	'destAddr' text NOT NULL,
+                   	'protocol' text NOT NULL,
+                   	'startedAt' integer NOT NULL,
+                   	'endedAt' integer,
+                   	'bytesTx' integer,
+                   	'bytesRx' integer,
+                   	FOREIGN KEY ('siteResourceId') REFERENCES 'siteResources'('siteResourceId') ON UPDATE no action ON DELETE cascade,
+                   	FOREIGN KEY ('orgId') REFERENCES 'orgs'('orgId') ON UPDATE no action ON DELETE cascade,
+                   	FOREIGN KEY ('siteId') REFERENCES 'sites'('siteId') ON UPDATE no action ON DELETE cascade,
+                   	FOREIGN KEY ('clientId') REFERENCES 'clients'('clientId') ON UPDATE no action ON DELETE cascade,
+                   	FOREIGN KEY ('userId') REFERENCES 'user'('id') ON UPDATE no action ON DELETE cascade
+                );
+            `
+            ).run();
+
+            db.prepare(`CREATE INDEX 'idx_accessAuditLog_startedAt' ON 'connectionAuditLog' ('startedAt');`).run();
+            db.prepare(`CREATE INDEX 'idx_accessAuditLog_org_startedAt' ON 'connectionAuditLog' ('orgId','startedAt');`).run();
+            db.prepare(`CREATE INDEX 'idx_accessAuditLog_siteResourceId' ON 'connectionAuditLog' ('siteResourceId');`).run();
+
+            db.prepare(
+                `
+                CREATE TABLE 'siteProvisioningKeyOrg' (
+                   	'siteProvisioningKeyId' text NOT NULL,
+                   	'orgId' text NOT NULL,
+                   	PRIMARY KEY('siteProvisioningKeyId', 'orgId'),
+                   	FOREIGN KEY ('siteProvisioningKeyId') REFERENCES 'siteProvisioningKeys'('siteProvisioningKeyId') ON UPDATE no action ON DELETE cascade,
+                   	FOREIGN KEY ('orgId') REFERENCES 'orgs'('orgId') ON UPDATE no action ON DELETE cascade
+                );
+            `
+            ).run();
+            db.prepare(
+                `
+                CREATE TABLE 'siteProvisioningKeys' (
+                   	'siteProvisioningKeyId' text PRIMARY KEY NOT NULL,
+                   	'name' text NOT NULL,
+                   	'siteProvisioningKeyHash' text NOT NULL,
+                   	'lastChars' text NOT NULL,
+                   	'dateCreated' text NOT NULL,
+                   	'lastUsed' text,
+                   	'maxBatchSize' integer,
+                   	'numUsed' integer DEFAULT 0 NOT NULL,
+                   	'validUntil' text
+                );
+            `
+            ).run();
+
+            db.prepare(
+                `
                 CREATE TABLE 'userOrgRoles' (
                    	'userId' text NOT NULL,
                    	'orgId' text NOT NULL,
@@ -63,6 +134,52 @@ export default async function migration() {
             db.prepare(
                 `ALTER TABLE '__new_userOrgs' RENAME TO 'userOrgs';`
             ).run();
+            db.prepare(
+                `
+                CREATE TABLE 'userInviteRoles' (
+                   	'inviteId' text NOT NULL,
+                   	'roleId' integer NOT NULL,
+                   	PRIMARY KEY('inviteId', 'roleId'),
+                   	FOREIGN KEY ('inviteId') REFERENCES 'userInvites'('inviteId') ON UPDATE no action ON DELETE cascade,
+                   	FOREIGN KEY ('roleId') REFERENCES 'roles'('roleId') ON UPDATE no action ON DELETE cascade
+                );
+            `
+            ).run();
+            db.prepare(
+                `
+                CREATE TABLE '__new_userInvites' (
+                   	'inviteId' text PRIMARY KEY NOT NULL,
+                   	'orgId' text NOT NULL,
+                   	'email' text NOT NULL,
+                   	'expiresAt' integer NOT NULL,
+                   	'token' text NOT NULL,
+                   	FOREIGN KEY ('orgId') REFERENCES 'orgs'('orgId') ON UPDATE no action ON DELETE cascade
+                );
+            `
+            ).run();
+            db.prepare(
+                `INSERT INTO '__new_userInvites'("inviteId", "orgId", "email", "expiresAt", "token") SELECT "inviteId", "orgId", "email", "expiresAt", "token" FROM 'userInvites';`
+            ).run();
+            db.prepare(`DROP TABLE 'userInvites';`).run();
+            db.prepare(
+                `ALTER TABLE '__new_userInvites' RENAME TO 'userInvites';`
+            ).run();
+
+            db.prepare(
+                `ALTER TABLE 'accessAuditLog' ADD 'siteResourceId' integer;`
+            ).run();
+            db.prepare(
+                `ALTER TABLE 'clientSitesAssociationsCache' ADD 'isJitMode' integer DEFAULT false NOT NULL;`
+            ).run();
+            db.prepare(`ALTER TABLE 'domains' ADD 'errorMessage' text;`).run();
+            db.prepare(
+                `ALTER TABLE 'orgs' ADD 'settingsLogRetentionDaysConnection' integer DEFAULT 0 NOT NULL;`
+            ).run();
+            db.prepare(`ALTER TABLE 'sites' ADD 'lastPing' integer;`).run();
+            db.prepare(
+                `ALTER TABLE 'user' ADD 'marketingEmailConsent' integer DEFAULT false;`
+            ).run();
+            db.prepare(`ALTER TABLE 'user' ADD 'locale' text;`).run();
         })();
 
         db.pragma("foreign_keys = ON");
