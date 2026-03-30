@@ -17,10 +17,15 @@ import {
     startRemoteExitNodeOfflineChecker
 } from "#private/routers/remoteExitNode";
 import { MessageHandler } from "@server/routers/ws";
+import { build } from "@server/build";
+import { handleConnectionLogMessage } from "#dynamic/routers/newt";
 
 export const messageHandlers: Record<string, MessageHandler> = {
     "remoteExitNode/register": handleRemoteExitNodeRegisterMessage,
-    "remoteExitNode/ping": handleRemoteExitNodePingMessage
+    "remoteExitNode/ping": handleRemoteExitNodePingMessage,
+    "newt/access-log": handleConnectionLogMessage,
 };
 
-startRemoteExitNodeOfflineChecker(); // this is to handle the offline check for remote exit nodes
+if (build != "saas") {
+    startRemoteExitNodeOfflineChecker(); // this is to handle the offline check for remote exit nodes
+}

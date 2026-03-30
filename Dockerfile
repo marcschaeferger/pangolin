@@ -1,70 +1,93 @@
-FROM node:24-alpine AS builder
+# FROM node:24-slim AS base
+FROM public.ecr.aws/docker/library/node:24-slim AS base
 
 WORKDIR /app
 
-ARG BUILD=oss
-ARG DATABASE=sqlite
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
-RUN apk add --no-cache curl tzdata python3 make g++
-
-# COPY package.json package-lock.json ./
 COPY package*.json ./
+
+FROM base AS builder-dev
+
 RUN npm ci
 
 COPY . .
 
-RUN echo "export * from \"./$DATABASE\";" > server/db/index.ts
-RUN echo "export const driver: \"pg\" | \"sqlite\" = \"$DATABASE\";" >> server/db/index.ts
+ARG BUILD=oss
+ARG DATABASE=sqlite
 
-RUN echo "export const build = \"$BUILD\" as \"saas\" | \"enterprise\" | \"oss\";" > server/build.ts
+RUN if [ "$BUILD" = "oss" ]; then rm -rf server/private; fi && \
+    npm run set:$DATABASE && \
+    npm run set:$BUILD && \
+    npm run db:generate && \
+    npm run build && \
+    npm run build:cli && \
+    test -f dist/server.mjs
 
-# Copy the appropriate TypeScript configuration based on build type
-RUN if [ "$BUILD" = "oss" ]; then cp tsconfig.oss.json tsconfig.json; \
-    elif [ "$BUILD" = "saas" ]; then cp tsconfig.saas.json tsconfig.json; \
-    elif [ "$BUILD" = "enterprise" ]; then cp tsconfig.enterprise.json tsconfig.json; \
-    fi
+# Create placeholder files for MaxMind databases to avoid COPY errors
+# Real files should be present for saas builds, placeholders for oss builds
+RUN touch /app/GeoLite2-Country.mmdb /app/GeoLite2-ASN.mmdb
 
-# if the build is oss then remove the server/private directory
-RUN if [ "$BUILD" = "oss" ]; then rm -rf server/private; fi
+FROM base AS builder
 
-RUN if [ "$DATABASE" = "pg" ]; then npx drizzle-kit generate --dialect postgresql --schema ./server/db/pg/schema --out init; else npx drizzle-kit generate --dialect $DATABASE --schema ./server/db/$DATABASE/schema --out init; fi
+RUN npm ci --omit=dev
 
-RUN mkdir -p dist
-RUN npm run next:build
-RUN node esbuild.mjs -e server/index.ts -o dist/server.mjs -b $BUILD
-RUN if [ "$DATABASE" = "pg" ]; then \
-    node esbuild.mjs -e server/setup/migrationsPg.ts -o dist/migrations.mjs; \
-    else \
-    node esbuild.mjs -e server/setup/migrationsSqlite.ts -o dist/migrations.mjs; \
-    fi
-
-# test to make sure the build output is there and error if not
-RUN test -f dist/server.mjs
-
-RUN npm run build:cli
-
-FROM node:24-alpine AS runner
+# FROM node:24-slim AS runner
+FROM public.ecr.aws/docker/library/node:24-slim AS runner
 
 WORKDIR /app
 
-# Curl used for the health checks
-# Python and build tools needed for better-sqlite3 native compilation
-RUN apk add --no-cache curl tzdata python3 make g++
+RUN apt-get update && apt-get install -y curl tzdata && rm -rf /var/lib/apt/lists/*
 
-# COPY package.json package-lock.json ./
-COPY package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
 
-RUN npm ci --omit=dev && npm cache clean --force
-
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/init ./dist/init
+COPY --from=builder-dev /app/.next/standalone ./
+COPY --from=builder-dev /app/.next/static ./.next/static
+COPY --from=builder-dev /app/dist ./dist
+COPY --from=builder-dev /app/server/migrations ./dist/init
 
 COPY ./cli/wrapper.sh /usr/local/bin/pangctl
 RUN chmod +x /usr/local/bin/pangctl ./dist/cli.mjs
 
 COPY server/db/names.json ./dist/names.json
+COPY server/db/ios_models.json ./dist/ios_models.json
+COPY server/db/mac_models.json ./dist/mac_models.json
 COPY public ./public
+
+# Copy MaxMind databases for SaaS builds
+ARG BUILD=oss
+
+RUN mkdir -p ./maxmind
+
+# Copy MaxMind databases (placeholders exist for oss builds, real files for saas)
+COPY --from=builder-dev /app/GeoLite2-Country.mmdb ./maxmind/GeoLite2-Country.mmdb
+COPY --from=builder-dev /app/GeoLite2-ASN.mmdb ./maxmind/GeoLite2-ASN.mmdb
+
+# Remove MaxMind databases for non-saas builds (keep only for saas)
+RUN if [ "$BUILD" != "saas" ]; then rm -rf ./maxmind; fi
+
+# OCI Image Labels - Build Args for dynamic values
+ARG VERSION="dev"
+ARG REVISION=""
+ARG CREATED=""
+ARG LICENSE="AGPL-3.0"
+
+# Derive title and description based on BUILD type
+ARG IMAGE_TITLE="Pangolin"
+ARG IMAGE_DESCRIPTION="Identity-aware VPN and proxy for remote access to anything, anywhere"
+
+# OCI Image Labels
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.source="https://github.com/fosrl/pangolin" \
+      org.opencontainers.image.url="https://github.com/fosrl/pangolin" \
+      org.opencontainers.image.documentation="https://docs.pangolin.net" \
+      org.opencontainers.image.vendor="Fossorial" \
+      org.opencontainers.image.licenses="${LICENSE}" \
+      org.opencontainers.image.title="${IMAGE_TITLE}" \
+      org.opencontainers.image.description="${IMAGE_DESCRIPTION}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}"
 
 CMD ["npm", "run", "start"]

@@ -27,7 +27,7 @@ registry.registerPath({
     method: "put",
     path: "/idp/{idpId}/org/{orgId}",
     description: "Create an IDP policy for an existing IDP on an organization.",
-    tags: [OpenAPITags.Idp],
+    tags: [OpenAPITags.GlobalIdp],
     request: {
         params: paramsSchema,
         body: {
@@ -69,6 +69,15 @@ export async function createIdpOrgPolicy(
 
         const { idpId, orgId } = parsedParams.data;
         const { roleMapping, orgMapping } = parsedBody.data;
+
+        if (process.env.IDENTITY_PROVIDER_MODE === "org") {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "Global IdP creation is not allowed in the current identity provider mode. Set app.identity_provider_mode to 'global' in the private configuration to enable this feature."
+                )
+            );
+        }
 
         const [existing] = await db
             .select()

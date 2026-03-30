@@ -33,7 +33,8 @@ async function query(limit: number, offset: number) {
             type: idp.type,
             variant: idpOidcConfig.variant,
             orgCount: sql<number>`count(${idpOrg.orgId})`,
-            autoProvision: idp.autoProvision
+            autoProvision: idp.autoProvision,
+            tags: idp.tags
         })
         .from(idp)
         .leftJoin(idpOrg, sql`${idp.idpId} = ${idpOrg.idpId}`)
@@ -57,7 +58,7 @@ registry.registerPath({
     method: "get",
     path: "/idp",
     description: "List all IDP in the system.",
-    tags: [OpenAPITags.Idp],
+    tags: [OpenAPITags.GlobalIdp],
     request: {
         query: querySchema
     },

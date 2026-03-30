@@ -1,8 +1,8 @@
-import { db, requestAuditLog, resources } from "@server/db";
+import { logsDb, primaryLogsDb, requestAuditLog, resources, db, primaryDb } from "@server/db";
 import { registry } from "@server/openApi";
 import { NextFunction } from "express";
 import { Request, Response } from "express";
-import { eq, gt, lt, and, count, desc } from "drizzle-orm";
+import { eq, gt, lt, and, count, desc, inArray } from "drizzle-orm";
 import { OpenAPITags } from "@server/openApi";
 import { z } from "zod";
 import createHttpError from "http-errors";
@@ -35,7 +35,7 @@ export const queryAccessAuditLogsQuery = z.object({
         })
         .transform((val) => Math.floor(new Date(val).getTime() / 1000))
         .optional()
-        .prefault(new Date().toISOString())
+        .prefault(() => new Date().toISOString())
         .openapi({
             type: "string",
             format: "date-time",
@@ -107,7 +107,7 @@ function getWhere(data: Q) {
 }
 
 export function queryRequest(data: Q) {
-    return db
+    return primaryLogsDb
         .select({
             id: requestAuditLog.id,
             timestamp: requestAuditLog.timestamp,
@@ -129,21 +129,49 @@ export function queryRequest(data: Q) {
             host: requestAuditLog.host,
             path: requestAuditLog.path,
             method: requestAuditLog.method,
-            tls: requestAuditLog.tls,
-            resourceName: resources.name,
-            resourceNiceId: resources.niceId
+            tls: requestAuditLog.tls
         })
         .from(requestAuditLog)
-        .leftJoin(
-            resources,
-            eq(requestAuditLog.resourceId, resources.resourceId)
-        ) // TODO: Is this efficient?
         .where(getWhere(data))
         .orderBy(desc(requestAuditLog.timestamp));
 }
 
+async function enrichWithResourceDetails(logs: Awaited<ReturnType<typeof queryRequest>>) {
+    // If logs database is the same as main database, we can do a join
+    // Otherwise, we need to fetch resource details separately
+    const resourceIds = logs
+        .map(log => log.resourceId)
+        .filter((id): id is number => id !== null && id !== undefined);
+
+    if (resourceIds.length === 0) {
+        return logs.map(log => ({ ...log, resourceName: null, resourceNiceId: null }));
+    }
+
+    // Fetch resource details from main database
+    const resourceDetails = await primaryDb
+        .select({
+            resourceId: resources.resourceId,
+            name: resources.name,
+            niceId: resources.niceId
+        })
+        .from(resources)
+        .where(inArray(resources.resourceId, resourceIds));
+
+    // Create a map for quick lookup
+    const resourceMap = new Map(
+        resourceDetails.map(r => [r.resourceId, { name: r.name, niceId: r.niceId }])
+    );
+
+    // Enrich logs with resource details
+    return logs.map(log => ({
+        ...log,
+        resourceName: log.resourceId ? resourceMap.get(log.resourceId)?.name ?? null : null,
+        resourceNiceId: log.resourceId ? resourceMap.get(log.resourceId)?.niceId ?? null : null
+    }));
+}
+
 export function countRequestQuery(data: Q) {
-    const countQuery = db
+    const countQuery = primaryLogsDb
         .select({ count: count() })
         .from(requestAuditLog)
         .where(getWhere(data));
@@ -154,7 +182,7 @@ registry.registerPath({
     method: "get",
     path: "/org/{orgId}/logs/request",
     description: "Query the request audit log for an organization",
-    tags: [OpenAPITags.Org],
+    tags: [OpenAPITags.Logs],
     request: {
         query: queryAccessAuditLogsQuery,
         params: queryRequestAuditLogsParams
@@ -173,58 +201,86 @@ async function queryUniqueFilterAttributes(
         eq(requestAuditLog.orgId, orgId)
     );
 
-    // Get unique actors
-    const uniqueActors = await db
-        .selectDistinct({
-            actor: requestAuditLog.actor
-        })
-        .from(requestAuditLog)
-        .where(baseConditions);
+    const DISTINCT_LIMIT = 500;
 
-    // Get unique locations
-    const uniqueLocations = await db
-        .selectDistinct({
-            locations: requestAuditLog.location
-        })
-        .from(requestAuditLog)
-        .where(baseConditions);
+    // TODO: SOMEONE PLEASE OPTIMIZE THIS!!!!!
 
-    // Get unique actors
-    const uniqueHosts = await db
-        .selectDistinct({
-            hosts: requestAuditLog.host
-        })
-        .from(requestAuditLog)
-        .where(baseConditions);
+    // Run all queries in parallel
+    const [
+        uniqueActors,
+        uniqueLocations,
+        uniqueHosts,
+        uniquePaths,
+        uniqueResources
+    ] = await Promise.all([
+        primaryLogsDb
+            .selectDistinct({ actor: requestAuditLog.actor })
+            .from(requestAuditLog)
+            .where(baseConditions)
+            .limit(DISTINCT_LIMIT + 1),
+        primaryLogsDb
+            .selectDistinct({ locations: requestAuditLog.location })
+            .from(requestAuditLog)
+            .where(baseConditions)
+            .limit(DISTINCT_LIMIT + 1),
+        primaryLogsDb
+            .selectDistinct({ hosts: requestAuditLog.host })
+            .from(requestAuditLog)
+            .where(baseConditions)
+            .limit(DISTINCT_LIMIT + 1),
+        primaryLogsDb
+            .selectDistinct({ paths: requestAuditLog.path })
+            .from(requestAuditLog)
+            .where(baseConditions)
+            .limit(DISTINCT_LIMIT + 1),
+        primaryLogsDb
+            .selectDistinct({
+                id: requestAuditLog.resourceId
+            })
+            .from(requestAuditLog)
+            .where(baseConditions)
+            .limit(DISTINCT_LIMIT + 1)
+    ]);
 
-    // Get unique actors
-    const uniquePaths = await db
-        .selectDistinct({
-            paths: requestAuditLog.path
-        })
-        .from(requestAuditLog)
-        .where(baseConditions);
+    // TODO: for stuff like the paths this is too restrictive so lets just show some of the paths and the user needs to
+    // refine the time range to see what they need to see
+    // if (
+    //     uniqueActors.length > DISTINCT_LIMIT ||
+    //     uniqueLocations.length > DISTINCT_LIMIT ||
+    //     uniqueHosts.length > DISTINCT_LIMIT ||
+    //     uniquePaths.length > DISTINCT_LIMIT ||
+    //     uniqueResources.length > DISTINCT_LIMIT
+    // ) {
+    //     throw new Error("Too many distinct filter attributes to retrieve. Please refine your time range.");
+    // }
 
-    // Get unique resources with names
-    const uniqueResources = await db
-        .selectDistinct({
-            id: requestAuditLog.resourceId,
-            name: resources.name
-        })
-        .from(requestAuditLog)
-        .leftJoin(
-            resources,
-            eq(requestAuditLog.resourceId, resources.resourceId)
-        )
-        .where(baseConditions);
+    // Fetch resource names from main database for the unique resource IDs
+    const resourceIds = uniqueResources
+        .map(row => row.id)
+        .filter((id): id is number => id !== null);
+
+    let resourcesWithNames: Array<{ id: number; name: string | null }> = [];
+
+    if (resourceIds.length > 0) {
+        const resourceDetails = await primaryDb
+            .select({
+                resourceId: resources.resourceId,
+                name: resources.name
+            })
+            .from(resources)
+            .where(inArray(resources.resourceId, resourceIds));
+
+        resourcesWithNames = resourceDetails.map(r => ({
+            id: r.resourceId,
+            name: r.name
+        }));
+    }
 
     return {
         actors: uniqueActors
             .map((row) => row.actor)
             .filter((actor): actor is string => actor !== null),
-        resources: uniqueResources.filter(
-            (row): row is { id: number; name: string | null } => row.id !== null
-        ),
+        resources: resourcesWithNames,
         locations: uniqueLocations
             .map((row) => row.locations)
             .filter((location): location is string => location !== null),
@@ -267,7 +323,10 @@ export async function queryRequestAuditLogs(
 
         const baseQuery = queryRequest(data);
 
-        const log = await baseQuery.limit(data.limit).offset(data.offset);
+        const logsRaw = await baseQuery.limit(data.limit).offset(data.offset);
+
+        // Enrich with resource details (handles cross-database scenario)
+        const log = await enrichWithResourceDetails(logsRaw);
 
         const totalCountResult = await countRequestQuery(data);
         const totalCount = totalCountResult[0].count;
@@ -295,6 +354,14 @@ export async function queryRequestAuditLogs(
         });
     } catch (error) {
         logger.error(error);
+        // if the message is "Too many distinct filter attributes to retrieve. Please refine your time range.", return a 400 and the message
+        if (
+            error instanceof Error &&
+            error.message ===
+                "Too many distinct filter attributes to retrieve. Please refine your time range."
+        ) {
+            return next(createHttpError(HttpCode.BAD_REQUEST, error.message));
+        }
         return next(
             createHttpError(HttpCode.INTERNAL_SERVER_ERROR, "An error occurred")
         );

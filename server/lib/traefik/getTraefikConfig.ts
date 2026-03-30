@@ -14,29 +14,38 @@ import logger from "@server/logger";
 import config from "@server/lib/config";
 import { resources, sites, Target, targets } from "@server/db";
 import createPathRewriteMiddleware from "./middleware";
-import { sanitize, validatePathRewriteConfig } from "./utils";
+import { sanitize, encodePath, validatePathRewriteConfig } from "./utils";
 
 const redirectHttpsMiddlewareName = "redirect-to-https";
 const badgerMiddlewareName = "badger";
 
+// Define extended target type with site information
+type TargetWithSite = Target & {
+    resourceId: number;
+    targetId: number;
+    ip: string | null;
+    method: string | null;
+    port: number | null;
+    internalPort: number | null;
+    enabled: boolean;
+    health: string | null;
+    site: {
+        siteId: number;
+        type: string;
+        subnet: string | null;
+        exitNodeId: number | null;
+        online: boolean;
+    };
+};
+
 export async function getTraefikConfig(
     exitNodeId: number,
     siteTypes: string[],
-    filterOutNamespaceDomains = false,
-    generateLoginPageRouters = false,
-    allowRawResources = true
+    filterOutNamespaceDomains = false, // UNUSED BUT USED IN PRIVATE
+    generateLoginPageRouters = false, // UNUSED BUT USED IN PRIVATE
+    allowRawResources = true,
+    allowMaintenancePage = true // UNUSED BUT USED IN PRIVATE
 ): Promise<any> {
-    // Define extended target type with site information
-    type TargetWithSite = Target & {
-        site: {
-            siteId: number;
-            type: string;
-            subnet: string | null;
-            exitNodeId: number | null;
-            online: boolean;
-        };
-    };
-
     // Get resources with their targets and sites in a single optimized query
     // Start from sites on this exit node, then join to targets and resources
     const resourcesWithTargetsAndSites = await db
@@ -59,6 +68,7 @@ export async function getTraefikConfig(
             headers: resources.headers,
             proxyProtocol: resources.proxyProtocol,
             proxyProtocolVersion: resources.proxyProtocolVersion,
+
             // Target fields
             targetId: targets.targetId,
             targetEnabled: targets.enabled,
@@ -103,10 +113,6 @@ export async function getTraefikConfig(
                         eq(sites.type, "local")
                     )
                 ),
-                or(
-                    ne(targetHealthCheck.hcHealth, "unhealthy"), // Exclude unhealthy targets
-                    isNull(targetHealthCheck.hcHealth) // Include targets with no health check record
-                ),
                 inArray(sites.type, siteTypes),
                 allowRawResources
                     ? isNotNull(resources.http) // ignore the http check if allow_raw_resources is true
@@ -121,7 +127,7 @@ export async function getTraefikConfig(
     resourcesWithTargetsAndSites.forEach((row) => {
         const resourceId = row.resourceId;
         const resourceName = sanitize(row.resourceName) || "";
-        const targetPath = sanitize(row.path) || ""; // Handle null/undefined paths
+        const targetPath = encodePath(row.path); // Use encodePath to avoid collisions (e.g. "/a/b" vs "/a-b")
         const pathMatchType = row.pathMatchType || "";
         const rewritePath = row.rewritePath || "";
         const rewritePathType = row.rewritePathType || "";
@@ -139,7 +145,7 @@ export async function getTraefikConfig(
         const mapKey = [resourceId, pathKey].filter(Boolean).join("-");
         const key = sanitize(mapKey);
 
-        if (!resourcesMap.has(key)) {
+        if (!resourcesMap.has(mapKey)) {
             const validation = validatePathRewriteConfig(
                 row.path,
                 row.pathMatchType,
@@ -154,9 +160,10 @@ export async function getTraefikConfig(
                 return;
             }
 
-            resourcesMap.set(key, {
+            resourcesMap.set(mapKey, {
                 resourceId: row.resourceId,
                 name: resourceName,
+                key: key,
                 fullDomain: row.fullDomain,
                 ssl: row.ssl,
                 http: row.http,
@@ -184,8 +191,7 @@ export async function getTraefikConfig(
             });
         }
 
-        // Add target with its associated site data
-        resourcesMap.get(key).targets.push({
+        resourcesMap.get(mapKey).targets.push({
             resourceId: row.resourceId,
             targetId: row.targetId,
             ip: row.ip,
@@ -193,6 +199,7 @@ export async function getTraefikConfig(
             port: row.port,
             internalPort: row.internalPort,
             enabled: row.targetEnabled,
+            health: row.hcHealth,
             site: {
                 siteId: row.siteId,
                 type: row.siteType,
@@ -221,8 +228,9 @@ export async function getTraefikConfig(
     };
 
     // get the key and the resource
-    for (const [key, resource] of resourcesMap.entries()) {
-        const targets = resource.targets;
+    for (const [, resource] of resourcesMap.entries()) {
+        const targets = resource.targets as TargetWithSite[];
+        const key = resource.key;
 
         const routerName = `${key}-${resource.name}-router`;
         const serviceName = `${key}-${resource.name}-service`;
@@ -470,17 +478,24 @@ export async function getTraefikConfig(
                         // RECEIVE BANDWIDTH ENDPOINT.
 
                         // TODO: HOW TO HANDLE ^^^^^^ BETTER
-                        const anySitesOnline = (
-                            targets as TargetWithSite[]
-                        ).some((target: TargetWithSite) => target.site.online);
+                        const anySitesOnline = targets.some(
+                            (target) =>
+                            target.site.online ||
+                            target.site.type === "local" ||
+                            target.site.type === "wireguard"
+                        );
 
                         return (
-                            (targets as TargetWithSite[])
-                                .filter((target: TargetWithSite) => {
+                            targets
+                                .filter((target) => {
                                     if (!target.enabled) {
                                         return false;
                                     }
 
+                                    if (target.health == "unhealthy") {
+                                        return false;
+                                    }
+                                    
                                     // If any sites are online, exclude offline sites
                                     if (anySitesOnline && !target.site.online) {
                                         return false;
@@ -508,7 +523,7 @@ export async function getTraefikConfig(
                                     }
                                     return true;
                                 })
-                                .map((target: TargetWithSite) => {
+                                .map((target) => {
                                     if (
                                         target.site.type === "local" ||
                                         target.site.type === "wireguard"
@@ -594,16 +609,19 @@ export async function getTraefikConfig(
                 loadBalancer: {
                     servers: (() => {
                         // Check if any sites are online
-                        const anySitesOnline = (
-                            targets as TargetWithSite[]
-                        ).some((target: TargetWithSite) => target.site.online);
+                        const anySitesOnline = targets.some(
+                            (target) =>
+                            target.site.online ||
+                            target.site.type === "local" ||
+                            target.site.type === "wireguard"
+                        );
 
-                        return (targets as TargetWithSite[])
-                            .filter((target: TargetWithSite) => {
+                        return targets
+                            .filter((target) => {
                                 if (!target.enabled) {
                                     return false;
                                 }
-
+                                
                                 // If any sites are online, exclude offline sites
                                 if (anySitesOnline && !target.site.online) {
                                     return false;
@@ -626,7 +644,7 @@ export async function getTraefikConfig(
                                 }
                                 return true;
                             })
-                            .map((target: TargetWithSite) => {
+                            .map((target) => {
                                 if (
                                     target.site.type === "local" ||
                                     target.site.type === "wireguard"

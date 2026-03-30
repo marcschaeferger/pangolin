@@ -1,15 +1,14 @@
-import { Request, Response, NextFunction } from "express";
-import { z } from "zod";
-import { db } from "@server/db";
-import { Resource, resources, sites } from "@server/db";
-import { eq, and } from "drizzle-orm";
+import { db, resources } from "@server/db";
 import response from "@server/lib/response";
-import HttpCode from "@server/types/HttpCode";
-import createHttpError from "http-errors";
-import { fromError } from "zod-validation-error";
-import logger from "@server/logger";
 import stoi from "@server/lib/stoi";
+import logger from "@server/logger";
 import { OpenAPITags, registry } from "@server/openApi";
+import HttpCode from "@server/types/HttpCode";
+import { and, eq } from "drizzle-orm";
+import { NextFunction, Request, Response } from "express";
+import createHttpError from "http-errors";
+import { z } from "zod";
+import { fromError } from "zod-validation-error";
 
 const getResourceSchema = z.strictObject({
     resourceId: z
@@ -54,7 +53,7 @@ registry.registerPath({
     path: "/org/{orgId}/resource/{niceId}",
     description:
         "Get a resource by orgId and niceId. NiceId is a readable ID for the resource and unique on a per org basis.",
-    tags: [OpenAPITags.Org, OpenAPITags.Resource],
+    tags: [OpenAPITags.PublicResource],
     request: {
         params: z.object({
             orgId: z.string(),
@@ -68,7 +67,7 @@ registry.registerPath({
     method: "get",
     path: "/resource/{resourceId}",
     description: "Get a resource by resourceId.",
-    tags: [OpenAPITags.Resource],
+    tags: [OpenAPITags.PublicResource],
     request: {
         params: z.object({
             resourceId: z.number()

@@ -2,9 +2,15 @@ import { db, orgs } from "@server/db";
 import { cleanUpOldLogs as cleanUpOldAccessLogs } from "#dynamic/lib/logAccessAudit";
 import { cleanUpOldLogs as cleanUpOldActionLogs } from "#dynamic/middlewares/logActionAudit";
 import { cleanUpOldLogs as cleanUpOldRequestLogs } from "@server/routers/badger/logRequestAudit";
+import { cleanUpOldLogs as cleanUpOldConnectionLogs } from "#dynamic/routers/newt";
 import { gt, or } from "drizzle-orm";
+import { cleanUpOldFingerprintSnapshots } from "@server/routers/olm/fingerprintingUtils";
+import { build } from "@server/build";
 
 export function initLogCleanupInterval() {
+    if (build == "saas") { // skip log cleanup for saas builds
+        return null;
+    }
     return setInterval(
         async () => {
             const orgsToClean = await db
@@ -15,23 +21,28 @@ export function initLogCleanupInterval() {
                     settingsLogRetentionDaysAccess:
                         orgs.settingsLogRetentionDaysAccess,
                     settingsLogRetentionDaysRequest:
-                        orgs.settingsLogRetentionDaysRequest
+                        orgs.settingsLogRetentionDaysRequest,
+                    settingsLogRetentionDaysConnection:
+                        orgs.settingsLogRetentionDaysConnection
                 })
                 .from(orgs)
                 .where(
                     or(
                         gt(orgs.settingsLogRetentionDaysAction, 0),
                         gt(orgs.settingsLogRetentionDaysAccess, 0),
-                        gt(orgs.settingsLogRetentionDaysRequest, 0)
+                        gt(orgs.settingsLogRetentionDaysRequest, 0),
+                        gt(orgs.settingsLogRetentionDaysConnection, 0)
                     )
                 );
 
+            // TODO: handle when there are multiple nodes doing this clearing using redis
             for (const org of orgsToClean) {
                 const {
                     orgId,
                     settingsLogRetentionDaysAction,
                     settingsLogRetentionDaysAccess,
-                    settingsLogRetentionDaysRequest
+                    settingsLogRetentionDaysRequest,
+                    settingsLogRetentionDaysConnection
                 } = org;
 
                 if (settingsLogRetentionDaysAction > 0) {
@@ -54,7 +65,16 @@ export function initLogCleanupInterval() {
                         settingsLogRetentionDaysRequest
                     );
                 }
+
+                if (settingsLogRetentionDaysConnection > 0) {
+                    await cleanUpOldConnectionLogs(
+                        orgId,
+                        settingsLogRetentionDaysConnection
+                    );
+                }
             }
+
+            await cleanUpOldFingerprintSnapshots(365);
         },
         3 * 60 * 60 * 1000
     ); // every 3 hours

@@ -2,23 +2,17 @@ import { z } from "zod";
 import { MessageHandler } from "@server/routers/ws";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
-import {
-    db,
-    ExitNode,
-    exitNodes,
-    siteResources,
-    clientSiteResourcesAssociationsCache
-} from "@server/db";
-import { clients, clientSitesAssociationsCache, Newt, sites } from "@server/db";
+import { db, ExitNode, exitNodes, Newt, sites } from "@server/db";
 import { eq } from "drizzle-orm";
-import { initPeerAddHandshake, updatePeer } from "../olm/peers";
 import { sendToExitNode } from "#dynamic/lib/exitNodes";
-import { generateSubnetProxyTargets, SubnetProxyTarget } from "@server/lib/ip";
-import config from "@server/lib/config";
+import { buildClientConfigurationForNewtClient } from "./buildConfiguration";
+import { convertTargetsIfNessicary } from "../client/targets";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 const inputSchema = z.object({
     publicKey: z.string(),
-    port: z.int().positive()
+    port: z.int().positive(),
+    chainId: z.string()
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -50,7 +44,7 @@ export const handleGetConfigMessage: MessageHandler = async (context) => {
         return;
     }
 
-    const { publicKey, port } = message.data as Input;
+    const { publicKey, port, chainId } = message.data as Input;
     const siteId = newt.siteId;
 
     // Get the current site data
@@ -113,11 +107,11 @@ export const handleGetConfigMessage: MessageHandler = async (context) => {
             const payload = {
                 oldDestination: {
                     destinationIP: existingSite.subnet?.split("/")[0],
-                    destinationPort: existingSite.listenPort
+                    destinationPort: existingSite.listenPort || 1 // this satisfies gerbil for now but should be reevaluated
                 },
                 newDestination: {
                     destinationIP: site.subnet?.split("/")[0],
-                    destinationPort: site.listenPort
+                    destinationPort: site.listenPort || 1 // this satisfies gerbil for now but should be reevaluated
                 }
             };
 
@@ -130,168 +124,25 @@ export const handleGetConfigMessage: MessageHandler = async (context) => {
         }
     }
 
-    // Get all clients connected to this site
-    const clientsRes = await db
-        .select()
-        .from(clients)
-        .innerJoin(
-            clientSitesAssociationsCache,
-            eq(clients.clientId, clientSitesAssociationsCache.clientId)
-        )
-        .where(eq(clientSitesAssociationsCache.siteId, siteId));
+    const { peers, targets } = await buildClientConfigurationForNewtClient(
+        site,
+        exitNode
+    );
 
-    let peers: Array<{
-        publicKey: string;
-        allowedIps: string[];
-        endpoint?: string;
-    }> = [];
+    const targetsToSend = await convertTargetsIfNessicary(newt.newtId, targets);
 
-    if (site.publicKey && site.endpoint && exitNode) {
-        // Prepare peers data for the response
-        peers = await Promise.all(
-            clientsRes
-                .filter((client) => {
-                    if (!client.clients.pubKey) {
-                        logger.warn(
-                            `Client ${client.clients.clientId} has no public key, skipping`
-                        );
-                        return false;
-                    }
-                    if (!client.clients.subnet) {
-                        logger.warn(
-                            `Client ${client.clients.clientId} has no subnet, skipping`
-                        );
-                        return false;
-                    }
-                    return true;
-                })
-                .map(async (client) => {
-                    // Add or update this peer on the olm if it is connected
-
-                    // const allSiteResources = await db // only get the site resources that this client has access to
-                    //     .select()
-                    //     .from(siteResources)
-                    //     .innerJoin(
-                    //         clientSiteResourcesAssociationsCache,
-                    //         eq(
-                    //             siteResources.siteResourceId,
-                    //             clientSiteResourcesAssociationsCache.siteResourceId
-                    //         )
-                    //     )
-                    //     .where(
-                    //         and(
-                    //             eq(siteResources.siteId, site.siteId),
-                    //             eq(
-                    //                 clientSiteResourcesAssociationsCache.clientId,
-                    //                 client.clients.clientId
-                    //             )
-                    //         )
-                    //     );
-
-                    // update the peer info on the olm
-                    // if the peer has not been added yet this will be a no-op
-                    await updatePeer(client.clients.clientId, {
-                        siteId: site.siteId,
-                        endpoint: site.endpoint!,
-                        relayEndpoint: `${exitNode.endpoint}:${config.getRawConfig().gerbil.clients_start_port}`,
-                        publicKey: site.publicKey!,
-                        serverIP: site.address,
-                        serverPort: site.listenPort
-                        // remoteSubnets: generateRemoteSubnets(
-                        //     allSiteResources.map(
-                        //         ({ siteResources }) => siteResources
-                        //     )
-                        // ),
-                        // aliases: generateAliasConfig(
-                        //     allSiteResources.map(
-                        //         ({ siteResources }) => siteResources
-                        //     )
-                        // )
-                    });
-
-                    // also trigger the peer add handshake in case the peer was not already added to the olm and we need to hole punch
-                    // if it has already been added this will be a no-op
-                    await initPeerAddHandshake(
-                        // this will kick off the add peer process for the client
-                        client.clients.clientId,
-                        {
-                            siteId,
-                            exitNode: {
-                                publicKey: exitNode.publicKey,
-                                endpoint: exitNode.endpoint
-                            }
-                        }
-                    );
-
-                    return {
-                        publicKey: client.clients.pubKey!,
-                        allowedIps: [
-                            `${client.clients.subnet.split("/")[0]}/32`
-                        ], // we want to only allow from that client
-                        endpoint: client.clientSitesAssociationsCache.isRelayed
-                            ? ""
-                            : client.clientSitesAssociationsCache.endpoint! // if its relayed it should be localhost
-                    };
-                })
-        );
-    }
-
-    // Filter out any null values from peers that didn't have an olm
-    const validPeers = peers.filter((peer) => peer !== null);
-
-    // Get all enabled site resources for this site
-    const allSiteResources = await db
-        .select()
-        .from(siteResources)
-        .where(eq(siteResources.siteId, siteId));
-
-    const targetsToSend: SubnetProxyTarget[] = [];
-
-    for (const resource of allSiteResources) {
-        // Get clients associated with this specific resource
-        const resourceClients = await db
-            .select({
-                clientId: clients.clientId,
-                pubKey: clients.pubKey,
-                subnet: clients.subnet
-            })
-            .from(clients)
-            .innerJoin(
-                clientSiteResourcesAssociationsCache,
-                eq(
-                    clients.clientId,
-                    clientSiteResourcesAssociationsCache.clientId
-                )
-            )
-            .where(
-                eq(
-                    clientSiteResourcesAssociationsCache.siteResourceId,
-                    resource.siteResourceId
-                )
-            );
-
-        const resourceTargets = generateSubnetProxyTargets(
-            resource,
-            resourceClients
-        );
-
-        targetsToSend.push(...resourceTargets);
-    }
-
-    // Build the configuration response
-    const configResponse = {
-        ipAddress: site.address,
-        peers: validPeers,
-        targets: targetsToSend
-    };
-
-    logger.debug("Sending config: ", configResponse);
     return {
         message: {
             type: "newt/wg/receive-config",
             data: {
-                ...configResponse
+                ipAddress: site.address,
+                peers,
+                targets: targetsToSend,
+                chainId: chainId
             }
+        },
+        options: {
+            compress: canCompress(newt.version, "newt")
         },
         broadcast: false,
         excludeSender: false

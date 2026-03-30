@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
     db,
     resourceHeaderAuth,
+    resourceHeaderAuthExtendedCompatibility,
     resourcePassword,
     resourcePincode,
     resources
@@ -27,12 +28,14 @@ export type GetResourceAuthInfoResponse = {
     password: boolean;
     pincode: boolean;
     headerAuth: boolean;
+    headerAuthExtendedCompatibility: boolean;
     sso: boolean;
     blockAccess: boolean;
     url: string;
     whitelist: boolean;
     skipToIdpId: number | null;
     orgId: string;
+    postAuthPath: string | null;
 };
 
 export async function getResourceAuthInfo(
@@ -76,6 +79,13 @@ export async function getResourceAuthInfo(
                               resources.resourceId
                           )
                       )
+                      .leftJoin(
+                          resourceHeaderAuthExtendedCompatibility,
+                          eq(
+                              resourceHeaderAuthExtendedCompatibility.resourceId,
+                              resources.resourceId
+                          )
+                      )
                       .where(eq(resources.resourceId, Number(resourceGuid)))
                       .limit(1)
                 : await db
@@ -97,6 +107,13 @@ export async function getResourceAuthInfo(
                               resources.resourceId
                           )
                       )
+                      .leftJoin(
+                          resourceHeaderAuthExtendedCompatibility,
+                          eq(
+                              resourceHeaderAuthExtendedCompatibility.resourceId,
+                              resources.resourceId
+                          )
+                      )
                       .where(eq(resources.resourceGuid, resourceGuid))
                       .limit(1);
 
@@ -110,6 +127,8 @@ export async function getResourceAuthInfo(
         const pincode = result?.resourcePincode;
         const password = result?.resourcePassword;
         const headerAuth = result?.resourceHeaderAuth;
+        const headerAuthExtendedCompatibility =
+            result?.resourceHeaderAuthExtendedCompatibility;
 
         const url = `${resource.ssl ? "https" : "http"}://${resource.fullDomain}`;
 
@@ -122,12 +141,15 @@ export async function getResourceAuthInfo(
                 password: password !== null,
                 pincode: pincode !== null,
                 headerAuth: headerAuth !== null,
+                headerAuthExtendedCompatibility:
+                    headerAuthExtendedCompatibility !== null,
                 sso: resource.sso,
                 blockAccess: resource.blockAccess,
                 url,
                 whitelist: resource.emailWhitelistEnabled,
                 skipToIdpId: resource.skipToIdpId,
-                orgId: resource.orgId
+                orgId: resource.orgId,
+                postAuthPath: resource.postAuthPath ?? null
             },
             success: true,
             error: false,

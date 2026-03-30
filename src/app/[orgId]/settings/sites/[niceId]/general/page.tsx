@@ -24,15 +24,16 @@ import {
     SettingsSectionTitle,
     SettingsSectionDescription,
     SettingsSectionBody,
-    SettingsSectionForm
+    SettingsSectionForm,
+    SettingsSectionFooter
 } from "@app/components/Settings";
 import { formatAxiosError } from "@app/lib/api";
 import { createApiClient } from "@app/lib/api";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useState } from "react";
 import { SwitchInput } from "@app/components/SwitchInput";
+import { ExternalLink } from "lucide-react";
 import { useTranslations } from "next-intl";
-import Link from "next/link";
 
 const GeneralFormSchema = z.object({
     name: z.string().nonempty("Name is required"),
@@ -186,21 +187,22 @@ export default function GeneralPage() {
                                                 </FormControl>
                                                 <FormMessage />
                                                 <FormDescription>
-                                                    {t(
-                                                        "enableDockerSocketDescription"
-                                                    )}{" "}
-                                                    <Link
-                                                        href="https://docs.pangolin.net/manage/sites/configure-site#docker-socket-integration"
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-primary hover:underline inline-flex items-center"
-                                                    >
-                                                        <span>
-                                                            {t(
-                                                                "enableDockerSocketLink"
-                                                            )}
-                                                        </span>
-                                                    </Link>
+                                                    {t.rich(
+                                                        "enableDockerSocketDescription",
+                                                        {
+                                                            docsLink: (chunks) => (
+                                                                <a
+                                                                    href="https://docs.pangolin.net/manage/sites/configure-site#docker-socket-integration"
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-primary hover:underline inline-flex items-center gap-1"
+                                                                >
+                                                                    {chunks}
+                                                                    <ExternalLink className="size-3.5 shrink-0" />
+                                                                </a>
+                                                            )
+                                                        }
+                                                    )}
                                                 </FormDescription>
                                             </FormItem>
                                         )}
@@ -210,18 +212,17 @@ export default function GeneralPage() {
                         </Form>
                     </SettingsSectionForm>
                 </SettingsSectionBody>
+                <SettingsSectionFooter>
+                    <Button
+                        type="submit"
+                        form="general-settings-form"
+                        loading={loading}
+                        disabled={loading}
+                    >
+                        Save All Settings
+                    </Button>
+                </SettingsSectionFooter>
             </SettingsSection>
-
-            <div className="flex justify-end mt-6">
-                <Button
-                    type="submit"
-                    form="general-settings-form"
-                    loading={loading}
-                    disabled={loading}
-                >
-                    Save All Settings
-                </Button>
-            </div>
         </SettingsContainer>
     );
 }

@@ -16,6 +16,7 @@ import * as auth from "#private/routers/auth";
 import * as orgIdp from "#private/routers/orgIdp";
 import * as billing from "#private/routers/billing";
 import * as license from "#private/routers/license";
+import * as resource from "#private/routers/resource";
 
 import { verifySessionUserMiddleware } from "@server/middlewares";
 
@@ -28,6 +29,7 @@ internalRouter.get("/org/:orgId/idp", orgIdp.listOrgIdps);
 internalRouter.get("/org/:orgId/billing/tier", billing.getOrgTier);
 
 internalRouter.get("/login-page", loginPage.loadLoginPage);
+internalRouter.get("/login-page-branding", loginPage.loadLoginPageBranding);
 
 internalRouter.post(
     "/get-session-transfer-token",
@@ -36,3 +38,5 @@ internalRouter.post(
 );
 
 internalRouter.get(`/license/status`, license.getLicenseStatus);
+
+internalRouter.get("/maintenance/info", resource.getMaintenanceInfo);

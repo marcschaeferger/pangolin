@@ -1,15 +1,22 @@
 "use client";
 
+import CopyToClipboard from "@app/components/CopyToClipboard";
+import {
+    InfoSection,
+    InfoSectionContent,
+    InfoSections,
+    InfoSectionTitle
+} from "@app/components/InfoSection";
 import {
     SettingsContainer,
     SettingsSection,
     SettingsSectionBody,
     SettingsSectionDescription,
-    SettingsSectionForm,
     SettingsSectionHeader,
     SettingsSectionTitle
 } from "@app/components/Settings";
-import { StrategySelect } from "@app/components/StrategySelect";
+import HeaderTitle from "@app/components/SettingsSectionTitle";
+import { Button } from "@app/components/ui/button";
 import {
     Form,
     FormControl,
@@ -19,44 +26,24 @@ import {
     FormLabel,
     FormMessage
 } from "@app/components/ui/form";
-import HeaderTitle from "@app/components/SettingsSectionTitle";
-import { z } from "zod";
-import { createElement, useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Input } from "@app/components/ui/input";
-import { InfoIcon, Terminal } from "lucide-react";
-import { Button } from "@app/components/ui/button";
-import CopyTextBox from "@app/components/CopyTextBox";
-import CopyToClipboard from "@app/components/CopyToClipboard";
-import {
-    InfoSection,
-    InfoSectionContent,
-    InfoSections,
-    InfoSectionTitle
-} from "@app/components/InfoSection";
-import {
-    FaApple,
-    FaCubes,
-    FaDocker,
-    FaFreebsd,
-    FaWindows
-} from "react-icons/fa";
-import { SiNixos, SiKubernetes } from "react-icons/si";
-import { Alert, AlertDescription, AlertTitle } from "@app/components/ui/alert";
-import { createApiClient, formatAxiosError } from "@app/lib/api";
 import { useEnvContext } from "@app/hooks/useEnvContext";
+import { toast } from "@app/hooks/useToast";
+import { createApiClient, formatAxiosError } from "@app/lib/api";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
     CreateClientBody,
     CreateClientResponse,
     PickClientDefaultsResponse
 } from "@server/routers/client";
-import { ListSitesResponse } from "@server/routers/site";
-import { toast } from "@app/hooks/useToast";
 import { AxiosResponse } from "axios";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { Tag, TagInput } from "@app/components/tags/tag-input";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
+import { OlmInstallCommands } from "@app/components/olm-install-commands";
 import { useTranslations } from "next-intl";
 
 type ClientType = "olm";
@@ -67,17 +54,6 @@ interface TunnelTypeOption {
     description: string;
     disabled?: boolean;
 }
-
-type CommandItem = string | { title: string; command: string };
-
-type Commands = {
-    unix: Record<string, CommandItem[]>;
-    windows: Record<string, CommandItem[]>;
-};
-
-const platforms = ["unix", "windows"] as const;
-
-type Platform = (typeof platforms)[number];
 
 export default function Page() {
     const { env } = useEnvContext();
@@ -112,125 +88,15 @@ export default function Page() {
 
     const [loadingPage, setLoadingPage] = useState(true);
 
-    const [platform, setPlatform] = useState<Platform>("unix");
-    const [architecture, setArchitecture] = useState("All");
-    const [commands, setCommands] = useState<Commands | null>(null);
-
     const [olmId, setOlmId] = useState("");
     const [olmSecret, setOlmSecret] = useState("");
-    const [olmCommand, setOlmCommand] = useState("");
+    const [olmVersion, setOlmVersion] = useState("latest");
 
     const [createLoading, setCreateLoading] = useState(false);
+    const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
     const [clientDefaults, setClientDefaults] =
         useState<PickClientDefaultsResponse | null>(null);
-
-    const hydrateCommands = (
-        id: string,
-        secret: string,
-        endpoint: string,
-        version: string
-    ) => {
-        const commands = {
-            unix: {
-                All: [
-                    {
-                        title: t("install"),
-                        command: `curl -fsSL https://static.pangolin.net/get-olm.sh | bash`
-                    },
-                    {
-                        title: t("run"),
-                        command: `sudo olm --id ${id} --secret ${secret} --endpoint ${endpoint}`
-                    }
-                ]
-            },
-            windows: {
-                x64: [
-                    {
-                        title: t("install"),
-                        command: `curl -o olm.exe -L "https://github.com/fosrl/olm/releases/download/${version}/olm_windows_installer.exe"`
-                    },
-                    {
-                        title: t("run"),
-                        command: `olm.exe --id ${id} --secret ${secret} --endpoint ${endpoint}`
-                    }
-                ]
-            }
-        };
-        setCommands(commands);
-    };
-
-    const getArchitectures = () => {
-        switch (platform) {
-            case "unix":
-                return ["All"];
-            case "windows":
-                return ["x64"];
-            default:
-                return ["x64"];
-        }
-    };
-
-    const getPlatformName = (platformName: string) => {
-        switch (platformName) {
-            case "windows":
-                return "Windows";
-            case "unix":
-                return "Unix & macOS";
-            case "docker":
-                return "Docker";
-            default:
-                return "Unix & macOS";
-        }
-    };
-
-    const getCommand = (): CommandItem[] => {
-        const placeholder: CommandItem[] = [t("unknownCommand")];
-        if (!commands) {
-            return placeholder;
-        }
-        let platformCommands = commands[platform as keyof Commands];
-
-        if (!platformCommands) {
-            // get first key
-            const firstPlatform = Object.keys(commands)[0] as Platform;
-            platformCommands = commands[firstPlatform as keyof Commands];
-
-            setPlatform(firstPlatform);
-        }
-
-        let architectureCommands = platformCommands[architecture];
-        if (!architectureCommands) {
-            // get first key
-            const firstArchitecture = Object.keys(platformCommands)[0];
-            architectureCommands = platformCommands[firstArchitecture];
-
-            setArchitecture(firstArchitecture);
-        }
-
-        return architectureCommands || placeholder;
-    };
-
-    const getPlatformIcon = (platformName: string) => {
-        switch (platformName) {
-            case "windows":
-                return <FaWindows className="h-4 w-4 mr-2" />;
-            case "unix":
-                return <Terminal className="h-4 w-4 mr-2" />;
-            case "docker":
-                return <FaDocker className="h-4 w-4 mr-2" />;
-            case "kubernetes":
-                return <SiKubernetes className="h-4 w-4 mr-2" />;
-            case "podman":
-                return <FaCubes className="h-4 w-4 mr-2" />;
-            case "freebsd":
-                return <FaFreebsd className="h-4 w-4 mr-2" />;
-            case "nixos":
-                return <SiNixos className="h-4 w-4 mr-2" />;
-            default:
-                return <Terminal className="h-4 w-4 mr-2" />;
-        }
-    };
 
     const form = useForm<CreateClientFormValues>({
         resolver: zodResolver(createClientFormSchema),
@@ -286,23 +152,6 @@ export default function Page() {
         const load = async () => {
             setLoadingPage(true);
 
-            // Fetch available sites
-
-            // const res = await api.get<AxiosResponse<ListSitesResponse>>(
-            //     `/org/${orgId}/sites/`
-            // );
-            // const sites = res.data.data.sites.filter(
-            //     (s) => s.type === "newt" && s.subnet
-            // );
-            // setSites(
-            //     sites.map((site) => ({
-            //         id: site.siteId.toString(),
-            //         text: site.name
-            //     }))
-            // );
-
-            let olmVersion = "latest";
-
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -323,7 +172,7 @@ export default function Page() {
                 }
                 const data = await response.json();
                 const latestVersion = data.tag_name;
-                olmVersion = latestVersion;
+                setOlmVersion(latestVersion);
             } catch (error) {
                 if (error instanceof Error && error.name === "AbortError") {
                     console.error(t("olmErrorFetchTimeout"));
@@ -352,18 +201,9 @@ export default function Page() {
 
                         const olmId = data.olmId;
                         const olmSecret = data.olmSecret;
-                        const olmCommand = `olm --id ${olmId} --secret ${olmSecret} --endpoint ${env.app.dashboardUrl}`;
 
                         setOlmId(olmId);
                         setOlmSecret(olmSecret);
-                        setOlmCommand(olmCommand);
-
-                        hydrateCommands(
-                            olmId,
-                            olmSecret,
-                            env.app.dashboardUrl,
-                            olmVersion
-                        );
 
                         if (data.subnet) {
                             form.setValue("subnet", data.subnet);
@@ -443,33 +283,54 @@ export default function Page() {
                                                 </FormItem>
                                             )}
                                         />
-
-                                        <FormField
-                                            control={form.control}
-                                            name="subnet"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>
-                                                        {t("clientAddress")}
-                                                    </FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            autoComplete="off"
-                                                            placeholder={t(
-                                                                "subnetPlaceholder"
+                                        <div className="flex items-center justify-end md:col-start-2">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() =>
+                                                    setShowAdvancedSettings(
+                                                        !showAdvancedSettings
+                                                    )
+                                                }
+                                                className="flex items-center gap-2"
+                                            >
+                                                {showAdvancedSettings ? (
+                                                    <ChevronUp className="h-4 w-4" />
+                                                ) : (
+                                                    <ChevronDown className="h-4 w-4" />
+                                                )}
+                                                {t("advancedSettings")}
+                                            </Button>
+                                        </div>
+                                        {showAdvancedSettings && (
+                                            <FormField
+                                                control={form.control}
+                                                name="subnet"
+                                                render={({ field }) => (
+                                                    <FormItem className="md:col-start-1 md:col-span-2">
+                                                        <FormLabel>
+                                                            {t("clientAddress")}
+                                                        </FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                autoComplete="off"
+                                                                placeholder={t(
+                                                                    "subnetPlaceholder"
+                                                                )}
+                                                                {...field}
+                                                            />
+                                                        </FormControl>
+                                                        <FormMessage />
+                                                        <FormDescription>
+                                                            {t(
+                                                                "addressDescription"
                                                             )}
-                                                            {...field}
-                                                        />
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                    <FormDescription>
-                                                        {t(
-                                                            "addressDescription"
-                                                        )}
-                                                    </FormDescription>
-                                                </FormItem>
-                                            )}
-                                        />
+                                                        </FormDescription>
+                                                    </FormItem>
+                                                )}
+                                            />
+                                        )}
                                     </form>
                                 </Form>
                             </SettingsSectionBody>
@@ -523,132 +384,14 @@ export default function Page() {
                                                 </InfoSectionContent>
                                             </InfoSection>
                                         </InfoSections>
-
-                                        <Alert variant="neutral" className="">
-                                            <InfoIcon className="h-4 w-4" />
-                                            <AlertTitle className="font-semibold">
-                                                {t("clientCredentialsSave")}
-                                            </AlertTitle>
-                                            <AlertDescription>
-                                                {t(
-                                                    "clientCredentialsSaveDescription"
-                                                )}
-                                            </AlertDescription>
-                                        </Alert>
                                     </SettingsSectionBody>
                                 </SettingsSection>
-                                <SettingsSection>
-                                    <SettingsSectionHeader>
-                                        <SettingsSectionTitle>
-                                            {t("clientInstallOlm")}
-                                        </SettingsSectionTitle>
-                                        <SettingsSectionDescription>
-                                            {t("clientInstallOlmDescription")}
-                                        </SettingsSectionDescription>
-                                    </SettingsSectionHeader>
-                                    <SettingsSectionBody>
-                                        <div>
-                                            <p className="font-bold mb-3">
-                                                {t("operatingSystem")}
-                                            </p>
-                                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                                                {platforms.map((os) => (
-                                                    <Button
-                                                        key={os}
-                                                        variant={
-                                                            platform === os
-                                                                ? "squareOutlinePrimary"
-                                                                : "squareOutline"
-                                                        }
-                                                        className={`flex-1 min-w-[120px] ${platform === os ? "bg-primary/10" : ""} shadow-none`}
-                                                        onClick={() => {
-                                                            setPlatform(os);
-                                                        }}
-                                                    >
-                                                        {getPlatformIcon(os)}
-                                                        {getPlatformName(os)}
-                                                    </Button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <p className="font-bold mb-3">
-                                                {["docker", "podman"].includes(
-                                                    platform
-                                                )
-                                                    ? t("method")
-                                                    : t("architecture")}
-                                            </p>
-                                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                                                {getArchitectures().map(
-                                                    (arch) => (
-                                                        <Button
-                                                            key={arch}
-                                                            variant={
-                                                                architecture ===
-                                                                arch
-                                                                    ? "squareOutlinePrimary"
-                                                                    : "squareOutline"
-                                                            }
-                                                            className={`flex-1 min-w-[120px] ${architecture === arch ? "bg-primary/10" : ""} shadow-none`}
-                                                            onClick={() =>
-                                                                setArchitecture(
-                                                                    arch
-                                                                )
-                                                            }
-                                                        >
-                                                            {arch}
-                                                        </Button>
-                                                    )
-                                                )}
-                                            </div>
-                                            <div className="pt-4">
-                                                <p className="font-bold mb-3">
-                                                    {t("commands")}
-                                                </p>
-                                                <div className="mt-2 space-y-3">
-                                                    {getCommand().map(
-                                                        (item, index) => {
-                                                            const commandText =
-                                                                typeof item ===
-                                                                "string"
-                                                                    ? item
-                                                                    : item.command;
-                                                            const title =
-                                                                typeof item ===
-                                                                "string"
-                                                                    ? undefined
-                                                                    : item.title;
-
-                                                            return (
-                                                                <div
-                                                                    key={index}
-                                                                >
-                                                                    {title && (
-                                                                        <p className="text-sm font-medium mb-1.5">
-                                                                            {
-                                                                                title
-                                                                            }
-                                                                        </p>
-                                                                    )}
-                                                                    <CopyTextBox
-                                                                        text={
-                                                                            commandText
-                                                                        }
-                                                                        outline={
-                                                                            true
-                                                                        }
-                                                                    />
-                                                                </div>
-                                                            );
-                                                        }
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </SettingsSectionBody>
-                                </SettingsSection>
+                                <OlmInstallCommands
+                                    id={olmId}
+                                    endpoint={env.app.dashboardUrl}
+                                    secret={olmSecret}
+                                    version={olmVersion}
+                                />
                             </>
                         )}
                     </SettingsContainer>

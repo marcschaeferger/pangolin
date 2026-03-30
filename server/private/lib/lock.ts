@@ -14,6 +14,9 @@
 import { config } from "@server/lib/config";
 import logger from "@server/logger";
 import { redis } from "#private/lib/redis";
+import { v4 as uuidv4 } from "uuid";
+
+const instanceId = uuidv4();
 
 export class LockManager {
     /**
@@ -24,60 +27,80 @@ export class LockManager {
      */
     async acquireLock(
         lockKey: string,
-        ttlMs: number = 30000
+        ttlMs: number = 30000,
+        maxRetries: number = 3,
+        retryDelayMs: number = 100
     ): Promise<boolean> {
         if (!redis || !redis.status || redis.status !== "ready") {
             return true;
         }
 
         const lockValue = `${
-            config.getRawConfig().gerbil.exit_node_name
+            instanceId
         }:${Date.now()}`;
         const redisKey = `lock:${lockKey}`;
 
-        try {
-            // Use SET with NX (only set if not exists) and PX (expire in milliseconds)
-            // This is atomic and handles both setting and expiration
-            const result = await redis.set(
-                redisKey,
-                lockValue,
-                "PX",
-                ttlMs,
-                "NX"
-            );
-
-            if (result === "OK") {
-                logger.debug(
-                    `Lock acquired: ${lockKey} by ${
-                        config.getRawConfig().gerbil.exit_node_name
-                    }`
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                // Use SET with NX (only set if not exists) and PX (expire in milliseconds)
+                // This is atomic and handles both setting and expiration
+                const result = await redis.set(
+                    redisKey,
+                    lockValue,
+                    "PX",
+                    ttlMs,
+                    "NX"
                 );
-                return true;
-            }
 
-            // Check if the existing lock is from this worker (reentrant behavior)
-            const existingValue = await redis.get(redisKey);
-            if (
-                existingValue &&
-                existingValue.startsWith(
-                    `${config.getRawConfig().gerbil.exit_node_name}:`
-                )
-            ) {
-                // Extend the lock TTL since it's the same worker
-                await redis.pexpire(redisKey, ttlMs);
-                logger.debug(
-                    `Lock extended: ${lockKey} by ${
-                        config.getRawConfig().gerbil.exit_node_name
-                    }`
-                );
-                return true;
-            }
+                if (result === "OK") {
+                    logger.debug(
+                        `Lock acquired: ${lockKey} by ${
+                            instanceId
+                        }`
+                    );
+                    return true;
+                }
 
-            return false;
-        } catch (error) {
-            logger.error(`Failed to acquire lock ${lockKey}:`, error);
-            return false;
+                // Check if the existing lock is from this worker (reentrant behavior)
+                const existingValue = await redis.get(redisKey);
+                if (
+                    existingValue &&
+                    existingValue.startsWith(
+                        `${instanceId}:`
+                    )
+                ) {
+                    // Extend the lock TTL since it's the same worker
+                    await redis.pexpire(redisKey, ttlMs);
+                    logger.debug(
+                        `Lock extended: ${lockKey} by ${
+                            instanceId
+                        }`
+                    );
+                    return true;
+                }
+
+                // If this isn't our last attempt, wait before retrying with exponential backoff
+                if (attempt < maxRetries - 1) {
+                    const delay = retryDelayMs * Math.pow(2, attempt);
+                    logger.debug(
+                        `Lock ${lockKey} not available, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`
+                    );
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                }
+            } catch (error) {
+                logger.error(`Failed to acquire lock ${lockKey} (attempt ${attempt + 1}/${maxRetries}):`, error);
+                // On error, still retry if we have attempts left
+                if (attempt < maxRetries - 1) {
+                    const delay = retryDelayMs * Math.pow(2, attempt);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                }
+            }
         }
+
+        logger.debug(
+            `Failed to acquire lock ${lockKey} after ${maxRetries} attempts`
+        );
+        return false;
     }
 
     /**
@@ -96,7 +119,7 @@ export class LockManager {
       local key = KEYS[1]
       local worker_prefix = ARGV[1]
       local current_value = redis.call('GET', key)
-      
+
       if current_value and string.find(current_value, worker_prefix, 1, true) == 1 then
         return redis.call('DEL', key)
       else
@@ -109,19 +132,19 @@ export class LockManager {
                 luaScript,
                 1,
                 redisKey,
-                `${config.getRawConfig().gerbil.exit_node_name}:`
+                `${instanceId}:`
             )) as number;
 
             if (result === 1) {
                 logger.debug(
                     `Lock released: ${lockKey} by ${
-                        config.getRawConfig().gerbil.exit_node_name
+                        instanceId
                     }`
                 );
             } else {
                 logger.warn(
                     `Lock not released - not owned by worker: ${lockKey} by ${
-                        config.getRawConfig().gerbil.exit_node_name
+                        instanceId
                     }`
                 );
             }
@@ -178,7 +201,7 @@ export class LockManager {
             const ownedByMe =
                 exists &&
                 value!.startsWith(
-                    `${config.getRawConfig().gerbil.exit_node_name}:`
+                    `${instanceId}:`
                 );
             const owner = exists ? value!.split(":")[0] : undefined;
 
@@ -213,7 +236,7 @@ export class LockManager {
       local worker_prefix = ARGV[1]
       local ttl = tonumber(ARGV[2])
       local current_value = redis.call('GET', key)
-      
+
       if current_value and string.find(current_value, worker_prefix, 1, true) == 1 then
         return redis.call('PEXPIRE', key, ttl)
       else
@@ -226,14 +249,14 @@ export class LockManager {
                 luaScript,
                 1,
                 redisKey,
-                `${config.getRawConfig().gerbil.exit_node_name}:`,
+                `${instanceId}:`,
                 ttlMs.toString()
             )) as number;
 
             if (result === 1) {
                 logger.debug(
                     `Lock extended: ${lockKey} by ${
-                        config.getRawConfig().gerbil.exit_node_name
+                        instanceId
                     } for ${ttlMs}ms`
                 );
                 return true;
@@ -336,7 +359,7 @@ export class LockManager {
                     (value) =>
                         value &&
                         value.startsWith(
-                            `${config.getRawConfig().gerbil.exit_node_name}:`
+                            `${instanceId}:`
                         )
                 ).length;
             }

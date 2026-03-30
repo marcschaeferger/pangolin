@@ -6,11 +6,12 @@ import { UsersDataTable } from "@app/components/AdminUsersDataTable";
 import { Button } from "@app/components/ui/button";
 import { ArrowRight, ArrowUpDown, MoreHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
 import { toast } from "@app/hooks/useToast";
 import { formatAxiosError } from "@app/lib/api";
 import { createApiClient } from "@app/lib/api";
+import { getUserDisplayName } from "@app/lib/getUserDisplayName";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useTranslations } from "next-intl";
 import {
@@ -71,6 +72,11 @@ export default function UsersTable({ users }: Props) {
     const [passwordResetCodeData, setPasswordResetCodeData] =
         useState<AdminGeneratePasswordResetCodeResponse | null>(null);
     const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+
+    // Update local state when props change (e.g., after refresh)
+    useEffect(() => {
+        setRows(users);
+    }, [users]);
 
     const refreshData = async () => {
         console.log("Data refreshed");
@@ -269,7 +275,7 @@ export default function UsersTable({ users }: Props) {
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                                {r.type !== "internal" && (
+                                {r.type === "internal" && (
                                     <DropdownMenuItem
                                         onClick={() => {
                                             generatePasswordResetCode(r.id);
@@ -316,10 +322,13 @@ export default function UsersTable({ users }: Props) {
                         <div className="space-y-2">
                             <p>
                                 {t("userQuestionRemove", {
-                                    selectedUser:
-                                        selected?.email ||
-                                        selected?.name ||
-                                        selected?.username
+                                    selectedUser: selected
+                                        ? getUserDisplayName({
+                                              email: selected.email,
+                                              name: selected.name,
+                                              username: selected.username
+                                          })
+                                        : ""
                                 })}
                             </p>
 
@@ -332,9 +341,11 @@ export default function UsersTable({ users }: Props) {
                     }
                     buttonText={t("userDeleteConfirm")}
                     onConfirm={async () => deleteUser(selected!.id)}
-                    string={
-                        selected.email || selected.name || selected.username
-                    }
+                    string={getUserDisplayName({
+                        email: selected.email,
+                        name: selected.name,
+                        username: selected.username
+                    })}
                     title={t("userDeleteServer")}
                 />
             )}

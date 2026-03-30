@@ -8,6 +8,7 @@ import {
     InfoSections,
     InfoSectionTitle
 } from "@app/components/InfoSection";
+import { getUserDisplayName } from "@app/lib/getUserDisplayName";
 import { useTranslations } from "next-intl";
 
 type ClientInfoCardProps = {};
@@ -16,13 +17,27 @@ export default function SiteInfoCard({}: ClientInfoCardProps) {
     const { client, updateClient } = useClientContext();
     const t = useTranslations();
 
+    const userDisplayName = getUserDisplayName({
+        email: client.userEmail,
+        name: client.userName,
+        username: client.userUsername
+    });
+
     return (
         <Alert>
             <AlertDescription>
                 <InfoSections cols={3}>
                     <InfoSection>
-                        <InfoSectionTitle>{t("identifier")}</InfoSectionTitle>
-                        <InfoSectionContent>{client.niceId}</InfoSectionContent>
+                        <InfoSectionTitle>{t("name")}</InfoSectionTitle>
+                        <InfoSectionContent>{client.name}</InfoSectionContent>
+                    </InfoSection>
+                    <InfoSection>
+                        <InfoSectionTitle>
+                            {userDisplayName ? t("user") : t("identifier")}
+                        </InfoSectionTitle>
+                        <InfoSectionContent>
+                            {userDisplayName || client.niceId}
+                        </InfoSectionContent>
                     </InfoSection>
                     <InfoSection>
                         <InfoSectionTitle>{t("status")}</InfoSectionTitle>
@@ -38,12 +53,6 @@ export default function SiteInfoCard({}: ClientInfoCardProps) {
                                     <span>{t("offline")}</span>
                                 </div>
                             )}
-                        </InfoSectionContent>
-                    </InfoSection>
-                    <InfoSection>
-                        <InfoSectionTitle>{t("address")}</InfoSectionTitle>
-                        <InfoSectionContent>
-                            {client.subnet.split("/")[0]}
                         </InfoSectionContent>
                     </InfoSection>
                 </InfoSections>

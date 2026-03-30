@@ -11,6 +11,8 @@ import { AxiosResponse } from "axios";
 import { authCookieHeader } from "@app/lib/api/cookies";
 import { Layout } from "@app/components/Layout";
 import { adminNavSections } from "../navigation";
+import { pullEnv } from "@app/lib/pullEnv";
+import SubscriptionStatusProvider from "@app/providers/SubscriptionStatusProvider";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,8 @@ interface LayoutProps {
 export default async function AdminLayout(props: LayoutProps) {
     const getUser = cache(verifySession);
     const user = await getUser();
+
+    const env = pullEnv();
 
     if (!user || !user.serverAdmin) {
         redirect(`/`);
@@ -48,9 +52,15 @@ export default async function AdminLayout(props: LayoutProps) {
 
     return (
         <UserProvider user={user}>
-            <Layout orgs={orgs} navItems={adminNavSections}>
-                {props.children}
-            </Layout>
+            <SubscriptionStatusProvider
+                subscriptionStatus={null}
+                env={env.app.environment}
+                sandbox_mode={env.app.sandbox_mode}
+            >
+                <Layout orgs={orgs} navItems={adminNavSections(env)}>
+                    {props.children}
+                </Layout>
+            </SubscriptionStatusProvider>
         </UserProvider>
     );
 }

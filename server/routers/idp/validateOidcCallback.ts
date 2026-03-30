@@ -13,6 +13,7 @@ import {
     orgs,
     Role,
     roles,
+    userOrgRoles,
     userOrgs,
     users
 } from "@server/db";
@@ -34,6 +35,14 @@ import { FeatureId } from "@server/lib/billing";
 import { usageService } from "@server/lib/billing/usageService";
 import { build } from "@server/build";
 import { calculateUserClientsForOrgs } from "@server/lib/calculateUserClientsForOrgs";
+import { isSubscribed } from "#dynamic/lib/isSubscribed";
+import { isLicensedOrSubscribed } from "#dynamic/lib/isLicencedOrSubscribed";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
+import {
+    assignUserToOrg,
+    removeUserFromOrg
+} from "@server/lib/userOrg";
+import { unwrapRoleMapping } from "@app/lib/idpRoleMapping";
 
 const ensureTrailingSlash = (url: string): string => {
     return url;
@@ -192,11 +201,71 @@ export async function validateOidcCallback(
             state
         });
 
-        const tokens = await client.validateAuthorizationCode(
-            ensureTrailingSlash(existingIdp.idpOidcConfig.tokenUrl),
-            code,
-            codeVerifier
-        );
+        let tokens: arctic.OAuth2Tokens;
+        try {
+            tokens = await client.validateAuthorizationCode(
+                ensureTrailingSlash(existingIdp.idpOidcConfig.tokenUrl),
+                code,
+                codeVerifier
+            );
+        } catch (err: unknown) {
+            if (err instanceof arctic.OAuth2RequestError) {
+                logger.warn("OIDC provider rejected the authorization code", {
+                    error: err.code,
+                    description: err.description,
+                    uri: err.uri,
+                    state: err.state
+                });
+                return next(
+                    createHttpError(
+                        HttpCode.UNAUTHORIZED,
+                        err.description ||
+                            `OIDC provider rejected the request (${err.code})`
+                    )
+                );
+            }
+
+            if (err instanceof arctic.UnexpectedResponseError) {
+                logger.error(
+                    "OIDC provider returned an unexpected response during token exchange",
+                    { status: err.status }
+                );
+                return next(
+                    createHttpError(
+                        HttpCode.BAD_GATEWAY,
+                        "Received an unexpected response from the identity provider while exchanging the authorization code."
+                    )
+                );
+            }
+
+            if (err instanceof arctic.UnexpectedErrorResponseBodyError) {
+                logger.error(
+                    "OIDC provider returned an unexpected error payload during token exchange",
+                    { status: err.status, data: err.data }
+                );
+                return next(
+                    createHttpError(
+                        HttpCode.BAD_GATEWAY,
+                        "Identity provider returned an unexpected error payload while exchanging the authorization code."
+                    )
+                );
+            }
+
+            if (err instanceof arctic.ArcticFetchError) {
+                logger.error(
+                    "Failed to reach OIDC provider while exchanging authorization code",
+                    { error: err.message }
+                );
+                return next(
+                    createHttpError(
+                        HttpCode.BAD_GATEWAY,
+                        "Unable to reach the identity provider while exchanging the authorization code. Please try again."
+                    )
+                );
+            }
+
+            throw err;
+        }
 
         const idToken = tokens.idToken();
         logger.debug("ID token", { idToken });
@@ -266,6 +335,33 @@ export async function validateOidcCallback(
                     .where(eq(idpOrg.idpId, existingIdp.idp.idpId))
                     .innerJoin(orgs, eq(orgs.orgId, idpOrg.orgId));
                 allOrgs = idpOrgs.map((o) => o.orgs);
+
+                // TODO: when there are multiple orgs we need to do this better!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
+                if (allOrgs.length > 1) {
+                    // for some reason there is more than one org
+                    logger.error(
+                        "More than one organization linked to this IdP. This should not happen with auto-provisioning enabled."
+                    );
+                    return next(
+                        createHttpError(
+                            HttpCode.INTERNAL_SERVER_ERROR,
+                            "Multiple organizations linked to this IdP. Please contact support."
+                        )
+                    );
+                }
+
+                const subscribed = await isSubscribed(
+                    allOrgs[0].orgId,
+                    tierMatrix.autoProvisioning
+                );
+                if (!subscribed) {
+                    return next(
+                        createHttpError(
+                            HttpCode.FORBIDDEN,
+                            "This organization's current plan does not support this feature."
+                        )
+                    );
+                }
             } else {
                 allOrgs = await db.select().from(orgs);
             }
@@ -273,7 +369,7 @@ export async function validateOidcCallback(
             const defaultRoleMapping = existingIdp.idp.defaultRoleMapping;
             const defaultOrgMapping = existingIdp.idp.defaultOrgMapping;
 
-            const userOrgInfo: { orgId: string; roleId: number }[] = [];
+            const userOrgInfo: { orgId: string; roleIds: number[] }[] = [];
             for (const org of allOrgs) {
                 const [idpOrgRes] = await db
                     .select()
@@ -284,8 +380,6 @@ export async function validateOidcCallback(
                             eq(idpOrg.orgId, org.orgId)
                         )
                     );
-
-                let roleId: number | undefined = undefined;
 
                 const orgMapping = idpOrgRes?.orgMapping || defaultOrgMapping;
                 const hydratedOrgMapping = hydrateOrgMapping(
@@ -311,42 +405,60 @@ export async function validateOidcCallback(
                     idpOrgRes?.roleMapping || defaultRoleMapping;
                 if (roleMapping) {
                     logger.debug("Role Mapping", { roleMapping });
-                    const roleName = jmespath.search(claims, roleMapping);
+                    const roleMappingJmes = unwrapRoleMapping(
+                        roleMapping
+                    ).evaluationExpression;
+                    const roleMappingResult = jmespath.search(
+                        claims,
+                        roleMappingJmes
+                    );
+                    const roleNames = normalizeRoleMappingResult(
+                        roleMappingResult
+                    );
 
-                    if (!roleName) {
-                        logger.error("Role name not found in the ID token", {
-                            roleName
+                    const supportsMultiRole = await isLicensedOrSubscribed(
+                        org.orgId,
+                        tierMatrix.fullRbac
+                    );
+                    const effectiveRoleNames = supportsMultiRole
+                        ? roleNames
+                        : roleNames.slice(0, 1);
+
+                    if (!effectiveRoleNames.length) {
+                        logger.error("Role mapping returned no valid roles", {
+                            roleMappingResult
                         });
                         continue;
                     }
 
-                    const [roleRes] = await db
+                    const roleRes = await db
                         .select()
                         .from(roles)
                         .where(
                             and(
                                 eq(roles.orgId, org.orgId),
-                                eq(roles.name, roleName)
+                                inArray(roles.name, effectiveRoleNames)
                             )
                         );
 
-                    if (!roleRes) {
-                        logger.error("Role not found", {
+                    if (!roleRes.length) {
+                        logger.error("No mapped roles found in organization", {
                             orgId: org.orgId,
-                            roleName
+                            roleNames: effectiveRoleNames
                         });
                         continue;
                     }
 
-                    roleId = roleRes.roleId;
+                    const roleIds = [...new Set(roleRes.map((r) => r.roleId))];
 
                     userOrgInfo.push({
                         orgId: org.orgId,
-                        roleId
+                        roleIds
                     });
                 }
             }
 
+            // These are the orgs that the user should be provisioned into based on the IdP mappings and the token claims
             logger.debug("User org info", { userOrgInfo });
 
             let existingUserId = existingUser?.userId;
@@ -365,15 +477,32 @@ export async function validateOidcCallback(
                         );
 
                     if (!existingUserOrgs.length) {
-                        // delete all auto -provisioned user orgs
-                        await db
-                            .delete(userOrgs)
+                        // delete all auto-provisioned user orgs
+                        const autoProvisionedUserOrgs = await db
+                            .select()
+                            .from(userOrgs)
                             .where(
                                 and(
                                     eq(userOrgs.userId, existingUser.userId),
                                     eq(userOrgs.autoProvisioned, true)
                                 )
                             );
+                        const orgIdsToRemove = autoProvisionedUserOrgs.map(
+                            (uo) => uo.orgId
+                        );
+                        if (orgIdsToRemove.length > 0) {
+                            const orgsToRemove = await db
+                                .select()
+                                .from(orgs)
+                                .where(inArray(orgs.orgId, orgIdsToRemove));
+                            for (const org of orgsToRemove) {
+                                await removeUserFromOrg(
+                                    org,
+                                    existingUser.userId,
+                                    db
+                                );
+                            }
+                        }
 
                         await calculateUserClientsForOrgs(existingUser.userId);
 
@@ -395,7 +524,7 @@ export async function validateOidcCallback(
                 }
             }
 
-            const orgUserCounts: { orgId: string; userCount: number }[] = [];
+                const orgUserCounts: { orgId: string; userCount: number }[] = [];
 
             // sync the user with the orgs and roles
             await db.transaction(async (trx) => {
@@ -449,43 +578,38 @@ export async function validateOidcCallback(
                 );
 
                 if (orgsToDelete.length > 0) {
-                    await trx.delete(userOrgs).where(
-                        and(
-                            eq(userOrgs.userId, userId!),
-                            inArray(
-                                userOrgs.orgId,
-                                orgsToDelete.map((org) => org.orgId)
-                            )
-                        )
-                    );
+                    const orgIdsToRemove = orgsToDelete.map((org) => org.orgId);
+                    const fullOrgsToRemove = await trx
+                        .select()
+                        .from(orgs)
+                        .where(inArray(orgs.orgId, orgIdsToRemove));
+                    for (const org of fullOrgsToRemove) {
+                        await removeUserFromOrg(org, userId!, trx);
+                    }
                 }
 
-                // Update roles for existing auto-provisioned orgs where the role has changed
-                const orgsToUpdate = autoProvisionedOrgs.filter(
-                    (currentOrg) => {
-                        const newOrg = userOrgInfo.find(
-                            (newOrg) => newOrg.orgId === currentOrg.orgId
-                        );
-                        return newOrg && newOrg.roleId !== currentOrg.roleId;
-                    }
-                );
+                // Sync roles 1:1 with IdP policy for existing auto-provisioned orgs
+                for (const currentOrg of autoProvisionedOrgs) {
+                    const newRole = userOrgInfo.find(
+                        (newOrg) => newOrg.orgId === currentOrg.orgId
+                    );
+                    if (!newRole) continue;
 
-                if (orgsToUpdate.length > 0) {
-                    for (const org of orgsToUpdate) {
-                        const newRole = userOrgInfo.find(
-                            (newOrg) => newOrg.orgId === org.orgId
+                    await trx
+                        .delete(userOrgRoles)
+                        .where(
+                            and(
+                                eq(userOrgRoles.userId, userId!),
+                                eq(userOrgRoles.orgId, currentOrg.orgId)
+                            )
                         );
-                        if (newRole) {
-                            await trx
-                                .update(userOrgs)
-                                .set({ roleId: newRole.roleId })
-                                .where(
-                                    and(
-                                        eq(userOrgs.userId, userId!),
-                                        eq(userOrgs.orgId, org.orgId)
-                                    )
-                                );
-                        }
+
+                    for (const roleId of newRole.roleIds) {
+                        await trx.insert(userOrgRoles).values({
+                            userId: userId!,
+                            orgId: currentOrg.orgId,
+                            roleId
+                        });
                     }
                 }
 
@@ -498,15 +622,28 @@ export async function validateOidcCallback(
                 );
 
                 if (orgsToAdd.length > 0) {
-                    await trx.insert(userOrgs).values(
-                        orgsToAdd.map((org) => ({
-                            userId: userId!,
-                            orgId: org.orgId,
-                            roleId: org.roleId,
-                            autoProvisioned: true,
-                            dateCreated: new Date().toISOString()
-                        }))
-                    );
+                    for (const org of orgsToAdd) {
+                        if (org.roleIds.length === 0) {
+                            continue;
+                        }
+
+                        const [fullOrg] = await trx
+                            .select()
+                            .from(orgs)
+                            .where(eq(orgs.orgId, org.orgId));
+                        if (fullOrg) {
+                            await assignUserToOrg(
+                                fullOrg,
+                                {
+                                    orgId: org.orgId,
+                                    userId: userId!,
+                                    autoProvisioned: true,
+                                },
+                                org.roleIds,
+                                trx
+                            );
+                        }
+                    }
                 }
 
                 // Loop through all the orgs and get the total number of users from the userOrgs table
@@ -527,7 +664,7 @@ export async function validateOidcCallback(
             });
 
             for (const orgCount of orgUserCounts) {
-                await usageService.updateDaily(
+                await usageService.updateCount(
                     orgCount.orgId,
                     FeatureId.USERS,
                     orgCount.userCount
@@ -545,9 +682,18 @@ export async function validateOidcCallback(
 
             res.appendHeader("Set-Cookie", cookie);
 
+            let finalRedirectUrl = postAuthRedirectUrl;
+            if (loginPageId) {
+                finalRedirectUrl = `/auth/org/?redirect=${encodeURIComponent(
+                    postAuthRedirectUrl
+                )}`;
+            }
+
+            logger.debug("Final redirect URL", { finalRedirectUrl });
+
             return response<ValidateOidcUrlCallbackResponse>(res, {
                 data: {
-                    redirectUrl: postAuthRedirectUrl
+                    redirectUrl: finalRedirectUrl
                 },
                 success: true,
                 error: false,
@@ -619,4 +765,26 @@ function hydrateOrgMapping(
         return undefined;
     }
     return orgMapping.split("{{orgId}}").join(orgId);
+}
+
+function normalizeRoleMappingResult(
+    result: unknown
+): string[] {
+    if (typeof result === "string") {
+        const role = result.trim();
+        return role ? [role] : [];
+    }
+
+    if (Array.isArray(result)) {
+        return [
+            ...new Set(
+                result
+                    .filter((value): value is string => typeof value === "string")
+                    .map((value) => value.trim())
+                    .filter(Boolean)
+            )
+        ];
+    }
+
+    return [];
 }

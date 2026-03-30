@@ -2,6 +2,7 @@ import {
     clientSiteResources,
     db,
     newts,
+    orgs,
     roles,
     roleSiteResources,
     SiteResource,
@@ -10,7 +11,13 @@ import {
     userSiteResources
 } from "@server/db";
 import { getUniqueSiteResourceName } from "@server/db/names";
-import { getNextAvailableAliasAddress } from "@server/lib/ip";
+import {
+    getNextAvailableAliasAddress,
+    isIpInCidr,
+    portRangeStringSchema
+} from "@server/lib/ip";
+import { isLicensedOrSubscribed } from "#dynamic/lib/isLicencedOrSubscribed";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import { rebuildClientAssociationsFromSiteResource } from "@server/lib/rebuildClientAssociations";
 import response from "@server/lib/response";
 import logger from "@server/logger";
@@ -23,7 +30,6 @@ import { z } from "zod";
 import { fromError } from "zod-validation-error";
 
 const createSiteResourceParamsSchema = z.strictObject({
-    siteId: z.string().transform(Number).pipe(z.int().positive()),
     orgId: z.string()
 });
 
@@ -31,6 +37,7 @@ const createSiteResourceSchema = z
     .strictObject({
         name: z.string().min(1).max(255),
         mode: z.enum(["host", "cidr", "port"]),
+        siteId: z.int(),
         // protocol: z.enum(["tcp", "udp"]).optional(),
         // proxyPort: z.int().positive().optional(),
         // destinationPort: z.int().positive().optional(),
@@ -39,13 +46,18 @@ const createSiteResourceSchema = z
         alias: z
             .string()
             .regex(
-                /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/,
-                "Alias must be a fully qualified domain name (e.g., example.com)"
+                /^(?:[a-zA-Z0-9*?](?:[a-zA-Z0-9*?-]{0,61}[a-zA-Z0-9*?])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/,
+                "Alias must be a fully qualified domain name with optional wildcards (e.g., example.com, *.example.com, host-0?.example.internal)"
             )
             .optional(),
         userIds: z.array(z.string()),
         roleIds: z.array(z.int()),
-        clientIds: z.array(z.int())
+        clientIds: z.array(z.int()),
+        tcpPortRangeString: portRangeStringSchema,
+        udpPortRangeString: portRangeStringSchema,
+        disableIcmp: z.boolean().optional(),
+        authDaemonPort: z.int().positive().optional(),
+        authDaemonMode: z.enum(["site", "remote"]).optional()
     })
     .strict()
     .refine(
@@ -65,7 +77,10 @@ const createSiteResourceSchema = z
                 const domainRegex =
                     /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
                 const isValidDomain = domainRegex.test(data.destination);
-                const isValidAlias = data.alias && domainRegex.test(data.alias);
+                const isValidAlias =
+                    data.alias !== undefined &&
+                    data.alias !== null &&
+                    data.alias.trim() !== "";
 
                 return isValidDomain && isValidAlias; // require the alias to be set in the case of domain
             }
@@ -73,7 +88,7 @@ const createSiteResourceSchema = z
         },
         {
             message:
-                "Destination must be a valid IP address or valid domain AND alias is required"
+                "Destination must be a valid IPV4 address or valid domain AND alias is required"
         }
     )
     .refine(
@@ -81,8 +96,7 @@ const createSiteResourceSchema = z
             if (data.mode === "cidr") {
                 // Check if it's a valid CIDR (v4 or v6)
                 const isValidCIDR = z
-                    // .union([z.cidrv4(), z.cidrv6()])
-                    .union([z.cidrv4()]) // for now lets just do ipv4 until we verify ipv6 works everywhere
+                    .union([z.cidrv4(), z.cidrv6()])
                     .safeParse(data.destination).success;
                 return isValidCIDR;
             }
@@ -98,9 +112,9 @@ export type CreateSiteResourceResponse = SiteResource;
 
 registry.registerPath({
     method: "put",
-    path: "/org/{orgId}/site/{siteId}/resource",
+    path: "/org/{orgId}/site-resource",
     description: "Create a new site resource.",
-    tags: [OpenAPITags.Client, OpenAPITags.Org],
+    tags: [OpenAPITags.PrivateResource],
     request: {
         params: createSiteResourceParamsSchema,
         body: {
@@ -142,9 +156,10 @@ export async function createSiteResource(
             );
         }
 
-        const { siteId, orgId } = parsedParams.data;
+        const { orgId } = parsedParams.data;
         const {
             name,
+            siteId,
             mode,
             // protocol,
             // proxyPort,
@@ -154,7 +169,12 @@ export async function createSiteResource(
             alias,
             userIds,
             roleIds,
-            clientIds
+            clientIds,
+            tcpPortRangeString,
+            udpPortRangeString,
+            disableIcmp,
+            authDaemonPort,
+            authDaemonMode
         } = parsedBody.data;
 
         // Verify the site exists and belongs to the org
@@ -166,6 +186,44 @@ export async function createSiteResource(
 
         if (!site) {
             return next(createHttpError(HttpCode.NOT_FOUND, "Site not found"));
+        }
+
+        const [org] = await db
+            .select()
+            .from(orgs)
+            .where(eq(orgs.orgId, orgId))
+            .limit(1);
+
+        if (!org) {
+            return next(
+                createHttpError(HttpCode.NOT_FOUND, "Organization not found")
+            );
+        }
+
+        if (!org.subnet || !org.utilitySubnet) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    `Organization with ID ${orgId} has no subnet or utilitySubnet defined defined`
+                )
+            );
+        }
+
+        // Only check if destination is an IP address
+        const isIp = z
+            .union([z.ipv4(), z.ipv6()])
+            .safeParse(destination).success;
+        if (
+            isIp &&
+            (isIpInCidr(destination, org.subnet) ||
+                isIpInCidr(destination, org.utilitySubnet))
+        ) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "IP can not be in the CIDR range of the organization's subnet or utility subnet"
+                )
+            );
         }
 
         // // check if resource with same protocol and proxy port already exists (only for port mode)
@@ -215,6 +273,11 @@ export async function createSiteResource(
             }
         }
 
+        const isLicensedSshPam = await isLicensedOrSubscribed(
+            orgId,
+            tierMatrix.sshPam
+        );
+
         const niceId = await getUniqueSiteResourceName(orgId);
         let aliasAddress: string | null = null;
         if (mode == "host") {
@@ -225,22 +288,29 @@ export async function createSiteResource(
         let newSiteResource: SiteResource | undefined;
         await db.transaction(async (trx) => {
             // Create the site resource
+            const insertValues: typeof siteResources.$inferInsert = {
+                siteId,
+                niceId,
+                orgId,
+                name,
+                mode: mode as "host" | "cidr",
+                destination,
+                enabled,
+                alias,
+                aliasAddress,
+                tcpPortRangeString,
+                udpPortRangeString,
+                disableIcmp
+            };
+            if (isLicensedSshPam) {
+                if (authDaemonPort !== undefined)
+                    insertValues.authDaemonPort = authDaemonPort;
+                if (authDaemonMode !== undefined)
+                    insertValues.authDaemonMode = authDaemonMode;
+            }
             [newSiteResource] = await trx
                 .insert(siteResources)
-                .values({
-                    siteId,
-                    niceId,
-                    orgId,
-                    name,
-                    mode,
-                    // protocol: mode === "port" ? protocol : null,
-                    // proxyPort: mode === "port" ? proxyPort : null,
-                    // destinationPort: mode === "port" ? destinationPort : null,
-                    destination,
-                    enabled,
-                    alias,
-                    aliasAddress
-                })
+                .values(insertValues)
                 .returning();
 
             const siteResourceId = newSiteResource.siteResourceId;

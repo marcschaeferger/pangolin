@@ -26,6 +26,7 @@ import { generateId } from "@server/auth/sessions/app";
 import { OpenAPITags, registry } from "@server/openApi";
 import { rebuildClientAssociationsFromClient } from "@server/lib/rebuildClientAssociations";
 import { getUniqueClientName } from "@server/db/names";
+import { build } from "@server/build";
 
 const createClientParamsSchema = z.strictObject({
     orgId: z.string()
@@ -47,7 +48,7 @@ registry.registerPath({
     method: "put",
     path: "/org/{orgId}/client",
     description: "Create a new client for an organization.",
-    tags: [OpenAPITags.Client, OpenAPITags.Org],
+    tags: [OpenAPITags.Client],
     request: {
         params: createClientParamsSchema,
         body: {
@@ -91,7 +92,7 @@ export async function createClient(
 
         const { orgId } = parsedParams.data;
 
-        if (req.user && !req.userOrgRoleId) {
+        if (req.user && (!req.userOrgRoleIds || req.userOrgRoleIds.length === 0)) {
             return next(
                 createHttpError(HttpCode.FORBIDDEN, "User does not have a role")
             );
@@ -101,7 +102,7 @@ export async function createClient(
             return next(
                 createHttpError(
                     HttpCode.BAD_REQUEST,
-                    "Invalid subnet format. Please provide a valid CIDR notation."
+                    "Invalid subnet format. Please provide a valid IP."
                 )
             );
         }
@@ -195,6 +196,12 @@ export async function createClient(
             const randomExitNode =
                 exitNodesList[Math.floor(Math.random() * exitNodesList.length)];
 
+            if (!randomExitNode) {
+                return next(
+                    createHttpError(HttpCode.NOT_FOUND, `No exit nodes available. ${build == "saas" ? "Please contact support." : "You need to install gerbil to use the clients."}`)
+                );
+            }
+
             const [adminRole] = await trx
                 .select()
                 .from(roles)
@@ -227,7 +234,7 @@ export async function createClient(
                 clientId: newClient.clientId
             });
 
-            if (req.user && req.userOrgRoleId != adminRole.roleId) {
+            if (req.user && !req.userOrgRoleIds?.includes(adminRole.roleId)) {
                 // make sure the user can access the client
                 trx.insert(userClients).values({
                     userId: req.user.userId,

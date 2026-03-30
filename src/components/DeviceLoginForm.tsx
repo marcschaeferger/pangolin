@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -13,7 +13,13 @@ import {
     FormLabel,
     FormMessage
 } from "@/components/ui/form";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+    CardDescription
+} from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { createApiClient, formatAxiosError } from "@app/lib/api";
 import { useEnvContext } from "@app/hooks/useEnvContext";
@@ -25,12 +31,12 @@ import {
     InputOTPSlot
 } from "@/components/ui/input-otp";
 import { REGEXP_ONLY_DIGITS_AND_CHARS } from "input-otp";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { DeviceAuthConfirmation } from "@/components/DeviceAuthConfirmation";
 import { useLicenseStatusContext } from "@app/hooks/useLicenseStatusContext";
 import BrandingLogo from "./BrandingLogo";
 import { useTranslations } from "next-intl";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import UserProfileCard from "@/components/UserProfileCard";
 
 const createFormSchema = (t: (key: string) => string) =>
     z.object({
@@ -49,18 +55,22 @@ type DeviceLoginFormProps = {
     userEmail: string;
     userName?: string;
     initialCode?: string;
+    userQueryParam?: string;
 };
 
 export default function DeviceLoginForm({
     userEmail,
     userName,
-    initialCode = ""
+    initialCode = "",
+    userQueryParam
 }: DeviceLoginFormProps) {
     const router = useRouter();
     const { env } = useEnvContext();
     const api = createApiClient({ env });
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [validatingInitialCode, setValidatingInitialCode] = useState(false);
+    const [verifyingInitialCode, setVerifyingInitialCode] = useState(false);
     const [metadata, setMetadata] = useState<DeviceAuthMetadata | null>(null);
     const [code, setCode] = useState<string>("");
     const { isUnlocked } = useLicenseStatusContext();
@@ -75,40 +85,87 @@ export default function DeviceLoginForm({
         }
     });
 
-    async function onSubmit(data: z.infer<typeof formSchema>) {
-        setError(null);
-        setLoading(true);
+    const validateCode = useCallback(
+        async (codeToValidate: string, skipConfirmation = false) => {
+            setError(null);
+            setLoading(true);
 
-        try {
-            // split code and add dash if missing
-            if (!data.code.includes("-") && data.code.length === 8) {
-                data.code = data.code.slice(0, 4) + "-" + data.code.slice(4);
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, 300));
-
-            // First check - get metadata
-            const res = await api.post(
-                "/device-web-auth/verify?forceLogin=true",
-                {
-                    code: data.code.toUpperCase(),
-                    verify: false
+            try {
+                // split code and add dash if missing
+                let formattedCode = codeToValidate;
+                if (
+                    !formattedCode.includes("-") &&
+                    formattedCode.length === 8
+                ) {
+                    formattedCode =
+                        formattedCode.slice(0, 4) +
+                        "-" +
+                        formattedCode.slice(4);
                 }
-            );
 
-            if (res.data.success && res.data.data.metadata) {
-                setMetadata(res.data.data.metadata);
-                setCode(data.code.toUpperCase());
-            } else {
-                setError(t("deviceCodeInvalidOrExpired"));
+                // First check - get metadata
+                const res = await api.post(
+                    "/device-web-auth/verify?forceLogin=true",
+                    {
+                        code: formattedCode.toUpperCase(),
+                        verify: false
+                    }
+                );
+
+                if (res.data.success && res.data.data.metadata) {
+                    setCode(formattedCode.toUpperCase());
+
+                    // If skipping confirmation (initial code), go straight to verify
+                    if (skipConfirmation) {
+                        setVerifyingInitialCode(true);
+                        try {
+                            await api.post("/device-web-auth/verify", {
+                                code: formattedCode.toUpperCase(),
+                                verify: true
+                            });
+                            router.push("/auth/login/device/success");
+                        } catch (e: any) {
+                            const errorMessage = formatAxiosError(e);
+                            setError(
+                                errorMessage || t("deviceCodeVerifyFailed")
+                            );
+                            setVerifyingInitialCode(false);
+                            return false;
+                        }
+                        return true;
+                    } else {
+                        setMetadata(res.data.data.metadata);
+                        return true;
+                    }
+                } else {
+                    setError(t("deviceCodeInvalidOrExpired"));
+                    return false;
+                }
+            } catch (e: any) {
+                const errorMessage = formatAxiosError(e);
+                setError(errorMessage || t("deviceCodeInvalidOrExpired"));
+                return false;
+            } finally {
+                setLoading(false);
             }
-        } catch (e: any) {
-            const errorMessage = formatAxiosError(e);
-            setError(errorMessage || t("deviceCodeInvalidOrExpired"));
-        } finally {
-            setLoading(false);
-        }
+        },
+        [api, t, router]
+    );
+
+    async function onSubmit(data: z.infer<typeof formSchema>) {
+        await validateCode(data.code);
     }
+
+    // Auto-validate initial code if provided
+    useEffect(() => {
+        const cleanedInitialCode = initialCode.replace(/-/g, "").toUpperCase();
+        if (cleanedInitialCode && cleanedInitialCode.length === 8) {
+            setValidatingInitialCode(true);
+            validateCode(cleanedInitialCode, false).finally(() => {
+                setValidatingInitialCode(false);
+            });
+        }
+    }, [initialCode, validateCode]);
 
     async function onConfirm() {
         if (!code || !metadata) return;
@@ -117,8 +174,6 @@ export default function DeviceLoginForm({
         setLoading(true);
 
         try {
-            await new Promise((resolve) => setTimeout(resolve, 300));
-
             // Final verify
             await api.post("/device-web-auth/verify", {
                 code: code,
@@ -142,8 +197,8 @@ export default function DeviceLoginForm({
         ? env.branding.logo?.authPage?.width || 175
         : 175;
     const logoHeight = isUnlocked()
-        ? env.branding.logo?.authPage?.height || 58
-        : 58;
+        ? env.branding.logo?.authPage?.height || 44
+        : 44;
 
     function onCancel() {
         setMetadata(null);
@@ -153,9 +208,6 @@ export default function DeviceLoginForm({
     }
 
     const profileLabel = (userName || userEmail || "").trim();
-    const profileInitial = profileLabel
-        ? profileLabel.charAt(0).toUpperCase()
-        : "?";
 
     async function handleUseDifferentAccount() {
         try {
@@ -169,11 +221,47 @@ export default function DeviceLoginForm({
             const currentSearch =
                 typeof window !== "undefined" ? window.location.search : "";
             const redirectTarget = `/auth/login/device${currentSearch || ""}`;
-            router.push(
-                `/auth/login?forceLogin=true&redirect=${encodeURIComponent(redirectTarget)}`
-            );
+            const loginUrl = new URL("/auth/login", "http://x");
+            loginUrl.searchParams.set("forceLogin", "true");
+            loginUrl.searchParams.set("redirect", redirectTarget);
+            if (userQueryParam)
+                loginUrl.searchParams.set("user", userQueryParam);
+            router.push(loginUrl.pathname + loginUrl.search);
             router.refresh();
         }
+    }
+
+    // Show loading state while validating/verifying initial code
+    if (validatingInitialCode || verifyingInitialCode) {
+        return (
+            <div className="flex items-center justify-center">
+                <Card className="w-full max-w-md">
+                    <CardHeader>
+                        <CardTitle>{t("deviceActivation")}</CardTitle>
+                        <CardDescription>
+                            {validatingInitialCode
+                                ? t("deviceCodeValidating")
+                                : t("deviceCodeVerifying")}
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col items-center space-y-4">
+                        <div className="flex items-center space-x-2">
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            <span>
+                                {validatingInitialCode
+                                    ? t("deviceCodeValidating")
+                                    : t("deviceCodeVerifying")}
+                            </span>
+                        </div>
+                        {error && (
+                            <Alert variant="destructive" className="w-full">
+                                <AlertDescription>{error}</AlertDescription>
+                            </Alert>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+        );
     }
 
     if (metadata) {
@@ -199,32 +287,17 @@ export default function DeviceLoginForm({
                     </p>
                 </div>
             </CardHeader>
-            <CardContent className="pt-6">
-                <div className="flex items-center gap-3 p-3 mb-4 border rounded-md">
-                    <Avatar className="h-10 w-10">
-                        <AvatarFallback>{profileInitial}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 space-y-1">
-                        <div>
-                            <p className="text-sm font-medium">
-                                {profileLabel || userEmail}
-                            </p>
-                            <p className="text-xs text-muted-foreground break-all">
-                                {t(
-                                    "deviceLoginDeviceRequestingAccessToAccount"
-                                )}
-                            </p>
-                        </div>
-                        <Button
-                            type="button"
-                            variant="link"
-                            className="h-auto px-0 text-xs"
-                            onClick={handleUseDifferentAccount}
-                        >
-                            {t("deviceLoginUseDifferentAccount")}
-                        </Button>
-                    </div>
-                </div>
+            <CardContent className="pt-6 space-y-4">
+                <UserProfileCard
+                    identifier={profileLabel || userEmail}
+                    description={t(
+                        "deviceLoginDeviceRequestingAccessToAccount"
+                    )}
+                    onUseDifferentAccount={handleUseDifferentAccount}
+                    useDifferentAccountText={t(
+                        "deviceLoginUseDifferentAccount"
+                    )}
+                />
 
                 <Form {...form}>
                     <form

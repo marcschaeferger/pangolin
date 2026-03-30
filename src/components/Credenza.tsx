@@ -2,8 +2,6 @@
 
 import * as React from "react";
 
-import { cn } from "@app/lib/cn";
-import { useMediaQuery } from "@app/hooks/useMediaQuery";
 import {
     Dialog,
     DialogClose,
@@ -14,16 +12,9 @@ import {
     DialogTitle,
     DialogTrigger
 } from "@/components/ui/dialog";
-import {
-    Drawer,
-    DrawerClose,
-    DrawerContent,
-    DrawerDescription,
-    DrawerFooter,
-    DrawerHeader,
-    DrawerTitle,
-    DrawerTrigger
-} from "@/components/ui/drawer";
+import { DrawerClose } from "@/components/ui/drawer";
+import { useMediaQuery } from "@app/hooks/useMediaQuery";
+import { cn } from "@app/lib/cn";
 import {
     Sheet,
     SheetContent,
@@ -78,10 +69,7 @@ const CredenzaClose = ({ className, children, ...props }: CredenzaProps) => {
     const CredenzaClose = isDesktop ? DialogClose : DrawerClose;
 
     return (
-        <CredenzaClose
-            className={cn("mb-3 mt-3 md:mt-0 md:mb-0", className)}
-            {...props}
-        >
+        <CredenzaClose className={cn("", className)} {...props}>
             {children}
         </CredenzaClose>
     );
@@ -95,7 +83,10 @@ const CredenzaContent = ({ className, children, ...props }: CredenzaProps) => {
 
     return (
         <CredenzaContent
-            className={cn("overflow-y-auto max-h-screen", className)}
+            className={cn(
+                "overflow-y-auto max-h-[100dvh] md:max-h-[calc(100vh-clamp(3rem,24vh,400px))] md:top-[clamp(1.5rem,12vh,200px)] md:translate-y-0",
+                className
+            )}
             {...props}
             side={"bottom"}
             onOpenAutoFocus={(e) => e.preventDefault()}
@@ -172,14 +163,13 @@ const CredenzaBody = ({ className, children, ...props }: CredenzaProps) => {
 
 const CredenzaFooter = ({ className, children, ...props }: CredenzaProps) => {
     const isDesktop = useMediaQuery(desktop);
-    // const isDesktop = true;
 
     const CredenzaFooter = isDesktop ? DialogFooter : SheetFooter;
 
     return (
         <CredenzaFooter
             className={cn(
-                "mt-8 md:mt-0 -mx-6 px-6 pt-6 border-t border-border",
+                "mt-8 md:mt-0 -mx-6 md:-mb-4 px-6 py-4 border-t border-border gap-2 md:gap-0",
                 className
             )}
             {...props}
@@ -191,12 +181,12 @@ const CredenzaFooter = ({ className, children, ...props }: CredenzaProps) => {
 
 export {
     Credenza,
-    CredenzaTrigger,
+    CredenzaBody,
     CredenzaClose,
     CredenzaContent,
     CredenzaDescription,
+    CredenzaFooter,
     CredenzaHeader,
     CredenzaTitle,
-    CredenzaBody,
-    CredenzaFooter
+    CredenzaTrigger
 };

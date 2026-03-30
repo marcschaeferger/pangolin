@@ -5,6 +5,7 @@ import semver from "semver";
 import { versionMigrations } from "../db/pg";
 import { __DIRNAME, APP_VERSION } from "@server/lib/consts";
 import path from "path";
+import { build } from "@server/build";
 import m1 from "./scriptsPg/1.6.0";
 import m2 from "./scriptsPg/1.7.0";
 import m3 from "./scriptsPg/1.8.0";
@@ -15,6 +16,12 @@ import m7 from "./scriptsPg/1.11.0";
 import m8 from "./scriptsPg/1.11.1";
 import m9 from "./scriptsPg/1.12.0";
 import m10 from "./scriptsPg/1.13.0";
+import m11 from "./scriptsPg/1.14.0";
+import m12 from "./scriptsPg/1.15.0";
+import m13 from "./scriptsPg/1.15.3";
+import m14 from "./scriptsPg/1.15.4";
+import m15 from "./scriptsPg/1.16.0";
+import m16 from "./scriptsPg/1.17.0";
 
 // THIS CANNOT IMPORT ANYTHING FROM THE SERVER
 // EXCEPT FOR THE DATABASE AND THE SCHEMA
@@ -30,7 +37,13 @@ const migrations = [
     { version: "1.11.0", run: m7 },
     { version: "1.11.1", run: m8 },
     { version: "1.12.0", run: m9 },
-    { version: "1.13.0", run: m10 }
+    { version: "1.13.0", run: m10 },
+    { version: "1.14.0", run: m11 },
+    { version: "1.15.0", run: m12 },
+    { version: "1.15.3", run: m13 },
+    { version: "1.15.4", run: m14 },
+    { version: "1.16.0", run: m15 },
+    { version: "1.17.0", run: m16 }
     // Add new migrations here as they are created
 ] as {
     version: string;
@@ -45,6 +58,10 @@ async function run() {
 }
 
 export async function runMigrations() {
+    if (build == "saas") {
+        console.log("Running in SaaS mode, skipping migrations...");
+        return;
+    }
     if (process.env.DISABLE_MIGRATIONS) {
         console.log("Migrations are disabled. Skipping...");
         return;

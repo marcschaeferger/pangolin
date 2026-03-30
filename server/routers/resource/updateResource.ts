@@ -9,7 +9,7 @@ import {
     Resource,
     resources
 } from "@server/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
@@ -22,8 +22,9 @@ import { registry } from "@server/openApi";
 import { OpenAPITags } from "@server/openApi";
 import { createCertificate } from "#dynamic/routers/certificates/createCertificate";
 import { validateAndConstructDomain } from "@server/lib/domainUtils";
-import { validateHeaders } from "@server/lib/validators";
 import { build } from "@server/build";
+import { isLicensedOrSubscribed } from "#dynamic/lib/isLicencedOrSubscribed";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 
 const updateResourceParamsSchema = z.strictObject({
     resourceId: z.string().transform(Number).pipe(z.int().positive())
@@ -32,7 +33,15 @@ const updateResourceParamsSchema = z.strictObject({
 const updateHttpResourceBodySchema = z
     .strictObject({
         name: z.string().min(1).max(255).optional(),
-        niceId: z.string().min(1).max(255).optional(),
+        niceId: z
+            .string()
+            .min(1)
+            .max(255)
+            .regex(
+                /^[a-zA-Z0-9-]+$/,
+                "niceId can only contain letters, numbers, and dashes"
+            )
+            .optional(),
         subdomain: subdomainSchema.nullable().optional(),
         ssl: z.boolean().optional(),
         sso: z.boolean().optional(),
@@ -48,7 +57,14 @@ const updateHttpResourceBodySchema = z
         headers: z
             .array(z.strictObject({ name: z.string(), value: z.string() }))
             .nullable()
-            .optional()
+            .optional(),
+        // Maintenance mode fields
+        maintenanceModeEnabled: z.boolean().optional(),
+        maintenanceModeType: z.enum(["forced", "automatic"]).optional(),
+        maintenanceTitle: z.string().max(255).nullable().optional(),
+        maintenanceMessage: z.string().max(2000).nullable().optional(),
+        maintenanceEstimatedTime: z.string().max(100).nullable().optional(),
+        postAuthPath: z.string().nullable().optional()
     })
     .refine((data) => Object.keys(data).length > 0, {
         error: "At least one field must be provided for update"
@@ -85,6 +101,49 @@ const updateHttpResourceBodySchema = z
         {
             error: "Invalid custom Host Header value. Use domain name format, or save empty to unset custom Host Header."
         }
+    )
+    .refine(
+        (data) => {
+            if (data.headers) {
+                // HTTP header names must be valid token characters (RFC 7230)
+                const validHeaderName = /^[a-zA-Z0-9!#$%&'*+\-.^_`|~]+$/;
+                return data.headers.every((h) => validHeaderName.test(h.name));
+            }
+            return true;
+        },
+        {
+            error: "Header names may only contain valid HTTP token characters (letters, digits, and !#$%&'*+-.^_`|~)."
+        }
+    )
+    .refine(
+        (data) => {
+            if (data.headers) {
+                // HTTP header values must be visible ASCII or horizontal whitespace, no control chars (RFC 7230)
+                const validHeaderValue = /^[\t\x20-\x7E]*$/;
+                return data.headers.every((h) => validHeaderValue.test(h.value));
+            }
+            return true;
+        },
+        {
+            error: "Header values may only contain printable ASCII characters and horizontal whitespace."
+        }
+    )
+    .refine(
+        (data) => {
+            if (data.headers) {
+                // Reject Traefik template syntax {{word}} in names or values
+                const templatePattern = /\{\{[^}]+\}\}/;
+                return data.headers.every(
+                    (h) =>
+                        !templatePattern.test(h.name) &&
+                        !templatePattern.test(h.value)
+                );
+            }
+            return true;
+        },
+        {
+            error: "Header names and values must not contain template expressions such as {{value}}."
+        }
     );
 
 export type UpdateResourceResponse = Resource;
@@ -120,7 +179,7 @@ registry.registerPath({
     method: "post",
     path: "/resource/{resourceId}",
     description: "Update a resource.",
-    tags: [OpenAPITags.Resource],
+    tags: [OpenAPITags.PublicResource],
     request: {
         params: updateResourceParamsSchema,
         body: {
@@ -240,14 +299,13 @@ async function updateHttpResource(
             .where(
                 and(
                     eq(resources.niceId, updateData.niceId),
-                    eq(resources.orgId, resource.orgId)
+                    eq(resources.orgId, resource.orgId),
+                    ne(resources.resourceId, resource.resourceId) // exclude the current resource from the search
                 )
-            );
+            )
+            .limit(1);
 
-        if (
-            existingResource &&
-            existingResource.resourceId !== resource.resourceId
-        ) {
+        if (existingResource) {
             return next(
                 createHttpError(
                     HttpCode.CONFLICT,
@@ -295,6 +353,20 @@ async function updateHttpResource(
                 );
             }
 
+            // Prevent updating resource with same domain as dashboard
+            const dashboardUrl = config.getRawConfig().app.dashboard_url;
+            if (dashboardUrl) {
+                const dashboardHost = new URL(dashboardUrl).hostname;
+                if (fullDomain === dashboardHost) {
+                    return next(
+                        createHttpError(
+                            HttpCode.CONFLICT,
+                            "Resource domain cannot be the same as the dashboard domain"
+                        )
+                    );
+                }
+            }
+        
             if (build != "oss") {
                 const existingLoginPages = await db
                     .select()
@@ -333,6 +405,18 @@ async function updateHttpResource(
         headers = JSON.stringify(updateData.headers);
     } else if (updateData.headers === null) {
         headers = null;
+    }
+
+    const isLicensed = await isLicensedOrSubscribed(
+        resource.orgId,
+        tierMatrix.maintencePage
+    );
+    if (!isLicensed) {
+        updateData.maintenanceModeEnabled = undefined;
+        updateData.maintenanceModeType = undefined;
+        updateData.maintenanceTitle = undefined;
+        updateData.maintenanceMessage = undefined;
+        updateData.maintenanceEstimatedTime = undefined;
     }
 
     const updatedResource = await db

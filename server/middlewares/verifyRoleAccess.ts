@@ -6,6 +6,7 @@ import createHttpError from "http-errors";
 import HttpCode from "@server/types/HttpCode";
 import logger from "@server/logger";
 import { checkOrgAccessPolicy } from "#dynamic/lib/checkOrgAccessPolicy";
+import { getUserOrgRoleIds } from "@server/lib/userOrgRoles";
 
 export async function verifyRoleAccess(
     req: Request,
@@ -23,8 +24,14 @@ export async function verifyRoleAccess(
         );
     }
 
-    const roleIds = req.body?.roleIds;
-    const allRoleIds = roleIds || (isNaN(singleRoleId) ? [] : [singleRoleId]);
+    let allRoleIds: number[] = [];
+    if (!isNaN(singleRoleId)) {
+        // If roleId is provided in URL params, query params, or body (single), use it exclusively
+        allRoleIds = [singleRoleId];
+    } else if (req.body?.roleIds) {
+        // Only use body.roleIds if no single roleId was provided
+        allRoleIds = req.body.roleIds;
+    }
 
     if (allRoleIds.length === 0) {
         return next();
@@ -93,7 +100,6 @@ export async function verifyRoleAccess(
         }
 
         if (!req.userOrg) {
-            // get the userORg
             const userOrg = await db
                 .select()
                 .from(userOrgs)
@@ -103,7 +109,7 @@ export async function verifyRoleAccess(
                 .limit(1);
 
             req.userOrg = userOrg[0];
-            req.userOrgRoleId = userOrg[0].roleId;
+            req.userOrgRoleIds = await getUserOrgRoleIds(userId, orgId!);
         }
 
         if (!req.userOrg) {

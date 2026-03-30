@@ -1,9 +1,8 @@
 "use client";
 
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
-import { DataTable } from "@app/components/ui/data-table";
-import { ExtendedColumnDef } from "@app/components/ui/data-table";
 import { Button } from "@app/components/ui/button";
+import { DataTable, ExtendedColumnDef } from "@app/components/ui/data-table";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -16,15 +15,24 @@ import { createApiClient, formatAxiosError } from "@app/lib/api";
 import {
     ArrowRight,
     ArrowUpDown,
-    ArrowUpRight,
-    MoreHorizontal
+    MoreHorizontal,
+    CircleSlash,
+    ArrowDown01Icon,
+    ArrowUp10Icon,
+    ChevronsUpDownIcon
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { Badge } from "./ui/badge";
-import { InfoPopup } from "./ui/info-popup";
+import type { PaginationState } from "@tanstack/react-table";
+import { ControlledDataTable } from "./ui/controlled-data-table";
+import { useNavigationContext } from "@app/hooks/useNavigationContext";
+import { useDebouncedCallback } from "use-debounce";
+import z from "zod";
+import { getNextSortOrder, getSortDirection } from "@app/lib/sortColumn";
+import { ColumnFilterButton } from "./ColumnFilterButton";
 
 export type ClientRow = {
     id: number;
@@ -42,18 +50,31 @@ export type ClientRow = {
     userEmail: string | null;
     niceId: string;
     agent: string | null;
+    archived?: boolean;
+    blocked?: boolean;
+    approvalState: "approved" | "pending" | "denied";
 };
 
 type ClientTableProps = {
     machineClients: ClientRow[];
     orgId: string;
+    pagination: PaginationState;
+    rowCount: number;
 };
 
 export default function MachineClientsTable({
     machineClients,
-    orgId
+    orgId,
+    pagination,
+    rowCount
 }: ClientTableProps) {
     const router = useRouter();
+
+    const {
+        navigate: filter,
+        isNavigating: isFiltering,
+        searchParams
+    } = useNavigationContext();
 
     const t = useTranslations();
 
@@ -64,6 +85,7 @@ export default function MachineClientsTable({
 
     const api = createApiClient(useEnvContext());
     const [isRefreshing, startTransition] = useTransition();
+    const [isNavigatingToAddPage, startNavigation] = useTransition();
 
     const defaultMachineColumnVisibility = {
         subnet: false,
@@ -103,6 +125,74 @@ export default function MachineClientsTable({
             });
     };
 
+    const archiveClient = (clientId: number) => {
+        api.post(`/client/${clientId}/archive`)
+            .catch((e) => {
+                console.error("Error archiving client", e);
+                toast({
+                    variant: "destructive",
+                    title: "Error archiving client",
+                    description: formatAxiosError(e, "Error archiving client")
+                });
+            })
+            .then(() => {
+                startTransition(() => {
+                    router.refresh();
+                });
+            });
+    };
+
+    const unarchiveClient = (clientId: number) => {
+        api.post(`/client/${clientId}/unarchive`)
+            .catch((e) => {
+                console.error("Error unarchiving client", e);
+                toast({
+                    variant: "destructive",
+                    title: "Error unarchiving client",
+                    description: formatAxiosError(e, "Error unarchiving client")
+                });
+            })
+            .then(() => {
+                startTransition(() => {
+                    router.refresh();
+                });
+            });
+    };
+
+    const blockClient = (clientId: number) => {
+        api.post(`/client/${clientId}/block`)
+            .catch((e) => {
+                console.error("Error blocking client", e);
+                toast({
+                    variant: "destructive",
+                    title: "Error blocking client",
+                    description: formatAxiosError(e, "Error blocking client")
+                });
+            })
+            .then(() => {
+                startTransition(() => {
+                    router.refresh();
+                });
+            });
+    };
+
+    const unblockClient = (clientId: number) => {
+        api.post(`/client/${clientId}/unblock`)
+            .catch((e) => {
+                console.error("Error unblocking client", e);
+                toast({
+                    variant: "destructive",
+                    title: "Error unblocking client",
+                    description: formatAxiosError(e, "Error unblocking client")
+                });
+            })
+            .then(() => {
+                startTransition(() => {
+                    router.refresh();
+                });
+            });
+    };
+
     // Check if there are any rows without userIds in the current view's data
     const hasRowsWithoutUserId = useMemo(() => {
         return machineClients.some((client) => !client.userId) ?? false;
@@ -113,58 +203,82 @@ export default function MachineClientsTable({
             {
                 accessorKey: "name",
                 enableHiding: false,
-                friendlyName: "Name",
-                header: ({ column }) => {
+                friendlyName: t("name"),
+                header: () => {
+                    const nameOrder = getSortDirection("name", searchParams);
+                    const Icon =
+                        nameOrder === "asc"
+                            ? ArrowDown01Icon
+                            : nameOrder === "desc"
+                              ? ArrowUp10Icon
+                              : ChevronsUpDownIcon;
+
                     return (
                         <Button
                             variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
+                            onClick={() => toggleSort("name")}
+                            className="px-3"
                         >
-                            Name
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                            {t("name")}
+                            <Icon className="ml-2 h-4 w-4" />
                         </Button>
+                    );
+                },
+                cell: ({ row }) => {
+                    const r = row.original;
+                    return (
+                        <div className="flex items-center gap-2">
+                            <span>{r.name}</span>
+                            {r.archived && (
+                                <Badge variant="secondary">
+                                    {t("archived")}
+                                </Badge>
+                            )}
+                            {r.blocked && (
+                                <Badge
+                                    variant="destructive"
+                                    className="flex items-center gap-1"
+                                >
+                                    <CircleSlash className="h-3 w-3" />
+                                    {t("blocked")}
+                                </Badge>
+                            )}
+                        </div>
                     );
                 }
             },
             {
                 accessorKey: "niceId",
                 friendlyName: "Identifier",
-                header: ({ column }) => {
-                    return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
-                        >
-                            {t("identifier")}
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
-                    );
-                }
+                header: () => <span className="px-3">{t("identifier")}</span>
             },
             {
                 accessorKey: "online",
-                friendlyName: "Connectivity",
-                header: ({ column }) => {
+                friendlyName: t("online"),
+                header: () => {
                     return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
+                        <ColumnFilterButton
+                            options={[
+                                {
+                                    value: "true",
+                                    label: t("connected")
+                                },
+                                {
+                                    value: "false",
+                                    label: t("disconnected")
+                                }
+                            ]}
+                            selectedValue={
+                                searchParams.get("online") ?? undefined
                             }
-                        >
-                            Connectivity
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
+                            onValueChange={(value) =>
+                                handleFilterChange("online", value)
+                            }
+                            searchPlaceholder={t("searchPlaceholder")}
+                            emptyMessage={t("emptySearchOptions")}
+                            label={t("online")}
+                            className="p-3"
+                        />
                     );
                 },
                 cell: ({ row }) => {
@@ -173,14 +287,14 @@ export default function MachineClientsTable({
                         return (
                             <span className="text-green-500 flex items-center space-x-2">
                                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                <span>Connected</span>
+                                <span>{t("connected")}</span>
                             </span>
                         );
                     } else {
                         return (
                             <span className="text-neutral-500 flex items-center space-x-2">
                                 <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                                <span>Disconnected</span>
+                                <span>{t("disconnected")}</span>
                             </span>
                         );
                     }
@@ -188,38 +302,52 @@ export default function MachineClientsTable({
             },
             {
                 accessorKey: "mbIn",
-                friendlyName: "Data In",
-                header: ({ column }) => {
+                friendlyName: t("dataIn"),
+                header: () => {
+                    const dataInOrder = getSortDirection(
+                        "megabytesIn",
+                        searchParams
+                    );
+
+                    const Icon =
+                        dataInOrder === "asc"
+                            ? ArrowDown01Icon
+                            : dataInOrder === "desc"
+                              ? ArrowUp10Icon
+                              : ChevronsUpDownIcon;
                     return (
                         <Button
                             variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
+                            onClick={() => toggleSort("megabytesIn")}
                         >
-                            Data In
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                            {t("dataIn")}
+                            <Icon className="ml-2 h-4 w-4" />
                         </Button>
                     );
                 }
             },
             {
                 accessorKey: "mbOut",
-                friendlyName: "Data Out",
-                header: ({ column }) => {
+                friendlyName: t("dataOut"),
+                header: () => {
+                    const dataOutOrder = getSortDirection(
+                        "megabytesOut",
+                        searchParams
+                    );
+
+                    const Icon =
+                        dataOutOrder === "asc"
+                            ? ArrowDown01Icon
+                            : dataOutOrder === "desc"
+                              ? ArrowUp10Icon
+                              : ChevronsUpDownIcon;
                     return (
                         <Button
                             variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
+                            onClick={() => toggleSort("megabytesOut")}
                         >
-                            Data Out
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                            {t("dataOut")}
+                            <Icon className="ml-2 h-4 w-4" />
                         </Button>
                     );
                 }
@@ -227,21 +355,7 @@ export default function MachineClientsTable({
             {
                 accessorKey: "client",
                 friendlyName: t("agent"),
-                header: ({ column }) => {
-                    return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
-                        >
-                            {t("agent")}
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
-                    );
-                },
+                header: () => <span className="px-3">{t("agent")}</span>,
                 cell: ({ row }) => {
                     const originalRow = row.original;
 
@@ -265,22 +379,8 @@ export default function MachineClientsTable({
             },
             {
                 accessorKey: "subnet",
-                friendlyName: "Address",
-                header: ({ column }) => {
-                    return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
-                        >
-                            Address
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
-                    );
-                }
+                friendlyName: t("address"),
+                header: () => <span className="px-3">{t("address")}</span>
             }
         ];
 
@@ -307,14 +407,36 @@ export default function MachineClientsTable({
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                    {/* <Link */}
-                                    {/*     className="block w-full" */}
-                                    {/*     href={`/${clientRow.orgId}/settings/sites/${clientRow.nice}`} */}
-                                    {/* > */}
-                                    {/*     <DropdownMenuItem> */}
-                                    {/*         View settings */}
-                                    {/*     </DropdownMenuItem> */}
-                                    {/* </Link> */}
+                                    <DropdownMenuItem
+                                        onClick={() => {
+                                            if (clientRow.archived) {
+                                                unarchiveClient(clientRow.id);
+                                            } else {
+                                                archiveClient(clientRow.id);
+                                            }
+                                        }}
+                                    >
+                                        <span>
+                                            {clientRow.archived
+                                                ? "Unarchive"
+                                                : "Archive"}
+                                        </span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={() => {
+                                            if (clientRow.blocked) {
+                                                unblockClient(clientRow.id);
+                                            } else {
+                                                blockClient(clientRow.id);
+                                            }
+                                        }}
+                                    >
+                                        <span>
+                                            {clientRow.blocked
+                                                ? "Unblock"
+                                                : "Block"}
+                                        </span>
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem
                                         onClick={() => {
                                             setSelectedClient(clientRow);
@@ -342,7 +464,56 @@ export default function MachineClientsTable({
         }
 
         return baseColumns;
-    }, [hasRowsWithoutUserId, t]);
+    }, [hasRowsWithoutUserId, t, getSortDirection, toggleSort]);
+
+    const booleanSearchFilterSchema = z
+        .enum(["true", "false"])
+        .optional()
+        .catch(undefined);
+
+    function handleFilterChange(
+        column: string,
+        value: string | null | undefined | string[]
+    ) {
+        searchParams.delete(column);
+        searchParams.delete("page");
+
+        if (typeof value === "string") {
+            searchParams.set(column, value);
+        } else if (value) {
+            for (const val of value) {
+                searchParams.append(column, val);
+            }
+        }
+
+        filter({
+            searchParams
+        });
+    }
+
+    function toggleSort(column: string) {
+        const newSearch = getNextSortOrder(column, searchParams);
+
+        filter({
+            searchParams: newSearch
+        });
+    }
+
+    const handlePaginationChange = (newPage: PaginationState) => {
+        searchParams.set("page", (newPage.pageIndex + 1).toString());
+        searchParams.set("pageSize", newPage.pageSize.toString());
+        filter({
+            searchParams
+        });
+    };
+
+    const handleSearchChange = useDebouncedCallback((query: string) => {
+        searchParams.set("query", query);
+        searchParams.delete("page");
+        filter({
+            searchParams
+        });
+    }, 300);
 
     return (
         <>
@@ -365,24 +536,57 @@ export default function MachineClientsTable({
                     title="Delete Client"
                 />
             )}
-
-            <DataTable
+            <ControlledDataTable
                 columns={columns}
-                data={machineClients || []}
-                persistPageSize="machine-clients"
-                searchPlaceholder={t("resourcesSearch")}
-                searchColumn="name"
+                rows={machineClients}
+                tableId="machine-clients"
+                searchPlaceholder={t("machinesSearch")}
                 onAdd={() =>
-                    router.push(`/${orgId}/settings/clients/machine/create`)
+                    startNavigation(() =>
+                        router.push(`/${orgId}/settings/clients/machine/create`)
+                    )
                 }
+                pagination={pagination}
+                rowCount={rowCount}
                 addButtonText={t("createClient")}
                 onRefresh={refreshData}
-                isRefreshing={isRefreshing}
-                enableColumnVisibility={true}
-                persistColumnVisibility="machine-clients"
+                isRefreshing={isRefreshing || isFiltering}
+                onSearch={handleSearchChange}
+                onPaginationChange={handlePaginationChange}
+                isNavigatingToAddPage={isNavigatingToAddPage}
+                enableColumnVisibility
                 columnVisibility={defaultMachineColumnVisibility}
                 stickyLeftColumn="name"
                 stickyRightColumn="actions"
+                filters={[
+                    {
+                        id: "status",
+                        label: t("status") || "Status",
+                        multiSelect: true,
+                        displayMode: "calculated",
+                        options: [
+                            {
+                                id: "active",
+                                label: t("active") || "Active",
+                                value: "active"
+                            },
+                            {
+                                id: "archived",
+                                label: t("archived") || "Archived",
+                                value: "archived"
+                            },
+                            {
+                                id: "blocked",
+                                label: t("blocked") || "Blocked",
+                                value: "blocked"
+                            }
+                        ],
+                        onValueChange(selectedValues: string[]) {
+                            handleFilterChange("status", selectedValues);
+                        },
+                        values: searchParams.getAll("status")
+                    }
+                ]}
             />
         </>
     );

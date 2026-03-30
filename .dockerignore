@@ -28,7 +28,9 @@ LICENSE
 CONTRIBUTING.md
 dist
 .git
-migrations/
+server/migrations/
 config/
 build.ts
 tsconfig.json
+Dockerfile*
+drizzle.config.ts

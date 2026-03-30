@@ -1,7 +1,13 @@
 import { randomUUID } from "crypto";
 import { InferSelectModel } from "drizzle-orm";
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
-import { no } from "zod/v4/locales";
+import {
+    index,
+    integer,
+    primaryKey,
+    sqliteTable,
+    text,
+    unique
+} from "drizzle-orm/sqlite-core";
 
 export const domains = sqliteTable("domains", {
     domainId: text("domainId").primaryKey(),
@@ -14,7 +20,8 @@ export const domains = sqliteTable("domains", {
     failed: integer("failed", { mode: "boolean" }).notNull().default(false),
     tries: integer("tries").notNull().default(0),
     certResolver: text("certResolver"),
-    preferWildcardCert: integer("preferWildcardCert", { mode: "boolean" })
+    preferWildcardCert: integer("preferWildcardCert", { mode: "boolean" }),
+    errorMessage: text("errorMessage")
 });
 
 export const dnsRecords = sqliteTable("dnsRecords", {
@@ -46,7 +53,14 @@ export const orgs = sqliteTable("orgs", {
         .default(0),
     settingsLogRetentionDaysAction: integer("settingsLogRetentionDaysAction") // where 0 = dont keep logs and -1 = keep forever and 9001 = end of the following year
         .notNull()
-        .default(0)
+        .default(0),
+    settingsLogRetentionDaysConnection: integer("settingsLogRetentionDaysConnection") // where 0 = dont keep logs and -1 = keep forever and 9001 = end of the following year
+        .notNull()
+        .default(0),
+    sshCaPrivateKey: text("sshCaPrivateKey"), // Encrypted SSH CA private key (PEM format)
+    sshCaPublicKey: text("sshCaPublicKey"), // SSH CA public key (OpenSSH format)
+    isBillingOrg: integer("isBillingOrg", { mode: "boolean" }),
+    billingOrgId: text("billingOrgId")
 });
 
 export const userDomains = sqliteTable("userDomains", {
@@ -86,6 +100,7 @@ export const sites = sqliteTable("sites", {
     lastBandwidthUpdate: text("lastBandwidthUpdate"),
     type: text("type").notNull(), // "newt" or "wireguard"
     online: integer("online", { mode: "boolean" }).notNull().default(false),
+    lastPing: integer("lastPing"),
 
     // exit node stuff that is how to connect to the site when it has a wg server
     address: text("address"), // this is the address of the wireguard interface in newt
@@ -144,7 +159,20 @@ export const resources = sqliteTable("resources", {
     proxyProtocol: integer("proxyProtocol", { mode: "boolean" })
         .notNull()
         .default(false),
-    proxyProtocolVersion: integer("proxyProtocolVersion").default(1)
+    proxyProtocolVersion: integer("proxyProtocolVersion").default(1),
+
+    maintenanceModeEnabled: integer("maintenanceModeEnabled", {
+        mode: "boolean"
+    })
+        .notNull()
+        .default(false),
+    maintenanceModeType: text("maintenanceModeType", {
+        enum: ["forced", "automatic"]
+    }).default("forced"), // "forced" = always show, "automatic" = only when down
+    maintenanceTitle: text("maintenanceTitle"),
+    maintenanceMessage: text("maintenanceMessage"),
+    maintenanceEstimatedTime: text("maintenanceEstimatedTime"),
+    postAuthPath: text("postAuthPath")
 });
 
 export const targets = sqliteTable("targets", {
@@ -195,7 +223,9 @@ export const targetHealthCheck = sqliteTable("targetHealthCheck", {
     }).default(true),
     hcMethod: text("hcMethod").default("GET"),
     hcStatus: integer("hcStatus"), // http code
-    hcHealth: text("hcHealth").default("unknown"), // "unknown", "healthy", "unhealthy"
+    hcHealth: text("hcHealth")
+        .$type<"unknown" | "healthy" | "unhealthy">()
+        .default("unknown"), // "unknown", "healthy", "unhealthy"
     hcTlsServerName: text("hcTlsServerName")
 });
 
@@ -227,14 +257,23 @@ export const siteResources = sqliteTable("siteResources", {
         .references(() => orgs.orgId, { onDelete: "cascade" }),
     niceId: text("niceId").notNull(),
     name: text("name").notNull(),
-    mode: text("mode").notNull(), // "host" | "cidr" | "port"
+    mode: text("mode").$type<"host" | "cidr">().notNull(), // "host" | "cidr" | "port"
     protocol: text("protocol"), // only for port mode
     proxyPort: integer("proxyPort"), // only for port mode
     destinationPort: integer("destinationPort"), // only for port mode
     destination: text("destination").notNull(), // ip, cidr, hostname
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     alias: text("alias"),
-    aliasAddress: text("aliasAddress")
+    aliasAddress: text("aliasAddress"),
+    tcpPortRangeString: text("tcpPortRangeString").notNull().default("*"),
+    udpPortRangeString: text("udpPortRangeString").notNull().default("*"),
+    disableIcmp: integer("disableIcmp", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    authDaemonPort: integer("authDaemonPort").default(22123),
+    authDaemonMode: text("authDaemonMode")
+        .$type<"site" | "remote">()
+        .default("site")
 });
 
 export const clientSiteResources = sqliteTable("clientSiteResources", {
@@ -287,6 +326,9 @@ export const users = sqliteTable("user", {
     dateCreated: text("dateCreated").notNull(),
     termsAcceptedTimestamp: text("termsAcceptedTimestamp"),
     termsVersion: text("termsVersion"),
+    marketingEmailConsent: integer("marketingEmailConsent", {
+        mode: "boolean"
+    }).default(false),
     serverAdmin: integer("serverAdmin", { mode: "boolean" })
         .notNull()
         .default(false),
@@ -362,7 +404,12 @@ export const clients = sqliteTable("clients", {
     type: text("type").notNull(), // "olm"
     online: integer("online", { mode: "boolean" }).notNull().default(false),
     // endpoint: text("endpoint"),
-    lastHolePunch: integer("lastHolePunch")
+    lastHolePunch: integer("lastHolePunch"),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    blocked: integer("blocked", { mode: "boolean" }).notNull().default(false),
+    approvalState: text("approvalState").$type<
+        "pending" | "approved" | "denied"
+    >()
 });
 
 export const clientSitesAssociationsCache = sqliteTable(
@@ -372,6 +419,9 @@ export const clientSitesAssociationsCache = sqliteTable(
             .notNull(),
         siteId: integer("siteId").notNull(),
         isRelayed: integer("isRelayed", { mode: "boolean" })
+            .notNull()
+            .default(false),
+        isJitMode: integer("isJitMode", { mode: "boolean" })
             .notNull()
             .default(false),
         endpoint: text("endpoint"),
@@ -402,7 +452,160 @@ export const olms = sqliteTable("olms", {
     userId: text("userId").references(() => users.userId, {
         // optionally tied to a user and in this case delete when the user deletes
         onDelete: "cascade"
+    }),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false)
+});
+
+export const currentFingerprint = sqliteTable("currentFingerprint", {
+    fingerprintId: integer("id").primaryKey({ autoIncrement: true }),
+
+    olmId: text("olmId")
+        .references(() => olms.olmId, { onDelete: "cascade" })
+        .notNull(),
+
+    firstSeen: integer("firstSeen").notNull(),
+    lastSeen: integer("lastSeen").notNull(),
+    lastCollectedAt: integer("lastCollectedAt").notNull(),
+
+    username: text("username"),
+    hostname: text("hostname"),
+    platform: text("platform"),
+    osVersion: text("osVersion"),
+    kernelVersion: text("kernelVersion"),
+    arch: text("arch"),
+    deviceModel: text("deviceModel"),
+    serialNumber: text("serialNumber"),
+    platformFingerprint: text("platformFingerprint"),
+
+    // Platform-agnostic checks
+
+    biometricsEnabled: integer("biometricsEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    diskEncrypted: integer("diskEncrypted", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    firewallEnabled: integer("firewallEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    autoUpdatesEnabled: integer("autoUpdatesEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    tpmAvailable: integer("tpmAvailable", { mode: "boolean" })
+        .notNull()
+        .default(false),
+
+    // Windows-specific posture check information
+
+    windowsAntivirusEnabled: integer("windowsAntivirusEnabled", {
+        mode: "boolean"
     })
+        .notNull()
+        .default(false),
+
+    // macOS-specific posture check information
+
+    macosSipEnabled: integer("macosSipEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    macosGatekeeperEnabled: integer("macosGatekeeperEnabled", {
+        mode: "boolean"
+    })
+        .notNull()
+        .default(false),
+    macosFirewallStealthMode: integer("macosFirewallStealthMode", {
+        mode: "boolean"
+    })
+        .notNull()
+        .default(false),
+
+    // Linux-specific posture check information
+
+    linuxAppArmorEnabled: integer("linuxAppArmorEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    linuxSELinuxEnabled: integer("linuxSELinuxEnabled", {
+        mode: "boolean"
+    })
+        .notNull()
+        .default(false)
+});
+
+export const fingerprintSnapshots = sqliteTable("fingerprintSnapshots", {
+    snapshotId: integer("id").primaryKey({ autoIncrement: true }),
+
+    fingerprintId: integer("fingerprintId").references(
+        () => currentFingerprint.fingerprintId,
+        {
+            onDelete: "set null"
+        }
+    ),
+
+    username: text("username"),
+    hostname: text("hostname"),
+    platform: text("platform"),
+    osVersion: text("osVersion"),
+    kernelVersion: text("kernelVersion"),
+    arch: text("arch"),
+    deviceModel: text("deviceModel"),
+    serialNumber: text("serialNumber"),
+    platformFingerprint: text("platformFingerprint"),
+
+    // Platform-agnostic checks
+
+    biometricsEnabled: integer("biometricsEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    diskEncrypted: integer("diskEncrypted", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    firewallEnabled: integer("firewallEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    autoUpdatesEnabled: integer("autoUpdatesEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    tpmAvailable: integer("tpmAvailable", { mode: "boolean" })
+        .notNull()
+        .default(false),
+
+    // Windows-specific posture check information
+
+    windowsAntivirusEnabled: integer("windowsAntivirusEnabled", {
+        mode: "boolean"
+    })
+        .notNull()
+        .default(false),
+
+    // macOS-specific posture check information
+
+    macosSipEnabled: integer("macosSipEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    macosGatekeeperEnabled: integer("macosGatekeeperEnabled", {
+        mode: "boolean"
+    })
+        .notNull()
+        .default(false),
+    macosFirewallStealthMode: integer("macosFirewallStealthMode", {
+        mode: "boolean"
+    })
+        .notNull()
+        .default(false),
+
+    // Linux-specific posture check information
+
+    linuxAppArmorEnabled: integer("linuxAppArmorEnabled", { mode: "boolean" })
+        .notNull()
+        .default(false),
+    linuxSELinuxEnabled: integer("linuxSELinuxEnabled", {
+        mode: "boolean"
+    })
+        .notNull()
+        .default(false),
+
+    hash: text("hash").notNull(),
+    collectedAt: integer("collectedAt").notNull()
 });
 
 export const twoFactorBackupCodes = sqliteTable("twoFactorBackupCodes", {
@@ -450,13 +653,11 @@ export const userOrgs = sqliteTable("userOrgs", {
             onDelete: "cascade"
         })
         .notNull(),
-    roleId: integer("roleId")
-        .notNull()
-        .references(() => roles.roleId),
     isOwner: integer("isOwner", { mode: "boolean" }).notNull().default(false),
     autoProvisioned: integer("autoProvisioned", {
         mode: "boolean"
-    }).default(false)
+    }).default(false),
+    pamUsername: text("pamUsername") // cleaned username for ssh and such
 });
 
 export const emailVerificationCodes = sqliteTable("emailVerificationCodes", {
@@ -494,8 +695,33 @@ export const roles = sqliteTable("roles", {
         .notNull(),
     isAdmin: integer("isAdmin", { mode: "boolean" }),
     name: text("name").notNull(),
-    description: text("description")
+    description: text("description"),
+    requireDeviceApproval: integer("requireDeviceApproval", {
+        mode: "boolean"
+    }).default(false),
+    sshSudoMode: text("sshSudoMode").default("none"), // "none" | "full" | "commands"
+    sshSudoCommands: text("sshSudoCommands").default("[]"),
+    sshCreateHomeDir: integer("sshCreateHomeDir", { mode: "boolean" }).default(
+        true
+    ),
+    sshUnixGroups: text("sshUnixGroups").default("[]")
 });
+
+export const userOrgRoles = sqliteTable(
+    "userOrgRoles",
+    {
+        userId: text("userId")
+            .notNull()
+            .references(() => users.userId, { onDelete: "cascade" }),
+        orgId: text("orgId")
+            .notNull()
+            .references(() => orgs.orgId, { onDelete: "cascade" }),
+        roleId: integer("roleId")
+            .notNull()
+            .references(() => roles.roleId, { onDelete: "cascade" })
+    },
+    (t) => [unique().on(t.userId, t.orgId, t.roleId)]
+);
 
 export const roleActions = sqliteTable("roleActions", {
     roleId: integer("roleId")
@@ -582,11 +808,21 @@ export const userInvites = sqliteTable("userInvites", {
         .references(() => orgs.orgId, { onDelete: "cascade" }),
     email: text("email").notNull(),
     expiresAt: integer("expiresAt").notNull(),
-    tokenHash: text("token").notNull(),
-    roleId: integer("roleId")
-        .notNull()
-        .references(() => roles.roleId, { onDelete: "cascade" })
+    tokenHash: text("token").notNull()
 });
+
+export const userInviteRoles = sqliteTable(
+    "userInviteRoles",
+    {
+        inviteId: text("inviteId")
+            .notNull()
+            .references(() => userInvites.inviteId, { onDelete: "cascade" }),
+        roleId: integer("roleId")
+            .notNull()
+            .references(() => roles.roleId, { onDelete: "cascade" })
+    },
+    (t) => [primaryKey({ columns: [t.inviteId, t.roleId] })]
+);
 
 export const resourcePincode = sqliteTable("resourcePincode", {
     pincodeId: integer("pincodeId").primaryKey({
@@ -618,6 +854,26 @@ export const resourceHeaderAuth = sqliteTable("resourceHeaderAuth", {
         .references(() => resources.resourceId, { onDelete: "cascade" }),
     headerAuthHash: text("headerAuthHash").notNull()
 });
+
+export const resourceHeaderAuthExtendedCompatibility = sqliteTable(
+    "resourceHeaderAuthExtendedCompatibility",
+    {
+        headerAuthExtendedCompatibilityId: integer(
+            "headerAuthExtendedCompatibilityId"
+        ).primaryKey({
+            autoIncrement: true
+        }),
+        resourceId: integer("resourceId")
+            .notNull()
+            .references(() => resources.resourceId, { onDelete: "cascade" }),
+        extendedCompatibilityIsActivated: integer(
+            "extendedCompatibilityIsActivated",
+            { mode: "boolean" }
+        )
+            .notNull()
+            .default(true)
+    }
+);
 
 export const resourceAccessToken = sqliteTable("resourceAccessToken", {
     accessTokenId: text("accessTokenId").primaryKey(),
@@ -733,7 +989,8 @@ export const idp = sqliteTable("idp", {
         mode: "boolean"
     })
         .notNull()
-        .default(false)
+        .default(false),
+    tags: text("tags")
 });
 
 // Identity Provider OAuth Configuration
@@ -874,6 +1131,16 @@ export const deviceWebAuthCodes = sqliteTable("deviceWebAuthCodes", {
     })
 });
 
+export const roundTripMessageTracker = sqliteTable("roundTripMessageTracker", {
+    messageId: integer("messageId").primaryKey({ autoIncrement: true }),
+    wsClientId: text("clientId"),
+    messageType: text("messageType"),
+    sentAt: integer("sentAt").notNull(),
+    receivedAt: integer("receivedAt"),
+    error: text("error"),
+    complete: integer("complete", { mode: "boolean" }).notNull().default(false)
+});
+
 export type Org = InferSelectModel<typeof orgs>;
 export type User = InferSelectModel<typeof users>;
 export type Site = InferSelectModel<typeof sites>;
@@ -899,11 +1166,16 @@ export type UserSite = InferSelectModel<typeof userSites>;
 export type RoleResource = InferSelectModel<typeof roleResources>;
 export type UserResource = InferSelectModel<typeof userResources>;
 export type UserInvite = InferSelectModel<typeof userInvites>;
+export type UserInviteRole = InferSelectModel<typeof userInviteRoles>;
 export type UserOrg = InferSelectModel<typeof userOrgs>;
+export type UserOrgRole = InferSelectModel<typeof userOrgRoles>;
 export type ResourceSession = InferSelectModel<typeof resourceSessions>;
 export type ResourcePincode = InferSelectModel<typeof resourcePincode>;
 export type ResourcePassword = InferSelectModel<typeof resourcePassword>;
 export type ResourceHeaderAuth = InferSelectModel<typeof resourceHeaderAuth>;
+export type ResourceHeaderAuthExtendedCompatibility = InferSelectModel<
+    typeof resourceHeaderAuthExtendedCompatibility
+>;
 export type ResourceOtp = InferSelectModel<typeof resourceOtp>;
 export type ResourceAccessToken = InferSelectModel<typeof resourceAccessToken>;
 export type ResourceWhitelist = InferSelectModel<typeof resourceWhitelist>;
@@ -932,3 +1204,6 @@ export type SecurityKey = InferSelectModel<typeof securityKeys>;
 export type WebauthnChallenge = InferSelectModel<typeof webauthnChallenge>;
 export type RequestAuditLog = InferSelectModel<typeof requestAuditLog>;
 export type DeviceWebAuthCode = InferSelectModel<typeof deviceWebAuthCodes>;
+export type RoundTripMessageTracker = InferSelectModel<
+    typeof roundTripMessageTracker
+>;

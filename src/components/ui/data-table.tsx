@@ -30,10 +30,10 @@ import {
     TableRow
 } from "@/components/ui/table";
 import { Button } from "@app/components/ui/button";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@app/components/ui/input";
 import { DataTablePagination } from "@app/components/DataTablePagination";
-import { Plus, Search, RefreshCw, Columns } from "lucide-react";
+import { Plus, Search, RefreshCw, Columns, Filter } from "lucide-react";
 import {
     Card,
     CardContent,
@@ -140,12 +140,38 @@ type TabFilter = {
     filterFn: (row: any) => boolean;
 };
 
+type FilterOption = {
+    id: string;
+    label: string;
+    value: string | number | boolean;
+};
+
+type DataTableFilter = {
+    id: string;
+    label: string;
+    options: FilterOption[];
+    multiSelect?: boolean;
+    filterFn: (
+        row: any,
+        selectedValues: (string | number | boolean)[]
+    ) => boolean;
+    defaultValues?: (string | number | boolean)[];
+    displayMode?: "label" | "calculated"; // How to display the filter button text
+};
+
+export type DataTablePaginationState = PaginationState & {
+    pageCount: number;
+};
+
+export type DataTablePaginationUpdateFn = (newPage: PaginationState) => void;
+
 type DataTableProps<TData, TValue> = {
     columns: ExtendedColumnDef<TData, TValue>[];
     data: TData[];
     title?: string;
     addButtonText?: string;
     onAdd?: () => void;
+    addButtonDisabled?: boolean;
     onRefresh?: () => void;
     isRefreshing?: boolean;
     searchPlaceholder?: string;
@@ -156,10 +182,17 @@ type DataTableProps<TData, TValue> = {
     };
     tabs?: TabFilter[];
     defaultTab?: string;
+    filters?: DataTableFilter[];
+    filterDisplayMode?: "label" | "calculated"; // Global filter display mode (can be overridden per filter)
     persistPageSize?: boolean | string;
     defaultPageSize?: number;
     columnVisibility?: Record<string, boolean>;
     enableColumnVisibility?: boolean;
+    manualFiltering?: boolean;
+    onSearch?: (input: string) => void;
+    searchQuery?: string;
+    pagination?: DataTablePaginationState;
+    onPaginationChange?: DataTablePaginationUpdateFn;
     persistColumnVisibility?: boolean | string;
     stickyLeftColumn?: string; // Column ID or accessorKey for left sticky column
     stickyRightColumn?: string; // Column ID or accessorKey for right sticky column (typically "actions")
@@ -171,6 +204,7 @@ export function DataTable<TData, TValue>({
     title,
     addButtonText,
     onAdd,
+    addButtonDisabled = false,
     onRefresh,
     isRefreshing,
     searchPlaceholder = "Search...",
@@ -178,12 +212,19 @@ export function DataTable<TData, TValue>({
     defaultSort,
     tabs,
     defaultTab,
+    filters,
+    filterDisplayMode = "label",
     persistPageSize = false,
     defaultPageSize = 20,
     columnVisibility: defaultColumnVisibility,
     enableColumnVisibility = false,
     persistColumnVisibility = false,
+    manualFiltering = false,
+    pagination: paginationState,
     stickyLeftColumn,
+    onSearch,
+    searchQuery,
+    onPaginationChange,
     stickyRightColumn
 }: DataTableProps<TData, TValue>) {
     const t = useTranslations();
@@ -228,27 +269,58 @@ export function DataTable<TData, TValue>({
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
         initialColumnVisibility
     );
-    const [pagination, setPagination] = useState<PaginationState>({
+    const [_pagination, setPagination] = useState<PaginationState>({
         pageIndex: 0,
         pageSize: pageSize
     });
+
+    const pagination = paginationState ?? _pagination;
+
     const [activeTab, setActiveTab] = useState<string>(
         defaultTab || tabs?.[0]?.id || ""
     );
+    const [activeFilters, setActiveFilters] = useState<
+        Record<string, (string | number | boolean)[]>
+    >(() => {
+        const initial: Record<string, (string | number | boolean)[]> = {};
+        filters?.forEach((filter) => {
+            initial[filter.id] = filter.defaultValues || [];
+        });
+        return initial;
+    });
 
-    // Apply tab filter to data
+    // Track initial values to avoid storing defaults on first render
+    const initialPageSize = useRef(pageSize);
+    const initialColumnVisibilityState = useRef(columnVisibility);
+    const hasUserChangedPageSize = useRef(false);
+    const hasUserChangedColumnVisibility = useRef(false);
+
+    // Apply tab and custom filters to data
     const filteredData = useMemo(() => {
-        if (!tabs || activeTab === "") {
-            return data;
+        let result = data;
+
+        // Apply tab filter
+        if (tabs && activeTab !== "") {
+            const activeTabFilter = tabs.find((tab) => tab.id === activeTab);
+            if (activeTabFilter) {
+                result = result.filter(activeTabFilter.filterFn);
+            }
         }
 
-        const activeTabFilter = tabs.find((tab) => tab.id === activeTab);
-        if (!activeTabFilter) {
-            return data;
+        // Apply custom filters
+        if (filters && filters.length > 0) {
+            filters.forEach((filter) => {
+                const selectedValues = activeFilters[filter.id] || [];
+                if (selectedValues.length > 0) {
+                    result = result.filter((row) =>
+                        filter.filterFn(row, selectedValues)
+                    );
+                }
+            });
         }
 
-        return data.filter(activeTabFilter.filterFn);
-    }, [data, tabs, activeTab]);
+        return result;
+    }, [data, tabs, activeTab, filters, activeFilters]);
 
     const table = useReactTable({
         data: filteredData,
@@ -261,12 +333,18 @@ export function DataTable<TData, TValue>({
         getFilteredRowModel: getFilteredRowModel(),
         onGlobalFilterChange: setGlobalFilter,
         onColumnVisibilityChange: setColumnVisibility,
-        onPaginationChange: setPagination,
+        onPaginationChange: onPaginationChange
+            ? (state) => {
+                  const newState =
+                      typeof state === "function" ? state(pagination) : state;
+                  onPaginationChange(newState);
+              }
+            : setPagination,
+        manualFiltering,
+        manualPagination: Boolean(paginationState),
+        pageCount: paginationState?.pageCount,
         initialState: {
-            pagination: {
-                pageSize: pageSize,
-                pageIndex: 0
-            },
+            pagination,
             columnVisibility: initialColumnVisibility
         },
         state: {
@@ -278,18 +356,31 @@ export function DataTable<TData, TValue>({
         }
     });
 
-    // Persist pageSize to localStorage when it changes
+    // Persist pageSize to localStorage when it changes (but not on initial mount)
     useEffect(() => {
         if (persistPageSize && pagination.pageSize !== pageSize) {
-            setStoredPageSize(pagination.pageSize, tableId);
+            // Only store if user has actually changed it from initial value
+            if (
+                hasUserChangedPageSize.current &&
+                pagination.pageSize !== initialPageSize.current
+            ) {
+                setStoredPageSize(pagination.pageSize, tableId);
+            }
             setPageSize(pagination.pageSize);
         }
     }, [pagination.pageSize, persistPageSize, tableId, pageSize]);
 
     useEffect(() => {
-        // Persist column visibility to localStorage when it changes
+        // Persist column visibility to localStorage when it changes (but not on initial mount)
         if (shouldPersistColumnVisibility) {
-            setStoredColumnVisibility(columnVisibility, tableId);
+            const hasChanged =
+                JSON.stringify(columnVisibility) !==
+                JSON.stringify(initialColumnVisibilityState.current);
+            if (hasChanged) {
+                // Mark as user-initiated change and persist
+                hasUserChangedColumnVisibility.current = true;
+                setStoredColumnVisibility(columnVisibility, tableId);
+            }
         }
     }, [columnVisibility, shouldPersistColumnVisibility, tableId]);
 
@@ -299,8 +390,67 @@ export function DataTable<TData, TValue>({
         setPagination((prev) => ({ ...prev, pageIndex: 0 }));
     };
 
+    const handleFilterChange = (
+        filterId: string,
+        optionValue: string | number | boolean,
+        checked: boolean
+    ) => {
+        setActiveFilters((prev) => {
+            const currentValues = prev[filterId] || [];
+            const filter = filters?.find((f) => f.id === filterId);
+
+            if (!filter) return prev;
+
+            let newValues: (string | number | boolean)[];
+
+            if (filter.multiSelect) {
+                // Multi-select: add or remove the value
+                if (checked) {
+                    newValues = [...currentValues, optionValue];
+                } else {
+                    newValues = currentValues.filter((v) => v !== optionValue);
+                }
+            } else {
+                // Single-select: replace the value
+                newValues = checked ? [optionValue] : [];
+            }
+
+            return {
+                ...prev,
+                [filterId]: newValues
+            };
+        });
+        // Reset to first page when changing filters
+        setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+    };
+
+    // Calculate display text for a filter based on selected values
+    const getFilterDisplayText = (filter: DataTableFilter): string => {
+        const selectedValues = activeFilters[filter.id] || [];
+
+        if (selectedValues.length === 0) {
+            return filter.label;
+        }
+
+        const selectedOptions = filter.options.filter((option) =>
+            selectedValues.includes(option.value)
+        );
+
+        if (selectedOptions.length === 0) {
+            return filter.label;
+        }
+
+        if (selectedOptions.length === 1) {
+            return selectedOptions[0].label;
+        }
+
+        // Multiple selections: always join with "and"
+        return selectedOptions.map((opt) => opt.label).join(" and ");
+    };
+
     // Enhanced pagination component that updates our local state
     const handlePageSizeChange = (newPageSize: number) => {
+        hasUserChangedPageSize.current = true;
         setPagination((prev) => ({
             ...prev,
             pageSize: newPageSize,
@@ -308,7 +458,7 @@ export function DataTable<TData, TValue>({
         }));
         setPageSize(newPageSize);
 
-        // Persist immediately when changed
+        // Persist immediately when user changes it
         if (persistPageSize) {
             setStoredPageSize(newPageSize, tableId);
         }
@@ -357,16 +507,97 @@ export function DataTable<TData, TValue>({
                         <div className="relative w-full sm:max-w-sm">
                             <Input
                                 placeholder={searchPlaceholder}
-                                value={globalFilter ?? ""}
-                                onChange={(e) =>
-                                    table.setGlobalFilter(
-                                        String(e.target.value)
-                                    )
-                                }
+                                defaultValue={searchQuery}
+                                value={onSearch ? undefined : globalFilter}
+                                onChange={(e) => {
+                                    onSearch
+                                        ? onSearch(e.currentTarget.value)
+                                        : table.setGlobalFilter(
+                                              String(e.target.value)
+                                          );
+                                }}
                                 className="w-full pl-8"
                             />
                             <Search className="h-4 w-4 absolute left-2 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
                         </div>
+                        {filters && filters.length > 0 && (
+                            <div className="flex gap-2">
+                                {filters.map((filter) => {
+                                    const selectedValues =
+                                        activeFilters[filter.id] || [];
+                                    const hasActiveFilters =
+                                        selectedValues.length > 0;
+                                    const displayMode =
+                                        filter.displayMode || filterDisplayMode;
+                                    const displayText =
+                                        displayMode === "calculated"
+                                            ? getFilterDisplayText(filter)
+                                            : filter.label;
+
+                                    return (
+                                        <DropdownMenu key={filter.id}>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    variant={"outline"}
+                                                    size="sm"
+                                                    className="h-9"
+                                                >
+                                                    <Filter className="h-4 w-4 mr-2" />
+                                                    {displayText}
+                                                    {displayMode === "label" &&
+                                                        hasActiveFilters && (
+                                                            <span className="ml-2 bg-muted text-foreground rounded-full px-2 py-0.5 text-xs">
+                                                                {
+                                                                    selectedValues.length
+                                                                }
+                                                            </span>
+                                                        )}
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent
+                                                align="start"
+                                                className="w-48"
+                                            >
+                                                <DropdownMenuLabel>
+                                                    {filter.label}
+                                                </DropdownMenuLabel>
+                                                <DropdownMenuSeparator />
+                                                {filter.options.map(
+                                                    (option) => {
+                                                        const isChecked =
+                                                            selectedValues.includes(
+                                                                option.value
+                                                            );
+                                                        return (
+                                                            <DropdownMenuCheckboxItem
+                                                                key={option.id}
+                                                                checked={
+                                                                    isChecked
+                                                                }
+                                                                onCheckedChange={(
+                                                                    checked
+                                                                ) =>
+                                                                    handleFilterChange(
+                                                                        filter.id,
+                                                                        option.value,
+                                                                        checked
+                                                                    )
+                                                                }
+                                                                onSelect={(e) =>
+                                                                    e.preventDefault()
+                                                                }
+                                                            >
+                                                                {option.label}
+                                                            </DropdownMenuCheckboxItem>
+                                                        );
+                                                    }
+                                                )}
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    );
+                                })}
+                            </div>
+                        )}
                         {tabs && tabs.length > 0 && (
                             <Tabs
                                 value={activeTab}
@@ -406,7 +637,7 @@ export function DataTable<TData, TValue>({
                         )}
                         {onAdd && addButtonText && (
                             <div>
-                                <Button onClick={onAdd}>
+                                <Button onClick={onAdd} disabled={addButtonDisabled}>
                                     <Plus className="mr-2 h-4 w-4" />
                                     {addButtonText}
                                 </Button>
@@ -618,12 +849,14 @@ export function DataTable<TData, TValue>({
                         </Table>
                     </div>
                     <div className="mt-4">
-                        <DataTablePagination
-                            table={table}
-                            onPageSizeChange={handlePageSizeChange}
-                            pageSize={pagination.pageSize}
-                            pageIndex={pagination.pageIndex}
-                        />
+                        {table.getRowModel().rows?.length > 0 && (
+                            <DataTablePagination
+                                table={table}
+                                onPageSizeChange={handlePageSizeChange}
+                                pageSize={pagination.pageSize}
+                                pageIndex={pagination.pageIndex}
+                            />
+                        )}
                     </div>
                 </CardContent>
             </Card>

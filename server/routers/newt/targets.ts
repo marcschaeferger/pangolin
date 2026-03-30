@@ -2,13 +2,14 @@ import { Target, TargetHealthCheck, db, targetHealthCheck } from "@server/db";
 import { sendToClient } from "#dynamic/routers/ws";
 import logger from "@server/logger";
 import { eq, inArray } from "drizzle-orm";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 export async function addTargets(
     newtId: string,
     targets: Target[],
     healthCheckData: TargetHealthCheck[],
     protocol: string,
-    port: number | null = null
+    version?: string | null
 ) {
     //create a list of udp and tcp targets
     const payloadTargets = targets.map((target) => {
@@ -22,7 +23,7 @@ export async function addTargets(
         data: {
             targets: payloadTargets
         }
-    });
+    }, { incrementConfigVersion: true, compress: canCompress(version, "newt") });
 
     // Create a map for quick lookup
     const healthCheckMap = new Map<number, TargetHealthCheck>();
@@ -103,14 +104,14 @@ export async function addTargets(
         data: {
             targets: validHealthCheckTargets
         }
-    });
+    }, { incrementConfigVersion: true, compress: canCompress(version, "newt") });
 }
 
 export async function removeTargets(
     newtId: string,
     targets: Target[],
     protocol: string,
-    port: number | null = null
+    version?: string | null
 ) {
     //create a list of udp and tcp targets
     const payloadTargets = targets.map((target) => {
@@ -124,7 +125,7 @@ export async function removeTargets(
         data: {
             targets: payloadTargets
         }
-    });
+    }, { incrementConfigVersion: true });
 
     const healthCheckTargets = targets.map((target) => {
         return target.targetId;
@@ -135,5 +136,5 @@ export async function removeTargets(
         data: {
             ids: healthCheckTargets
         }
-    });
+    }, { incrementConfigVersion: true, compress: canCompress(version, "newt") });
 }

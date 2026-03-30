@@ -32,7 +32,11 @@ export function pullEnv(): Env {
                     process.env.NEW_RELEASES_NOTIFICATION_ENABLED === "true"
                         ? true
                         : false
-            }
+            },
+            identityProviderMode: process.env.IDENTITY_PROVIDER_MODE as
+                | "org"
+                | "global"
+                | undefined
         },
         email: {
             emailEnabled: process.env.EMAIL_ENABLED === "true" ? true : false
@@ -59,7 +63,15 @@ export function pullEnv(): Env {
             hideSupporterKey:
                 process.env.HIDE_SUPPORTER_KEY === "true" ? true : false,
             usePangolinDns:
-                process.env.USE_PANGOLIN_DNS === "true" ? true : false
+                process.env.USE_PANGOLIN_DNS === "true" ? true : false,
+            disableProductHelpBanners:
+                process.env.FLAGS_DISABLE_PRODUCT_HELP_BANNERS === "true"
+                    ? true
+                    : false,
+            disableEnterpriseFeatures:
+                process.env.DISABLE_ENTERPRISE_FEATURES === "true"
+                    ? true
+                    : false
         },
 
         branding: {

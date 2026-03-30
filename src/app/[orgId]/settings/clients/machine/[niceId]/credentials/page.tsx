@@ -19,10 +19,6 @@ import { useTranslations } from "next-intl";
 import { PickClientDefaultsResponse } from "@server/routers/client";
 import { useClientContext } from "@app/hooks/useClientContext";
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
-import { useLicenseStatusContext } from "@app/hooks/useLicenseStatusContext";
-import { useSubscriptionStatusContext } from "@app/hooks/useSubscriptionStatusContext";
-import { build } from "@server/build";
-import { SecurityFeaturesAlert } from "@app/components/SecurityFeaturesAlert";
 import {
     InfoSection,
     InfoSectionContent,
@@ -32,6 +28,10 @@ import {
 import CopyToClipboard from "@app/components/CopyToClipboard";
 import { Alert, AlertDescription, AlertTitle } from "@app/components/ui/alert";
 import { InfoIcon } from "lucide-react";
+import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
+import { OlmInstallCommands } from "@app/components/olm-install-commands";
+import { usePaidStatus } from "@app/hooks/usePaidStatus";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 
 export default function CredentialsPage() {
     const { env } = useEnvContext();
@@ -53,15 +53,7 @@ export default function CredentialsPage() {
     const [showCredentialsAlert, setShowCredentialsAlert] = useState(false);
     const [shouldDisconnect, setShouldDisconnect] = useState(true);
 
-    const { licenseStatus, isUnlocked } = useLicenseStatusContext();
-    const subscription = useSubscriptionStatusContext();
-
-    const isSecurityFeatureDisabled = () => {
-        const isEnterpriseNotLicensed = build === "enterprise" && !isUnlocked();
-        const isSaasNotSubscribed =
-            build === "saas" && !subscription?.isSubscribed();
-        return isEnterpriseNotLicensed || isSaasNotSubscribed;
-    };
+    const { isPaidUser } = usePaidStatus();
 
     const handleConfirmRegenerate = async () => {
         try {
@@ -127,7 +119,9 @@ export default function CredentialsPage() {
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>
-                        <SecurityFeaturesAlert />
+                        <PaidFeaturesAlert
+                            tiers={tierMatrix.rotateCredentials}
+                        />
 
                         <InfoSections cols={3}>
                             <InfoSection>
@@ -180,7 +174,7 @@ export default function CredentialsPage() {
                             </Alert>
                         )}
                     </SettingsSectionBody>
-                    {build !== "oss" && (
+                    {!env.flags.disableEnterpriseFeatures && (
                         <SettingsSectionFooter>
                             <Button
                                 variant="outline"
@@ -188,7 +182,9 @@ export default function CredentialsPage() {
                                     setShouldDisconnect(false);
                                     setModalOpen(true);
                                 }}
-                                disabled={isSecurityFeatureDisabled()}
+                                disabled={
+                                    !isPaidUser(tierMatrix.rotateCredentials)
+                                }
                             >
                                 {t("regenerateCredentialsButton")}
                             </Button>
@@ -197,13 +193,21 @@ export default function CredentialsPage() {
                                     setShouldDisconnect(true);
                                     setModalOpen(true);
                                 }}
-                                disabled={isSecurityFeatureDisabled()}
+                                disabled={
+                                    !isPaidUser(tierMatrix.rotateCredentials)
+                                }
                             >
                                 {t("clientRegenerateAndDisconnect")}
                             </Button>
                         </SettingsSectionFooter>
                     )}
                 </SettingsSection>
+
+                <OlmInstallCommands
+                    id={displayOlmId ?? "********"}
+                    endpoint={env.app.dashboardUrl}
+                    secret={displaySecret ?? "********"}
+                />
             </SettingsContainer>
 
             <ConfirmDeleteDialog

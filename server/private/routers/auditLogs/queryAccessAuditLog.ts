@@ -11,11 +11,11 @@
  * This file is not licensed under the AGPLv3.
  */
 
-import { accessAuditLog, db, resources } from "@server/db";
+import { accessAuditLog, logsDb, resources, siteResources, db, primaryDb } from "@server/db";
 import { registry } from "@server/openApi";
 import { NextFunction } from "express";
 import { Request, Response } from "express";
-import { eq, gt, lt, and, count, desc } from "drizzle-orm";
+import { eq, gt, lt, and, count, desc, inArray, isNull } from "drizzle-orm";
 import { OpenAPITags } from "@server/openApi";
 import { z } from "zod";
 import createHttpError from "http-errors";
@@ -48,7 +48,7 @@ export const queryAccessAuditLogsQuery = z.object({
         })
         .transform((val) => Math.floor(new Date(val).getTime() / 1000))
         .optional()
-        .prefault(new Date().toISOString())
+        .prefault(() => new Date().toISOString())
         .openapi({
             type: "string",
             format: "date-time",
@@ -115,15 +115,14 @@ function getWhere(data: Q) {
 }
 
 export function queryAccess(data: Q) {
-    return db
+    return logsDb
         .select({
             orgId: accessAuditLog.orgId,
             action: accessAuditLog.action,
             actorType: accessAuditLog.actorType,
             actorId: accessAuditLog.actorId,
             resourceId: accessAuditLog.resourceId,
-            resourceName: resources.name,
-            resourceNiceId: resources.niceId,
+            siteResourceId: accessAuditLog.siteResourceId,
             ip: accessAuditLog.ip,
             location: accessAuditLog.location,
             userAgent: accessAuditLog.userAgent,
@@ -133,16 +132,82 @@ export function queryAccess(data: Q) {
             actor: accessAuditLog.actor
         })
         .from(accessAuditLog)
-        .leftJoin(
-            resources,
-            eq(accessAuditLog.resourceId, resources.resourceId)
-        )
         .where(getWhere(data))
         .orderBy(desc(accessAuditLog.timestamp), desc(accessAuditLog.id));
 }
 
+async function enrichWithResourceDetails(logs: Awaited<ReturnType<typeof queryAccess>>) {
+    const resourceIds = logs
+        .map(log => log.resourceId)
+        .filter((id): id is number => id !== null && id !== undefined);
+
+    const siteResourceIds = logs
+        .filter(log => log.resourceId == null && log.siteResourceId != null)
+        .map(log => log.siteResourceId)
+        .filter((id): id is number => id !== null && id !== undefined);
+
+    if (resourceIds.length === 0 && siteResourceIds.length === 0) {
+        return logs.map(log => ({ ...log, resourceName: null, resourceNiceId: null }));
+    }
+
+    const resourceMap = new Map<number, { name: string | null; niceId: string | null }>();
+
+    if (resourceIds.length > 0) {
+        const resourceDetails = await primaryDb
+            .select({
+                resourceId: resources.resourceId,
+                name: resources.name,
+                niceId: resources.niceId
+            })
+            .from(resources)
+            .where(inArray(resources.resourceId, resourceIds));
+
+        for (const r of resourceDetails) {
+            resourceMap.set(r.resourceId, { name: r.name, niceId: r.niceId });
+        }
+    }
+
+    const siteResourceMap = new Map<number, { name: string | null; niceId: string | null }>();
+
+    if (siteResourceIds.length > 0) {
+        const siteResourceDetails = await primaryDb
+            .select({
+                siteResourceId: siteResources.siteResourceId,
+                name: siteResources.name,
+                niceId: siteResources.niceId
+            })
+            .from(siteResources)
+            .where(inArray(siteResources.siteResourceId, siteResourceIds));
+
+        for (const r of siteResourceDetails) {
+            siteResourceMap.set(r.siteResourceId, { name: r.name, niceId: r.niceId });
+        }
+    }
+
+    // Enrich logs with resource details
+    return logs.map(log => {
+        if (log.resourceId != null) {
+            const details = resourceMap.get(log.resourceId);
+            return {
+                ...log,
+                resourceName: details?.name ?? null,
+                resourceNiceId: details?.niceId ?? null
+            };
+        } else if (log.siteResourceId != null) {
+            const details = siteResourceMap.get(log.siteResourceId);
+            return {
+                ...log,
+                resourceId: log.siteResourceId,
+                resourceName: details?.name ?? null,
+                resourceNiceId: details?.niceId ?? null
+            };
+        }
+        return { ...log, resourceName: null, resourceNiceId: null };
+    });
+}
+
 export function countAccessQuery(data: Q) {
-    const countQuery = db
+    const countQuery = logsDb
         .select({ count: count() })
         .from(accessAuditLog)
         .where(getWhere(data));
@@ -161,7 +226,7 @@ async function queryUniqueFilterAttributes(
     );
 
     // Get unique actors
-    const uniqueActors = await db
+    const uniqueActors = await logsDb
         .selectDistinct({
             actor: accessAuditLog.actor
         })
@@ -169,7 +234,7 @@ async function queryUniqueFilterAttributes(
         .where(baseConditions);
 
     // Get unique locations
-    const uniqueLocations = await db
+    const uniqueLocations = await logsDb
         .selectDistinct({
             locations: accessAuditLog.location
         })
@@ -177,25 +242,73 @@ async function queryUniqueFilterAttributes(
         .where(baseConditions);
 
     // Get unique resources with names
-    const uniqueResources = await db
+    const uniqueResources = await logsDb
         .selectDistinct({
-            id: accessAuditLog.resourceId,
-            name: resources.name
+            id: accessAuditLog.resourceId
         })
         .from(accessAuditLog)
-        .leftJoin(
-            resources,
-            eq(accessAuditLog.resourceId, resources.resourceId)
-        )
         .where(baseConditions);
+
+    // Get unique siteResources (only for logs where resourceId is null)
+    const uniqueSiteResources = await logsDb
+        .selectDistinct({
+            id: accessAuditLog.siteResourceId
+        })
+        .from(accessAuditLog)
+        .where(and(baseConditions, isNull(accessAuditLog.resourceId)));
+
+    // Fetch resource names from main database for the unique resource IDs
+    const resourceIds = uniqueResources
+        .map(row => row.id)
+        .filter((id): id is number => id !== null);
+
+    const siteResourceIds = uniqueSiteResources
+        .map(row => row.id)
+        .filter((id): id is number => id !== null);
+
+    let resourcesWithNames: Array<{ id: number; name: string | null }> = [];
+
+    if (resourceIds.length > 0) {
+        const resourceDetails = await primaryDb
+            .select({
+                resourceId: resources.resourceId,
+                name: resources.name
+            })
+            .from(resources)
+            .where(inArray(resources.resourceId, resourceIds));
+
+        resourcesWithNames = [
+            ...resourcesWithNames,
+            ...resourceDetails.map(r => ({
+                id: r.resourceId,
+                name: r.name
+            }))
+        ];
+    }
+
+    if (siteResourceIds.length > 0) {
+        const siteResourceDetails = await primaryDb
+            .select({
+                siteResourceId: siteResources.siteResourceId,
+                name: siteResources.name
+            })
+            .from(siteResources)
+            .where(inArray(siteResources.siteResourceId, siteResourceIds));
+
+        resourcesWithNames = [
+            ...resourcesWithNames,
+            ...siteResourceDetails.map(r => ({
+                id: r.siteResourceId,
+                name: r.name
+            }))
+        ];
+    }
 
     return {
         actors: uniqueActors
             .map((row) => row.actor)
             .filter((actor): actor is string => actor !== null),
-        resources: uniqueResources.filter(
-            (row): row is { id: number; name: string | null } => row.id !== null
-        ),
+        resources: resourcesWithNames,
         locations: uniqueLocations
             .map((row) => row.locations)
             .filter((location): location is string => location !== null)
@@ -206,7 +319,7 @@ registry.registerPath({
     method: "get",
     path: "/org/{orgId}/logs/access",
     description: "Query the access audit log for an organization",
-    tags: [OpenAPITags.Org],
+    tags: [OpenAPITags.Logs],
     request: {
         query: queryAccessAuditLogsQuery,
         params: queryAccessAuditLogsParams
@@ -243,7 +356,10 @@ export async function queryAccessAuditLogs(
 
         const baseQuery = queryAccess(data);
 
-        const log = await baseQuery.limit(data.limit).offset(data.offset);
+        const logsRaw = await baseQuery.limit(data.limit).offset(data.offset);
+
+        // Enrich with resource details (handles cross-database scenario)
+        const log = await enrichWithResourceDetails(logsRaw);
 
         const totalCountResult = await countAccessQuery(data);
         const totalCount = totalCountResult[0].count;

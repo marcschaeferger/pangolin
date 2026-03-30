@@ -1,30 +1,42 @@
 "use client";
 
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
-import { DataTable } from "@app/components/ui/data-table";
-import { ExtendedColumnDef } from "@app/components/ui/data-table";
 import { Button } from "@app/components/ui/button";
+import { ExtendedColumnDef } from "@app/components/ui/data-table";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger
 } from "@app/components/ui/dropdown-menu";
+import { InfoPopup } from "@app/components/ui/info-popup";
 import { useEnvContext } from "@app/hooks/useEnvContext";
+import { useNavigationContext } from "@app/hooks/useNavigationContext";
+import { getNextSortOrder, getSortDirection } from "@app/lib/sortColumn";
 import { toast } from "@app/hooks/useToast";
 import { createApiClient, formatAxiosError } from "@app/lib/api";
+import { formatFingerprintInfo } from "@app/lib/formatDeviceFingerprint";
+import { getUserDisplayName } from "@app/lib/getUserDisplayName";
+import { build } from "@server/build";
+import type { PaginationState } from "@tanstack/react-table";
 import {
+    ArrowDown01Icon,
     ArrowRight,
-    ArrowUpDown,
+    ArrowUp10Icon,
     ArrowUpRight,
+    ChevronsUpDownIcon,
+    CircleSlash,
     MoreHorizontal
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
+import { useDebouncedCallback } from "use-debounce";
+import ClientDownloadBanner from "./ClientDownloadBanner";
+import { ColumnFilterButton } from "./ColumnFilterButton";
 import { Badge } from "./ui/badge";
-import { InfoPopup } from "./ui/info-popup";
+import { ControlledDataTable } from "./ui/controlled-data-table";
 
 export type ClientRow = {
     id: number;
@@ -42,14 +54,33 @@ export type ClientRow = {
     userEmail: string | null;
     niceId: string;
     agent: string | null;
+    approvalState: "approved" | "pending" | "denied" | null;
+    archived?: boolean;
+    blocked?: boolean;
+    fingerprint?: {
+        platform: string | null;
+        osVersion: string | null;
+        kernelVersion: string | null;
+        arch: string | null;
+        deviceModel: string | null;
+        serialNumber: string | null;
+        username: string | null;
+        hostname: string | null;
+    } | null;
 };
 
 type ClientTableProps = {
     userClients: ClientRow[];
     orgId: string;
+    pagination: PaginationState;
+    rowCount: number;
 };
 
-export default function UserDevicesTable({ userClients }: ClientTableProps) {
+export default function UserDevicesTable({
+    userClients,
+    pagination,
+    rowCount
+}: ClientTableProps) {
     const router = useRouter();
     const t = useTranslations();
 
@@ -59,6 +90,11 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
     );
 
     const api = createApiClient(useEnvContext());
+    const {
+        navigate: filter,
+        isNavigating: isFiltering,
+        searchParams
+    } = useNavigationContext();
     const [isRefreshing, startTransition] = useTransition();
 
     const defaultUserColumnVisibility = {
@@ -98,6 +134,172 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
             });
     };
 
+    const archiveClient = (clientId: number) => {
+        api.post(`/client/${clientId}/archive`)
+            .catch((e) => {
+                console.error("Error archiving client", e);
+                toast({
+                    variant: "destructive",
+                    title: "Error archiving client",
+                    description: formatAxiosError(e, "Error archiving client")
+                });
+            })
+            .then(() => {
+                startTransition(() => {
+                    router.refresh();
+                });
+            });
+    };
+
+    const unarchiveClient = (clientId: number) => {
+        api.post(`/client/${clientId}/unarchive`)
+            .catch((e) => {
+                console.error("Error unarchiving client", e);
+                toast({
+                    variant: "destructive",
+                    title: "Error unarchiving client",
+                    description: formatAxiosError(e, "Error unarchiving client")
+                });
+            })
+            .then(() => {
+                startTransition(() => {
+                    router.refresh();
+                });
+            });
+    };
+
+    const blockClient = (clientId: number) => {
+        api.post(`/client/${clientId}/block`)
+            .catch((e) => {
+                console.error("Error blocking client", e);
+                toast({
+                    variant: "destructive",
+                    title: "Error blocking client",
+                    description: formatAxiosError(e, "Error blocking client")
+                });
+            })
+            .then(() => {
+                startTransition(() => {
+                    router.refresh();
+                });
+            });
+    };
+
+    const unblockClient = (clientId: number) => {
+        api.post(`/client/${clientId}/unblock`)
+            .catch((e) => {
+                console.error("Error unblocking client", e);
+                toast({
+                    variant: "destructive",
+                    title: "Error unblocking client",
+                    description: formatAxiosError(e, "Error unblocking client")
+                });
+            })
+            .then(() => {
+                startTransition(() => {
+                    router.refresh();
+                });
+            });
+    };
+
+    const approveDevice = async (clientRow: ClientRow) => {
+        try {
+            // Fetch approvalId for this client using clientId query parameter
+            const approvalsRes = await api.get<{
+                data: {
+                    approvals: Array<{ approvalId: number; clientId: number }>;
+                };
+            }>(
+                `/org/${clientRow.orgId}/approvals?approvalState=pending&clientId=${clientRow.id}`
+            );
+
+            const approval = approvalsRes.data.data.approvals[0];
+
+            if (!approval) {
+                toast({
+                    variant: "destructive",
+                    title: t("error"),
+                    description: t("accessApprovalErrorUpdateDescription")
+                });
+                return;
+            }
+
+            await api.put(
+                `/org/${clientRow.orgId}/approvals/${approval.approvalId}`,
+                {
+                    decision: "approved"
+                }
+            );
+
+            toast({
+                title: t("accessApprovalUpdated"),
+                description: t("accessApprovalApprovedDescription")
+            });
+
+            startTransition(() => {
+                router.refresh();
+            });
+        } catch (e) {
+            toast({
+                variant: "destructive",
+                title: t("accessApprovalErrorUpdate"),
+                description: formatAxiosError(
+                    e,
+                    t("accessApprovalErrorUpdateDescription")
+                )
+            });
+        }
+    };
+
+    const denyDevice = async (clientRow: ClientRow) => {
+        try {
+            // Fetch approvalId for this client using clientId query parameter
+            const approvalsRes = await api.get<{
+                data: {
+                    approvals: Array<{ approvalId: number; clientId: number }>;
+                };
+            }>(
+                `/org/${clientRow.orgId}/approvals?approvalState=pending&clientId=${clientRow.id}`
+            );
+
+            const approval = approvalsRes.data.data.approvals[0];
+
+            if (!approval) {
+                toast({
+                    variant: "destructive",
+                    title: t("error"),
+                    description: t("accessApprovalErrorUpdateDescription")
+                });
+                return;
+            }
+
+            await api.put(
+                `/org/${clientRow.orgId}/approvals/${approval.approvalId}`,
+                {
+                    decision: "denied"
+                }
+            );
+
+            toast({
+                title: t("accessApprovalUpdated"),
+                description: t("accessApprovalDeniedDescription")
+            });
+
+            startTransition(() => {
+                router.refresh();
+            });
+        } catch (e) {
+            toast({
+                variant: "destructive",
+                title: t("accessApprovalErrorUpdate"),
+                description: formatAxiosError(
+                    e,
+                    t("accessApprovalErrorUpdateDescription")
+                )
+            });
+        }
+    };
+
     // Check if there are any rows without userIds in the current view's data
     const hasRowsWithoutUserId = useMemo(() => {
         return userClients.some((client) => !client.userId);
@@ -108,60 +310,63 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
             {
                 accessorKey: "name",
                 enableHiding: false,
-                friendlyName: "Name",
-                header: ({ column }) => {
+                friendlyName: t("name"),
+                header: () => <span className="px-3">{t("name")}</span>,
+                cell: ({ row }) => {
+                    const r = row.original;
+                    const fingerprintInfo = r.fingerprint
+                        ? formatFingerprintInfo(r.fingerprint, t)
+                        : null;
                     return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
-                        >
-                            Name
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <span>{r.name}</span>
+                            {fingerprintInfo && (
+                                <InfoPopup>
+                                    <div className="space-y-1 text-sm">
+                                        <div className="font-semibold mb-2">
+                                            {t("deviceInformation")}
+                                        </div>
+                                        <div className="text-muted-foreground whitespace-pre-line">
+                                            {fingerprintInfo}
+                                        </div>
+                                    </div>
+                                </InfoPopup>
+                            )}
+                            {r.archived && (
+                                <Badge variant="secondary">
+                                    {t("archived")}
+                                </Badge>
+                            )}
+                            {r.blocked && (
+                                <Badge
+                                    variant="destructive"
+                                    className="flex items-center gap-1"
+                                >
+                                    <CircleSlash className="h-3 w-3" />
+                                    {t("blocked")}
+                                </Badge>
+                            )}
+                            {r.approvalState === "pending" && (
+                                <Badge
+                                    variant="outlinePrimary"
+                                    className="flex items-center gap-1"
+                                >
+                                    {t("pendingApproval")}
+                                </Badge>
+                            )}
+                        </div>
                     );
                 }
             },
             {
                 accessorKey: "niceId",
                 friendlyName: t("identifier"),
-                header: ({ column }) => {
-                    return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
-                        >
-                            {t("identifier")}
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
-                    );
-                }
+                header: () => <span className="px-3">{t("identifier")}</span>
             },
             {
                 accessorKey: "userEmail",
-                friendlyName: "User",
-                header: ({ column }) => {
-                    return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
-                        >
-                            User
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
-                    );
-                },
+                friendlyName: t("users"),
+                header: () => <span className="px-3">{t("users")}</span>,
                 cell: ({ row }) => {
                     const r = row.original;
                     return r.userId ? (
@@ -169,7 +374,10 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
                             href={`/${r.orgId}/settings/access/users/${r.userId}`}
                         >
                             <Button variant="outline">
-                                {r.userEmail || r.username || r.userId}
+                                {getUserDisplayName({
+                                    email: r.userEmail,
+                                    username: r.username
+                                }) || r.userId}
                                 <ArrowUpRight className="ml-2 h-4 w-4" />
                             </Button>
                         </Link>
@@ -178,49 +386,33 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
                     );
                 }
             },
-            // {
-            //     accessorKey: "siteName",
-            //     header: ({ column }) => {
-            //         return (
-            //             <Button
-            //                 variant="ghost"
-            //                 onClick={() =>
-            //                     column.toggleSorting(column.getIsSorted() === "asc")
-            //                 }
-            //             >
-            //                 Site
-            //                 <ArrowUpDown className="ml-2 h-4 w-4" />
-            //             </Button>
-            //         );
-            //     },
-            //     cell: ({ row }) => {
-            //         const r = row.original;
-            //         return (
-            //             <Link href={`/${r.orgId}/settings/sites/${r.siteId}`}>
-            //                 <Button variant="outline">
-            //                     {r.siteName}
-            //                     <ArrowUpRight className="ml-2 h-4 w-4" />
-            //                 </Button>
-            //             </Link>
-            //         );
-            //     }
-            // },
             {
                 accessorKey: "online",
-                friendlyName: "Connectivity",
-                header: ({ column }) => {
+                friendlyName: t("online"),
+                header: () => {
                     return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
+                        <ColumnFilterButton
+                            options={[
+                                {
+                                    value: "true",
+                                    label: t("connected")
+                                },
+                                {
+                                    value: "false",
+                                    label: t("disconnected")
+                                }
+                            ]}
+                            selectedValue={
+                                searchParams.get("online") ?? undefined
                             }
-                        >
-                            Connectivity
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
+                            onValueChange={(value) =>
+                                handleFilterChange("online", value)
+                            }
+                            searchPlaceholder={t("searchPlaceholder")}
+                            emptyMessage={t("emptySearchOptions")}
+                            label={t("online")}
+                            className="p-3"
+                        />
                     );
                 },
                 cell: ({ row }) => {
@@ -229,14 +421,14 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
                         return (
                             <span className="text-green-500 flex items-center space-x-2">
                                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                <span>Connected</span>
+                                <span>{t("connected")}</span>
                             </span>
                         );
                     } else {
                         return (
                             <span className="text-neutral-500 flex items-center space-x-2">
                                 <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                                <span>Disconnected</span>
+                                <span>{t("disconnected")}</span>
                             </span>
                         );
                     }
@@ -244,38 +436,52 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
             },
             {
                 accessorKey: "mbIn",
-                friendlyName: "Data In",
-                header: ({ column }) => {
+                friendlyName: t("dataIn"),
+                header: () => {
+                    const dataInOrder = getSortDirection(
+                        "megabytesIn",
+                        searchParams
+                    );
+
+                    const Icon =
+                        dataInOrder === "asc"
+                            ? ArrowDown01Icon
+                            : dataInOrder === "desc"
+                              ? ArrowUp10Icon
+                              : ChevronsUpDownIcon;
                     return (
                         <Button
                             variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
+                            onClick={() => toggleSort("megabytesIn")}
                         >
-                            Data In
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                            {t("dataIn")}
+                            <Icon className="ml-2 h-4 w-4" />
                         </Button>
                     );
                 }
             },
             {
                 accessorKey: "mbOut",
-                friendlyName: "Data Out",
-                header: ({ column }) => {
+                friendlyName: t("dataOut"),
+                header: () => {
+                    const dataOutOrder = getSortDirection(
+                        "megabytesOut",
+                        searchParams
+                    );
+
+                    const Icon =
+                        dataOutOrder === "asc"
+                            ? ArrowDown01Icon
+                            : dataOutOrder === "desc"
+                              ? ArrowUp10Icon
+                              : ChevronsUpDownIcon;
                     return (
                         <Button
                             variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
+                            onClick={() => toggleSort("megabytesOut")}
                         >
-                            Data Out
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                            {t("dataOut")}
+                            <Icon className="ml-2 h-4 w-4" />
                         </Button>
                     );
                 }
@@ -283,21 +489,52 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
             {
                 accessorKey: "client",
                 friendlyName: t("agent"),
-                header: ({ column }) => {
-                    return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
+                header: () => (
+                    <ColumnFilterButton
+                        options={[
+                            {
+                                value: "macos",
+                                label: "Pangolin macOS"
+                            },
+                            {
+                                value: "ios",
+                                label: "Pangolin iOS"
+                            },
+                            {
+                                value: "ipados",
+                                label: "Pangolin iPadOS"
+                            },
+                            {
+                                value: "android",
+                                label: "Pangolin Android"
+                            },
+                            {
+                                value: "windows",
+                                label: "Pangolin Windows"
+                            },
+                            {
+                                value: "cli",
+                                label: "Pangolin CLI"
+                            },
+                            {
+                                value: "olm",
+                                label: "Olm CLI"
+                            },
+                            {
+                                value: "unknown",
+                                label: t("unknown")
                             }
-                        >
-                            {t("agent")}
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
-                    );
-                },
+                        ]}
+                        selectedValue={searchParams.get("agent") ?? undefined}
+                        onValueChange={(value) =>
+                            handleFilterChange("agent", value)
+                        }
+                        searchPlaceholder={t("searchPlaceholder")}
+                        emptyMessage={t("emptySearchOptions")}
+                        label={t("agent")}
+                        className="p-3"
+                    />
+                ),
                 cell: ({ row }) => {
                     const originalRow = row.original;
 
@@ -322,22 +559,8 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
             },
             {
                 accessorKey: "subnet",
-                friendlyName: "Address",
-                header: ({ column }) => {
-                    return (
-                        <Button
-                            variant="ghost"
-                            onClick={() =>
-                                column.toggleSorting(
-                                    column.getIsSorted() === "asc"
-                                )
-                            }
-                        >
-                            Address
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </Button>
-                    );
-                }
+                friendlyName: t("address"),
+                header: () => <span className="px-3">{t("address")}</span>
             }
         ];
 
@@ -347,7 +570,7 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
             header: () => <span className="p-3"></span>,
             cell: ({ row }) => {
                 const clientRow = row.original;
-                return !clientRow.userId ? (
+                return (
                     <div className="flex items-center gap-2 justify-end">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -357,43 +580,172 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                                {/* <Link */}
-                                {/*     className="block w-full" */}
-                                {/*     href={`/${clientRow.orgId}/settings/sites/${clientRow.nice}`} */}
-                                {/* > */}
-                                {/*     <DropdownMenuItem> */}
-                                {/*         View settings */}
-                                {/*     </DropdownMenuItem> */}
-                                {/* </Link> */}
+                                {clientRow.approvalState === "pending" &&
+                                    build !== "oss" && (
+                                        <>
+                                            <DropdownMenuItem
+                                                onClick={() =>
+                                                    approveDevice(clientRow)
+                                                }
+                                            >
+                                                <span>{t("approve")}</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                onClick={() =>
+                                                    denyDevice(clientRow)
+                                                }
+                                            >
+                                                <span>{t("deny")}</span>
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
                                 <DropdownMenuItem
                                     onClick={() => {
-                                        setSelectedClient(clientRow);
-                                        setIsDeleteModalOpen(true);
+                                        if (clientRow.archived) {
+                                            unarchiveClient(clientRow.id);
+                                        } else {
+                                            archiveClient(clientRow.id);
+                                        }
                                     }}
                                 >
-                                    <span className="text-red-500">Delete</span>
+                                    <span>
+                                        {clientRow.archived
+                                            ? t("actionUnarchiveClient")
+                                            : t("actionArchiveClient")}
+                                    </span>
                                 </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => {
+                                        if (clientRow.blocked) {
+                                            unblockClient(clientRow.id);
+                                        } else {
+                                            blockClient(clientRow.id);
+                                        }
+                                    }}
+                                >
+                                    <span>
+                                        {clientRow.blocked
+                                            ? t("actionUnblockClient")
+                                            : t("actionBlockClient")}
+                                    </span>
+                                </DropdownMenuItem>
+                                {!clientRow.userId && (
+                                    // Machine client - also show delete option
+                                    <DropdownMenuItem
+                                        onClick={() => {
+                                            setSelectedClient(clientRow);
+                                            setIsDeleteModalOpen(true);
+                                        }}
+                                    >
+                                        <span className="text-red-500">
+                                            {t("delete")}
+                                        </span>
+                                    </DropdownMenuItem>
+                                )}
                             </DropdownMenuContent>
                         </DropdownMenu>
                         <Link
-                            href={`/${clientRow.orgId}/settings/clients/${clientRow.id}`}
+                            href={`/${clientRow.orgId}/settings/clients/user/${clientRow.niceId}`}
                         >
                             <Button variant={"outline"}>
-                                Edit
+                                {t("viewDetails")}
                                 <ArrowRight className="ml-2 w-4 h-4" />
                             </Button>
                         </Link>
                     </div>
-                ) : null;
+                );
             }
         });
 
         return baseColumns;
-    }, [hasRowsWithoutUserId, t]);
+    }, [hasRowsWithoutUserId, t, getSortDirection, toggleSort]);
+
+    const statusFilterOptions = useMemo(() => {
+        const allOptions = [
+            {
+                id: "active",
+                label: t("active"),
+                value: "active"
+            },
+            {
+                id: "pending",
+                label: t("pendingApproval"),
+                value: "pending"
+            },
+            {
+                id: "denied",
+                label: t("deniedApproval"),
+                value: "denied"
+            },
+            {
+                id: "archived",
+                label: t("archived"),
+                value: "archived"
+            },
+            {
+                id: "blocked",
+                label: t("blocked"),
+                value: "blocked"
+            }
+        ];
+
+        if (build === "oss") {
+            return allOptions.filter(
+                (option) =>
+                    option.value !== "pending" && option.value !== "denied"
+            );
+        }
+
+        return allOptions;
+    }, [t]);
+
+    function handleFilterChange(
+        column: string,
+        value: string | null | undefined | string[]
+    ) {
+        searchParams.delete(column);
+        searchParams.delete("page");
+
+        if (typeof value === "string") {
+            searchParams.set(column, value);
+        } else if (value) {
+            for (const val of value) {
+                searchParams.append(column, val);
+            }
+        }
+
+        filter({
+            searchParams
+        });
+    }
+
+    function toggleSort(column: string) {
+        const newSearch = getNextSortOrder(column, searchParams);
+
+        filter({
+            searchParams: newSearch
+        });
+    }
+
+    const handlePaginationChange = (newPage: PaginationState) => {
+        searchParams.set("page", (newPage.pageIndex + 1).toString());
+        searchParams.set("pageSize", newPage.pageSize.toString());
+        filter({
+            searchParams
+        });
+    };
+
+    const handleSearchChange = useDebouncedCallback((query: string) => {
+        searchParams.set("query", query);
+        searchParams.delete("page");
+        filter({
+            searchParams
+        });
+    }, 300);
 
     return (
         <>
-            {selectedClient && (
+            {selectedClient && !selectedClient.userId && (
                 <ConfirmDeleteDialog
                     open={isDeleteModalOpen}
                     setOpen={(val) => {
@@ -406,26 +758,42 @@ export default function UserDevicesTable({ userClients }: ClientTableProps) {
                             <p>{t("clientMessageRemove")}</p>
                         </div>
                     }
-                    buttonText="Confirm Delete Client"
+                    buttonText={t("actionDeleteClient")}
                     onConfirm={async () => deleteClient(selectedClient!.id)}
                     string={selectedClient.name}
-                    title="Delete Client"
+                    title={t("actionDeleteClient")}
                 />
             )}
+            <ClientDownloadBanner />
 
-            <DataTable
+            <ControlledDataTable
                 columns={columns}
-                data={userClients || []}
-                persistPageSize="user-clients"
-                searchPlaceholder={t("resourcesSearch")}
-                searchColumn="name"
+                rows={userClients || []}
+                tableId="user-clients"
+                searchPlaceholder={t("userDevicesSearch")}
                 onRefresh={refreshData}
-                isRefreshing={isRefreshing}
-                enableColumnVisibility={true}
-                persistColumnVisibility="user-clients"
+                isRefreshing={isRefreshing || isFiltering}
+                enableColumnVisibility
                 columnVisibility={defaultUserColumnVisibility}
+                onSearch={handleSearchChange}
+                onPaginationChange={handlePaginationChange}
+                pagination={pagination}
+                rowCount={rowCount}
                 stickyLeftColumn="name"
                 stickyRightColumn="actions"
+                filters={[
+                    {
+                        id: "status",
+                        label: t("status") || "Status",
+                        multiSelect: true,
+                        displayMode: "calculated",
+                        options: statusFilterOptions,
+                        onValueChange: (selectedValues: string[]) => {
+                            handleFilterChange("status", selectedValues);
+                        },
+                        values: searchParams.getAll("status")
+                    }
+                ]}
             />
         </>
     );

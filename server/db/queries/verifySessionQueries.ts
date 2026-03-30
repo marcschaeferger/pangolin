@@ -1,4 +1,12 @@
-import { db, loginPage, LoginPage, loginPageOrg, Org, orgs } from "@server/db";
+import {
+    db,
+    loginPage,
+    LoginPage,
+    loginPageOrg,
+    Org,
+    orgs,
+    roles
+} from "@server/db";
 import {
     Resource,
     ResourcePassword,
@@ -12,17 +20,19 @@ import {
     resources,
     roleResources,
     sessions,
-    userOrgs,
     userResources,
-    users
+    users,
+    ResourceHeaderAuthExtendedCompatibility,
+    resourceHeaderAuthExtendedCompatibility
 } from "@server/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 export type ResourceWithAuth = {
     resource: Resource | null;
     pincode: ResourcePincode | null;
     password: ResourcePassword | null;
     headerAuth: ResourceHeaderAuth | null;
+    headerAuthExtendedCompatibility: ResourceHeaderAuthExtendedCompatibility | null;
     org: Org;
 };
 
@@ -52,6 +62,13 @@ export async function getResourceByDomain(
             resourceHeaderAuth,
             eq(resourceHeaderAuth.resourceId, resources.resourceId)
         )
+        .leftJoin(
+            resourceHeaderAuthExtendedCompatibility,
+            eq(
+                resourceHeaderAuthExtendedCompatibility.resourceId,
+                resources.resourceId
+            )
+        )
         .innerJoin(orgs, eq(orgs.orgId, resources.orgId))
         .where(eq(resources.fullDomain, domain))
         .limit(1);
@@ -65,6 +82,8 @@ export async function getResourceByDomain(
         pincode: result.resourcePincode,
         password: result.resourcePassword,
         headerAuth: result.resourceHeaderAuth,
+        headerAuthExtendedCompatibility:
+            result.resourceHeaderAuthExtendedCompatibility,
         org: result.orgs
     };
 }
@@ -92,16 +111,15 @@ export async function getUserSessionWithUser(
 }
 
 /**
- * Get user organization role
+ * Get role name by role ID (for display).
  */
-export async function getUserOrgRole(userId: string, orgId: string) {
-    const userOrgRole = await db
-        .select()
-        .from(userOrgs)
-        .where(and(eq(userOrgs.userId, userId), eq(userOrgs.orgId, orgId)))
+export async function getRoleName(roleId: number): Promise<string | null> {
+    const [row] = await db
+        .select({ name: roles.name })
+        .from(roles)
+        .where(eq(roles.roleId, roleId))
         .limit(1);
-
-    return userOrgRole.length > 0 ? userOrgRole[0] : null;
+    return row?.name ?? null;
 }
 
 /**
@@ -109,7 +127,7 @@ export async function getUserOrgRole(userId: string, orgId: string) {
  */
 export async function getRoleResourceAccess(
     resourceId: number,
-    roleId: number
+    roleIds: number[]
 ) {
     const roleResourceAccess = await db
         .select()
@@ -117,12 +135,11 @@ export async function getRoleResourceAccess(
         .where(
             and(
                 eq(roleResources.resourceId, resourceId),
-                eq(roleResources.roleId, roleId)
+                inArray(roleResources.roleId, roleIds)
             )
-        )
-        .limit(1);
+        );
 
-    return roleResourceAccess.length > 0 ? roleResourceAccess[0] : null;
+    return roleResourceAccess.length > 0 ? roleResourceAccess : null;
 }
 
 /**

@@ -1,23 +1,19 @@
-import { db, ExitNode, exitNodeOrgs, newts, Transaction } from "@server/db";
+import { db, ExitNode, newts, Transaction } from "@server/db";
 import { MessageHandler } from "@server/routers/ws";
-import { exitNodes, Newt, resources, sites, Target, targets } from "@server/db";
-import { targetHealthCheck } from "@server/db";
-import { eq, and, sql, inArray, ne } from "drizzle-orm";
+import { exitNodes, Newt, sites } from "@server/db";
+import { eq } from "drizzle-orm";
 import { addPeer, deletePeer } from "../gerbil/peers";
 import logger from "@server/logger";
 import config from "@server/lib/config";
-import {
-    findNextAvailableCidr,
-    getNextAvailableClientSubnet
-} from "@server/lib/ip";
-import { usageService } from "@server/lib/billing/usageService";
-import { FeatureId } from "@server/lib/billing";
+import { findNextAvailableCidr } from "@server/lib/ip";
 import {
     selectBestExitNode,
     verifyExitNodeOrgAccess
 } from "#dynamic/lib/exitNodes";
 import { fetchContainers } from "./dockerSocket";
 import { lockManager } from "#dynamic/lib/lock";
+import { buildTargetConfigurationForNewtClient } from "./buildConfiguration";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 export type ExitNodePingResult = {
     exitNodeId: number;
@@ -28,8 +24,6 @@ export type ExitNodePingResult = {
     endpoint: string;
     wasPreviouslyConnected: boolean;
 };
-
-const numTimesLimitExceededForId: Record<string, number> = {};
 
 export const handleNewtRegisterMessage: MessageHandler = async (context) => {
     const { message, client, sendToClient } = context;
@@ -49,7 +43,7 @@ export const handleNewtRegisterMessage: MessageHandler = async (context) => {
 
     const siteId = newt.siteId;
 
-    const { publicKey, pingResults, newtVersion, backwardsCompatible } =
+    const { publicKey, pingResults, newtVersion, backwardsCompatible, chainId } =
         message.data;
     if (!publicKey) {
         logger.warn("Public key not provided");
@@ -93,42 +87,6 @@ export const handleNewtRegisterMessage: MessageHandler = async (context) => {
             "Site has docker socket enabled - requesting docker containers"
         );
         fetchContainers(newt.newtId);
-    }
-
-    const rejectSiteUptime = await usageService.checkLimitSet(
-        oldSite.orgId,
-        false,
-        FeatureId.SITE_UPTIME
-    );
-    const rejectEgressDataMb = await usageService.checkLimitSet(
-        oldSite.orgId,
-        false,
-        FeatureId.EGRESS_DATA_MB
-    );
-
-    // Do we need to check the users and domains daily limits here?
-    // const rejectUsers = await usageService.checkLimitSet(oldSite.orgId, false, FeatureId.USERS);
-    // const rejectDomains = await usageService.checkLimitSet(oldSite.orgId, false, FeatureId.DOMAINS);
-
-    // if (rejectEgressDataMb || rejectSiteUptime || rejectUsers || rejectDomains) {
-    if (rejectEgressDataMb || rejectSiteUptime) {
-        logger.info(
-            `Usage limits exceeded for org ${oldSite.orgId}. Rejecting newt registration.`
-        );
-
-        // PREVENT FURTHER REGISTRATION ATTEMPTS SO WE DON'T SPAM
-
-        // Increment the limit exceeded count for this site
-        numTimesLimitExceededForId[newt.newtId] =
-            (numTimesLimitExceededForId[newt.newtId] || 0) + 1;
-
-        if (numTimesLimitExceededForId[newt.newtId] > 15) {
-            logger.debug(
-                `Newt ${newt.newtId} has exceeded usage limits 15 times. Terminating...`
-            );
-        }
-
-        return;
     }
 
     let siteSubnet = oldSite.subnet;
@@ -233,109 +191,8 @@ export const handleNewtRegisterMessage: MessageHandler = async (context) => {
             .where(eq(newts.newtId, newt.newtId));
     }
 
-    // Get all enabled targets with their resource protocol information
-    const allTargets = await db
-        .select({
-            resourceId: targets.resourceId,
-            targetId: targets.targetId,
-            ip: targets.ip,
-            method: targets.method,
-            port: targets.port,
-            internalPort: targets.internalPort,
-            enabled: targets.enabled,
-            protocol: resources.protocol,
-            hcEnabled: targetHealthCheck.hcEnabled,
-            hcPath: targetHealthCheck.hcPath,
-            hcScheme: targetHealthCheck.hcScheme,
-            hcMode: targetHealthCheck.hcMode,
-            hcHostname: targetHealthCheck.hcHostname,
-            hcPort: targetHealthCheck.hcPort,
-            hcInterval: targetHealthCheck.hcInterval,
-            hcUnhealthyInterval: targetHealthCheck.hcUnhealthyInterval,
-            hcTimeout: targetHealthCheck.hcTimeout,
-            hcHeaders: targetHealthCheck.hcHeaders,
-            hcMethod: targetHealthCheck.hcMethod,
-            hcTlsServerName: targetHealthCheck.hcTlsServerName
-        })
-        .from(targets)
-        .innerJoin(resources, eq(targets.resourceId, resources.resourceId))
-        .leftJoin(
-            targetHealthCheck,
-            eq(targets.targetId, targetHealthCheck.targetId)
-        )
-        .where(and(eq(targets.siteId, siteId), eq(targets.enabled, true)));
-
-    const { tcpTargets, udpTargets } = allTargets.reduce(
-        (acc, target) => {
-            // Filter out invalid targets
-            if (!target.internalPort || !target.ip || !target.port) {
-                return acc;
-            }
-
-            // Format target into string
-            const formattedTarget = `${target.internalPort}:${target.ip}:${target.port}`;
-
-            // Add to the appropriate protocol array
-            if (target.protocol === "tcp") {
-                acc.tcpTargets.push(formattedTarget);
-            } else {
-                acc.udpTargets.push(formattedTarget);
-            }
-
-            return acc;
-        },
-        { tcpTargets: [] as string[], udpTargets: [] as string[] }
-    );
-
-    const healthCheckTargets = allTargets.map((target) => {
-        // make sure the stuff is defined
-        if (
-            !target.hcPath ||
-            !target.hcHostname ||
-            !target.hcPort ||
-            !target.hcInterval ||
-            !target.hcMethod
-        ) {
-            logger.debug(
-                `Skipping target ${target.targetId} due to missing health check fields`
-            );
-            return null; // Skip targets with missing health check fields
-        }
-
-        // parse headers
-        const hcHeadersParse = target.hcHeaders
-            ? JSON.parse(target.hcHeaders)
-            : null;
-        const hcHeadersSend: { [key: string]: string } = {};
-        if (hcHeadersParse) {
-            hcHeadersParse.forEach(
-                (header: { name: string; value: string }) => {
-                    hcHeadersSend[header.name] = header.value;
-                }
-            );
-        }
-
-        return {
-            id: target.targetId,
-            hcEnabled: target.hcEnabled,
-            hcPath: target.hcPath,
-            hcScheme: target.hcScheme,
-            hcMode: target.hcMode,
-            hcHostname: target.hcHostname,
-            hcPort: target.hcPort,
-            hcInterval: target.hcInterval, // in seconds
-            hcUnhealthyInterval: target.hcUnhealthyInterval, // in seconds
-            hcTimeout: target.hcTimeout, // in seconds
-            hcHeaders: hcHeadersSend,
-            hcMethod: target.hcMethod,
-            hcTlsServerName: target.hcTlsServerName
-        };
-    });
-
-    // Filter out any null values from health check targets
-    const validHealthCheckTargets = healthCheckTargets.filter(
-        (target) => target !== null
-    );
+    const { tcpTargets, udpTargets, validHealthCheckTargets } =
+        await buildTargetConfigurationForNewtClient(siteId);
 
     logger.debug(
         `Sending health check targets to newt ${newt.newtId}: ${JSON.stringify(validHealthCheckTargets)}`
@@ -346,6 +203,7 @@ export const handleNewtRegisterMessage: MessageHandler = async (context) => {
             type: "newt/wg/connect",
             data: {
                 endpoint: `${exitNode.endpoint}:${exitNode.listenPort}`,
+                relayPort: config.getRawConfig().gerbil.clients_start_port,
                 publicKey: exitNode.publicKey,
                 serverIP: exitNode.address.split("/")[0],
                 tunnelIP: siteSubnet.split("/")[0],
@@ -353,8 +211,12 @@ export const handleNewtRegisterMessage: MessageHandler = async (context) => {
                     udp: udpTargets,
                     tcp: tcpTargets
                 },
-                healthCheckTargets: validHealthCheckTargets
+                healthCheckTargets: validHealthCheckTargets,
+                chainId: chainId
             }
+        },
+        options: {
+            compress: canCompress(newt.version, "newt")
         },
         broadcast: false, // Send to all clients
         excludeSender: false // Include sender in broadcast

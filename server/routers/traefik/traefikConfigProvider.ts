@@ -30,19 +30,29 @@ export async function traefikConfigProvider(
             traefikConfig.http.middlewares[badgerMiddlewareName] = {
                 plugin: {
                     [badgerMiddlewareName]: {
-                        apiBaseUrl: new URL(
-                            "/api/v1",
-                            `http://${
-                                config.getRawConfig().server.internal_hostname
-                            }:${config.getRawConfig().server.internal_port}`
-                        ).href,
+                        apiBaseUrl:
+                            config.getRawConfig().server.badger_override ||
+                            new URL(
+                                "/api/v1",
+                                `http://${
+                                    config.getRawConfig().server
+                                        .internal_hostname
+                                }:${config.getRawConfig().server.internal_port}`
+                            ).href,
                         userSessionCookieName:
                             config.getRawConfig().server.session_cookie_name,
 
-                        // deprecated
                         accessTokenQueryParam:
                             config.getRawConfig().server
                                 .resource_access_token_param,
+
+                        accessTokenIdHeader:
+                            config.getRawConfig().server
+                                .resource_access_token_headers.id,
+
+                        accessTokenHeader:
+                            config.getRawConfig().server
+                                .resource_access_token_headers.token,
 
                         resourceSessionRequestParam:
                             config.getRawConfig().server
@@ -54,7 +64,7 @@ export async function traefikConfigProvider(
 
         return res.status(HttpCode.OK).json(traefikConfig);
     } catch (e) {
-        logger.error(`Failed to build Traefik config: ${e}`);
+        logger.error(e);
         return res.status(HttpCode.INTERNAL_SERVER_ERROR).json({
             error: "Failed to build Traefik config"
         });

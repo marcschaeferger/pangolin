@@ -1,15 +1,14 @@
-import { Request, Response, NextFunction } from "express";
-import { z } from "zod";
-import { db } from "@server/db";
-import { roles, orgs } from "@server/db";
+import { db, orgs, roleActions, roles } from "@server/db";
 import response from "@server/lib/response";
-import HttpCode from "@server/types/HttpCode";
-import createHttpError from "http-errors";
-import { sql, eq } from "drizzle-orm";
 import logger from "@server/logger";
-import { fromError } from "zod-validation-error";
-import stoi from "@server/lib/stoi";
 import { OpenAPITags, registry } from "@server/openApi";
+import HttpCode from "@server/types/HttpCode";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { ActionsEnum } from "@server/auth/actions";
+import { NextFunction, Request, Response } from "express";
+import createHttpError from "http-errors";
+import { object, z } from "zod";
+import { fromError } from "zod-validation-error";
 
 const listRolesParamsSchema = z.strictObject({
     orgId: z.string()
@@ -38,7 +37,12 @@ async function queryRoles(orgId: string, limit: number, offset: number) {
             isAdmin: roles.isAdmin,
             name: roles.name,
             description: roles.description,
-            orgName: orgs.name
+            orgName: orgs.name,
+            requireDeviceApproval: roles.requireDeviceApproval,
+            sshSudoMode: roles.sshSudoMode,
+            sshSudoCommands: roles.sshSudoCommands,
+            sshCreateHomeDir: roles.sshCreateHomeDir,
+            sshUnixGroups: roles.sshUnixGroups
         })
         .from(roles)
         .leftJoin(orgs, eq(roles.orgId, orgs.orgId))
@@ -60,7 +64,7 @@ registry.registerPath({
     method: "get",
     path: "/org/{orgId}/roles",
     description: "List roles.",
-    tags: [OpenAPITags.Org, OpenAPITags.Role],
+    tags: [OpenAPITags.Role],
     request: {
         params: listRolesParamsSchema,
         query: listRolesSchema
@@ -107,9 +111,28 @@ export async function listRoles(
         const totalCountResult = await countQuery;
         const totalCount = totalCountResult[0].count;
 
+        let rolesWithAllowSsh = rolesList;
+        if (rolesList.length > 0) {
+            const roleIds = rolesList.map((r) => r.roleId);
+            const signSshKeyRows = await db
+                .select({ roleId: roleActions.roleId })
+                .from(roleActions)
+                .where(
+                    and(
+                        inArray(roleActions.roleId, roleIds),
+                        eq(roleActions.actionId, ActionsEnum.signSshKey)
+                    )
+                );
+            const roleIdsWithSsh = new Set(signSshKeyRows.map((r) => r.roleId));
+            rolesWithAllowSsh = rolesList.map((r) => ({
+                ...r,
+                allowSsh: roleIdsWithSsh.has(r.roleId)
+            }));
+        }
+
         return response(res, {
             data: {
-                roles: rolesList,
+                roles: rolesWithAllowSsh,
                 pagination: {
                     total: totalCount,
                     limit,

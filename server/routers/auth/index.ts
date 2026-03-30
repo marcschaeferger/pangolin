@@ -17,3 +17,5 @@ export * from "./securityKey";
 export * from "./startDeviceWebAuth";
 export * from "./verifyDeviceWebAuth";
 export * from "./pollDeviceWebAuth";
+export * from "./lookupUser";
+export * from "./deleteMyAccount";

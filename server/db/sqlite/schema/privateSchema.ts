@@ -1,13 +1,13 @@
-import {
-    sqliteTable,
-    integer,
-    text,
-    real,
-    index
-} from "drizzle-orm/sqlite-core";
 import { InferSelectModel } from "drizzle-orm";
-import { domains, orgs, targets, users, exitNodes, sessions } from "./schema";
-import { metadata } from "@app/app/[orgId]/settings/layout";
+import {
+    index,
+    integer,
+    primaryKey,
+    real,
+    sqliteTable,
+    text
+} from "drizzle-orm/sqlite-core";
+import { clients, domains, exitNodes, orgs, sessions, siteResources, sites, users } from "./schema";
 
 export const certificates = sqliteTable("certificates", {
     certId: integer("certId").primaryKey({ autoIncrement: true }),
@@ -71,13 +71,16 @@ export const subscriptions = sqliteTable("subscriptions", {
     canceledAt: integer("canceledAt"),
     createdAt: integer("createdAt").notNull(),
     updatedAt: integer("updatedAt"),
-    billingCycleAnchor: integer("billingCycleAnchor")
+    version: integer("version"),
+    billingCycleAnchor: integer("billingCycleAnchor"),
+    type: text("type") // tier1, tier2, tier3, or license
 });
 
 export const subscriptionItems = sqliteTable("subscriptionItems", {
     subscriptionItemId: integer("subscriptionItemId").primaryKey({
         autoIncrement: true
     }),
+    stripeSubscriptionItemId: text("stripeSubscriptionItemId"),
     subscriptionId: text("subscriptionId")
         .notNull()
         .references(() => subscriptions.subscriptionId, {
@@ -85,6 +88,7 @@ export const subscriptionItems = sqliteTable("subscriptionItems", {
         }),
     planId: text("planId").notNull(),
     priceId: text("priceId"),
+    featureId: text("featureId"),
     meterId: text("meterId"),
     unitAmount: real("unitAmount"),
     tiers: text("tiers"),
@@ -127,6 +131,7 @@ export const limits = sqliteTable("limits", {
         })
         .notNull(),
     value: real("value"),
+    override: integer("override", { mode: "boolean" }).default(false),
     description: text("description")
 });
 
@@ -203,6 +208,31 @@ export const loginPageOrg = sqliteTable("loginPageOrg", {
         .references(() => orgs.orgId, { onDelete: "cascade" })
 });
 
+export const loginPageBranding = sqliteTable("loginPageBranding", {
+    loginPageBrandingId: integer("loginPageBrandingId").primaryKey({
+        autoIncrement: true
+    }),
+    logoUrl: text("logoUrl"),
+    logoWidth: integer("logoWidth").notNull(),
+    logoHeight: integer("logoHeight").notNull(),
+    primaryColor: text("primaryColor"),
+    resourceTitle: text("resourceTitle").notNull(),
+    resourceSubtitle: text("resourceSubtitle"),
+    orgTitle: text("orgTitle"),
+    orgSubtitle: text("orgSubtitle")
+});
+
+export const loginPageBrandingOrg = sqliteTable("loginPageBrandingOrg", {
+    loginPageBrandingId: integer("loginPageBrandingId")
+        .notNull()
+        .references(() => loginPageBranding.loginPageBrandingId, {
+            onDelete: "cascade"
+        }),
+    orgId: text("orgId")
+        .notNull()
+        .references(() => orgs.orgId, { onDelete: "cascade" })
+});
+
 export const sessionTransferToken = sqliteTable("sessionTransferToken", {
     token: text("token").primaryKey(),
     sessionId: text("sessionId")
@@ -249,6 +279,7 @@ export const accessAuditLog = sqliteTable(
         actor: text("actor"),
         actorId: text("actorId"),
         resourceId: integer("resourceId"),
+        siteResourceId: integer("siteResourceId"),
         ip: text("ip"),
         location: text("location"),
         type: text("type").notNull(),
@@ -265,6 +296,109 @@ export const accessAuditLog = sqliteTable(
     ]
 );
 
+export const connectionAuditLog = sqliteTable(
+    "connectionAuditLog",
+    {
+        id: integer("id").primaryKey({ autoIncrement: true }),
+        sessionId: text("sessionId").notNull(),
+        siteResourceId: integer("siteResourceId").references(
+            () => siteResources.siteResourceId,
+            { onDelete: "cascade" }
+        ),
+        orgId: text("orgId").references(() => orgs.orgId, {
+            onDelete: "cascade"
+        }),
+        siteId: integer("siteId").references(() => sites.siteId, {
+            onDelete: "cascade"
+        }),
+        clientId: integer("clientId").references(() => clients.clientId, {
+            onDelete: "cascade"
+        }),
+        userId: text("userId").references(() => users.userId, {
+            onDelete: "cascade"
+        }),
+        sourceAddr: text("sourceAddr").notNull(),
+        destAddr: text("destAddr").notNull(),
+        protocol: text("protocol").notNull(),
+        startedAt: integer("startedAt").notNull(),
+        endedAt: integer("endedAt"),
+        bytesTx: integer("bytesTx"),
+        bytesRx: integer("bytesRx")
+    },
+    (table) => [
+        index("idx_accessAuditLog_startedAt").on(table.startedAt),
+        index("idx_accessAuditLog_org_startedAt").on(
+            table.orgId,
+            table.startedAt
+        ),
+        index("idx_accessAuditLog_siteResourceId").on(table.siteResourceId)
+    ]
+);
+
+export const approvals = sqliteTable("approvals", {
+    approvalId: integer("approvalId").primaryKey({ autoIncrement: true }),
+    timestamp: integer("timestamp").notNull(), // this is EPOCH time in seconds
+    orgId: text("orgId")
+        .references(() => orgs.orgId, {
+            onDelete: "cascade"
+        })
+        .notNull(),
+    clientId: integer("clientId").references(() => clients.clientId, {
+        onDelete: "cascade"
+    }), // olms reference user devices clients
+    userId: text("userId").references(() => users.userId, {
+        // optionally tied to a user and in this case delete when the user deletes
+        onDelete: "cascade"
+    }),
+    decision: text("decision")
+        .$type<"approved" | "denied" | "pending">()
+        .default("pending")
+        .notNull(),
+    type: text("type")
+        .$type<"user_device" /*| 'proxy' // for later */>()
+        .notNull()
+});
+
+export const bannedEmails = sqliteTable("bannedEmails", {
+    email: text("email").primaryKey()
+});
+
+export const bannedIps = sqliteTable("bannedIps", {
+    ip: text("ip").primaryKey()
+});
+
+export const siteProvisioningKeys = sqliteTable("siteProvisioningKeys", {
+    siteProvisioningKeyId: text("siteProvisioningKeyId").primaryKey(),
+    name: text("name").notNull(),
+    siteProvisioningKeyHash: text("siteProvisioningKeyHash").notNull(),
+    lastChars: text("lastChars").notNull(),
+    createdAt: text("dateCreated").notNull(),
+    lastUsed: text("lastUsed"),
+    maxBatchSize: integer("maxBatchSize"), // null = no limit
+    numUsed: integer("numUsed").notNull().default(0),
+    validUntil: text("validUntil")
+});
+
+export const siteProvisioningKeyOrg = sqliteTable(
+    "siteProvisioningKeyOrg",
+    {
+        siteProvisioningKeyId: text("siteProvisioningKeyId")
+            .notNull()
+            .references(() => siteProvisioningKeys.siteProvisioningKeyId, {
+                onDelete: "cascade"
+            }),
+        orgId: text("orgId")
+            .notNull()
+            .references(() => orgs.orgId, { onDelete: "cascade" })
+    },
+    (table) => [
+        primaryKey({
+            columns: [table.siteProvisioningKeyId, table.orgId]
+        })
+    ]
+);
+
+export type Approval = InferSelectModel<typeof approvals>;
 export type Limit = InferSelectModel<typeof limits>;
 export type Account = InferSelectModel<typeof account>;
 export type Certificate = InferSelectModel<typeof certificates>;
@@ -282,5 +416,7 @@ export type RemoteExitNodeSession = InferSelectModel<
 >;
 export type ExitNodeOrg = InferSelectModel<typeof exitNodeOrgs>;
 export type LoginPage = InferSelectModel<typeof loginPage>;
+export type LoginPageBranding = InferSelectModel<typeof loginPageBranding>;
 export type ActionAuditLog = InferSelectModel<typeof actionAuditLog>;
 export type AccessAuditLog = InferSelectModel<typeof accessAuditLog>;
+export type ConnectionAuditLog = InferSelectModel<typeof connectionAuditLog>;

@@ -3,12 +3,9 @@ import yaml from "js-yaml";
 import { configFilePath1, configFilePath2 } from "./consts";
 import { z } from "zod";
 import stoi from "./stoi";
+import { getEnvOrYaml } from "./getEnvOrYaml";
 
 const portSchema = z.number().positive().gt(0).lte(65535);
-
-const getEnvOrYaml = (envVar: string) => (valFromYaml: any) => {
-    return process.env[envVar] ?? valFromYaml;
-};
 
 export const configSchema = z
     .object({
@@ -82,6 +79,7 @@ export const configSchema = z
                     .default(3001)
                     .transform(stoi)
                     .pipe(portSchema),
+                badger_override: z.string().optional(),
                 next_port: portSchema
                     .optional()
                     .default(3002)
@@ -192,6 +190,46 @@ export const configSchema = z
                     .prefault({})
             })
             .optional(),
+        postgres_logs: z
+            .object({
+                connection_string: z
+                    .string()
+                    .optional()
+                    .transform(getEnvOrYaml("POSTGRES_LOGS_CONNECTION_STRING")),
+                replicas: z
+                    .array(
+                        z.object({
+                            connection_string: z.string()
+                        })
+                    )
+                    .optional(),
+                pool: z
+                    .object({
+                        max_connections: z
+                            .number()
+                            .positive()
+                            .optional()
+                            .default(20),
+                        max_replica_connections: z
+                            .number()
+                            .positive()
+                            .optional()
+                            .default(10),
+                        idle_timeout_ms: z
+                            .number()
+                            .positive()
+                            .optional()
+                            .default(30000),
+                        connection_timeout_ms: z
+                            .number()
+                            .positive()
+                            .optional()
+                            .default(5000)
+                    })
+                    .optional()
+                    .prefault({})
+            })
+            .optional(),
         traefik: z
             .object({
                 http_entrypoint: z.string().optional().default("web"),
@@ -256,17 +294,17 @@ export const configSchema = z
         orgs: z
             .object({
                 block_size: z.number().positive().gt(0).optional().default(24),
-                subnet_group: z.string().optional().default("100.90.128.0/24"),
+                subnet_group: z.string().optional().default("100.90.128.0/20"),
                 utility_subnet_group: z
                     .string()
                     .optional()
-                    .default("100.96.128.0/24") //just hardcode this for now as well
+                    .default("100.96.128.0/20") //just hardcode this for now as well
             })
             .optional()
             .default({
                 block_size: 24,
-                subnet_group: "100.90.128.0/24",
-                utility_subnet_group: "100.96.128.0/24"
+                subnet_group: "100.90.128.0/20",
+                utility_subnet_group: "100.96.128.0/20"
             }),
         rate_limits: z
             .object({
@@ -311,7 +349,10 @@ export const configSchema = z
             .object({
                 smtp_host: z.string().optional(),
                 smtp_port: portSchema.optional(),
-                smtp_user: z.string().optional(),
+                smtp_user: z
+                    .string()
+                    .optional()
+                    .transform(getEnvOrYaml("EMAIL_SMTP_USER")),
                 smtp_pass: z
                     .string()
                     .optional()
@@ -330,7 +371,9 @@ export const configSchema = z
                 enable_integration_api: z.boolean().optional(),
                 disable_local_sites: z.boolean().optional(),
                 disable_basic_wireguard_sites: z.boolean().optional(),
-                disable_config_managed_domains: z.boolean().optional()
+                disable_config_managed_domains: z.boolean().optional(),
+                disable_product_help_banners: z.boolean().optional(),
+                disable_enterprise_features: z.boolean().optional()
             })
             .optional(),
         dns: z

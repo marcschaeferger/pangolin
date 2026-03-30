@@ -41,7 +41,10 @@ export default function ProductUpdates({
 
     const data = useQueries({
         queries: [
-            productUpdatesQueries.list(env.app.notifications.product_updates),
+            productUpdatesQueries.list(
+                env.app.notifications.product_updates,
+                env.app.version
+            ),
             productUpdatesQueries.latestVersion(
                 env.app.notifications.new_releases
             )
@@ -88,6 +91,10 @@ export default function ProductUpdates({
         (update) => !productUpdatesRead.includes(update.id)
     );
 
+    if (filteredUpdates.length === 0 && !showNewVersionPopup) {
+        return null;
+    }
+
     return (
         <div
             className={cn(
@@ -98,7 +105,7 @@ export default function ProductUpdates({
             <div className="flex flex-col gap-1">
                 <small
                     className={cn(
-                        "text-xs text-muted-foreground flex items-center gap-1 mt-2",
+                        "text-xs text-muted-foreground flex items-center gap-1 mt-2 empty:mt-0",
                         showMoreUpdatesText
                             ? "animate-in fade-in duration-300"
                             : "opacity-0"
@@ -184,22 +191,20 @@ function ProductUpdatesListPopup({
                 <PopoverTrigger asChild>
                     <div
                         className={cn(
-                            "relative z-1 cursor-pointer block",
-                            "rounded-md border bg-muted p-2 py-3 w-full flex flex-col gap-2 text-sm",
+                            "relative z-1 cursor-pointer block group",
+                            "rounded-md border bg-secondary p-2 py-3 w-full flex flex-col gap-2 text-sm",
                             "transition duration-300 ease-in-out",
                             "data-closed:opacity-0 data-closed:translate-y-full"
                         )}
                     >
                         <div className="flex items-center gap-2">
-                            <div className="rounded-md bg-muted-foreground/20 p-2">
-                                <BellIcon className="flex-none size-4" />
-                            </div>
+                            <BellIcon className="flex-none size-4" />
                             <div className="flex justify-between items-center flex-1">
                                 <p className="font-medium text-start">
                                     {t("productUpdateWhatsNew")}
                                 </p>
                                 <div className="p-1 cursor-pointer">
-                                    <ChevronRightIcon className="size-4 flex-none" />
+                                    <ChevronRightIcon className="size-3.5 flex-none opacity-50 transition-transform duration-300 ease-in-out group-hover:translate-x-1" />
                                 </div>
                             </div>
                         </div>
@@ -334,53 +339,50 @@ function NewVersionAvailable({
 
     return (
         <Transition show={open}>
-            <div
-                className={cn(
-                    "relative z-2",
-                    "rounded-md border bg-muted p-2 py-3 w-full flex flex-col gap-2 text-sm",
-                    "transition duration-300 ease-in-out",
-                    "data-closed:opacity-0 data-closed:translate-y-full"
-                )}
-            >
-                {version && (
-                    <>
-                        <div className="flex items-center gap-2">
-                            <div className="rounded-md bg-muted-foreground/20 p-2">
-                                <RocketIcon className="flex-none size-4" />
-                            </div>
-                            <p className="font-medium flex-1">
-                                {t("pangolinUpdateAvailable")}
-                            </p>
-                            <button
-                                className="p-1 cursor-pointer"
-                                onClick={() => {
-                                    setOpen(false);
-                                    onDimiss();
-                                }}
-                            >
-                                <XIcon className="size-4 flex-none" />
-                            </button>
+            {version && (
+                <a
+                    href={version.pangolin.releaseNotes}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                        "relative z-2 group cursor-pointer block",
+                        "rounded-md border bg-secondary p-2 py-3 w-full flex flex-col gap-2 text-sm",
+                        "transition duration-300 ease-in-out",
+                        "data-closed:opacity-0 data-closed:translate-y-full"
+                    )}
+                >
+                    <div className="flex items-center gap-2">
+                        <RocketIcon className="flex-none size-4" />
+                        <p className="font-medium flex-1">
+                            {t("pangolinUpdateAvailable")}
+                        </p>
+                        <button
+                            className="p-1 cursor-pointer z-10"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setOpen(false);
+                                onDimiss();
+                            }}
+                        >
+                            <XIcon className="size-3 flex-none opacity-50" />
+                        </button>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                        <small className="text-muted-foreground">
+                            {t("pangolinUpdateAvailableInfo", {
+                                version: version.pangolin.latestVersion
+                            })}
+                        </small>
+                        <div className="inline-flex items-center gap-1 text-xs">
+                            <span>
+                                {t("pangolinUpdateAvailableReleaseNotes")}
+                            </span>
+                            <ArrowRight className="flex-none size-3 transition-transform duration-300 ease-in-out group-hover:translate-x-1" />
                         </div>
-                        <div className="flex flex-col gap-0.5">
-                            <small className="text-muted-foreground">
-                                {t("pangolinUpdateAvailableInfo", {
-                                    version: version.pangolin.latestVersion
-                                })}
-                            </small>
-                            <a
-                                href={version.pangolin.releaseNotes}
-                                target="_blank"
-                                className="inline-flex items-center gap-1 text-xs font-medium"
-                            >
-                                <span>
-                                    {t("pangolinUpdateAvailableReleaseNotes")}
-                                </span>
-                                <ArrowRight className="flex-none size-3" />
-                            </a>
-                        </div>
-                    </>
-                )}
-            </div>
+                    </div>
+                </a>
+            )}
         </Transition>
     );
 }

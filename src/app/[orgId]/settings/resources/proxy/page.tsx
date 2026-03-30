@@ -1,6 +1,7 @@
 import type { ResourceRow } from "@app/components/ProxyResourcesTable";
 import ProxyResourcesTable from "@app/components/ProxyResourcesTable";
 import SettingsSectionTitle from "@app/components/SettingsSectionTitle";
+import ProxyResourcesBanner from "@app/components/ProxyResourcesBanner";
 import { internal } from "@app/lib/api";
 import { authCookieHeader } from "@app/lib/api/cookies";
 import OrgProvider from "@app/providers/OrgProvider";
@@ -15,7 +16,7 @@ import { cache } from "react";
 
 export interface ProxyResourcesPageProps {
     params: Promise<{ orgId: string }>;
-    searchParams: Promise<{ view?: string }>;
+    searchParams: Promise<Record<string, string>>;
 }
 
 export default async function ProxyResourcesPage(
@@ -23,14 +24,22 @@ export default async function ProxyResourcesPage(
 ) {
     const params = await props.params;
     const t = await getTranslations();
+    const searchParams = new URLSearchParams(await props.searchParams);
 
     let resources: ListResourcesResponse["resources"] = [];
+    let pagination: ListResourcesResponse["pagination"] = {
+        total: 0,
+        page: 1,
+        pageSize: 20
+    };
     try {
         const res = await internal.get<AxiosResponse<ListResourcesResponse>>(
-            `/org/${params.orgId}/resources`,
+            `/org/${params.orgId}/resources?${searchParams.toString()}`,
             await authCookieHeader()
         );
-        resources = res.data.data.resources;
+        const responseData = res.data.data;
+        resources = responseData.resources;
+        pagination = responseData.pagination;
     } catch (e) {}
 
     let siteResources: ListAllSiteResourcesByOrgResponse["siteResources"] = [];
@@ -97,13 +106,16 @@ export default async function ProxyResourcesPage(
                 description={t("proxyResourceDescription")}
             />
 
+            <ProxyResourcesBanner />
+
             <OrgProvider org={org}>
                 <ProxyResourcesTable
                     resources={resourceRows}
                     orgId={params.orgId}
-                    defaultSort={{
-                        id: "name",
-                        desc: false
+                    rowCount={pagination.total}
+                    pagination={{
+                        pageIndex: pagination.page - 1,
+                        pageSize: pagination.pageSize
                     }}
                 />
             </OrgProvider>

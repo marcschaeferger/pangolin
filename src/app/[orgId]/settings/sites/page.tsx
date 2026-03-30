@@ -2,26 +2,37 @@ import { internal } from "@app/lib/api";
 import { authCookieHeader } from "@app/lib/api/cookies";
 import { ListSitesResponse } from "@server/routers/site";
 import { AxiosResponse } from "axios";
-import SitesTable, { SiteRow } from "../../../../components/SitesTable";
+import SitesTable, { SiteRow } from "@app/components/SitesTable";
 import SettingsSectionTitle from "@app/components/SettingsSectionTitle";
-import SitesSplashCard from "../../../../components/SitesSplashCard";
+import SitesBanner from "@app/components/SitesBanner";
 import { getTranslations } from "next-intl/server";
 
 type SitesPageProps = {
     params: Promise<{ orgId: string }>;
+    searchParams: Promise<Record<string, string>>;
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function SitesPage(props: SitesPageProps) {
     const params = await props.params;
+
+    const searchParams = new URLSearchParams(await props.searchParams);
+
     let sites: ListSitesResponse["sites"] = [];
+    let pagination: ListSitesResponse["pagination"] = {
+        total: 0,
+        page: 1,
+        pageSize: 20
+    };
     try {
         const res = await internal.get<AxiosResponse<ListSitesResponse>>(
-            `/org/${params.orgId}/sites`,
+            `/org/${params.orgId}/sites?${searchParams.toString()}`,
             await authCookieHeader()
         );
-        sites = res.data.data.sites;
+        const responseData = res.data.data;
+        sites = responseData.sites;
+        pagination = responseData.pagination;
     } catch (e) {}
 
     const t = await getTranslations();
@@ -53,20 +64,29 @@ export default async function SitesPage(props: SitesPageProps) {
             newtVersion: site.newtVersion || undefined,
             newtUpdateAvailable: site.newtUpdateAvailable || false,
             exitNodeName: site.exitNodeName || undefined,
-            exitNodeEndpoint: site.exitNodeEndpoint || undefined
+            exitNodeEndpoint: site.exitNodeEndpoint || undefined,
+            remoteExitNodeId: (site as any).remoteExitNodeId || undefined
         };
     });
 
     return (
         <>
-            {/* <SitesSplashCard /> */}
-
             <SettingsSectionTitle
                 title={t("siteManageSites")}
                 description={t("siteDescription")}
             />
 
-            <SitesTable sites={siteRows} orgId={params.orgId} />
+            <SitesBanner />
+
+            <SitesTable
+                sites={siteRows}
+                orgId={params.orgId}
+                rowCount={pagination.total}
+                pagination={{
+                    pageIndex: pagination.page - 1,
+                    pageSize: pagination.pageSize
+                }}
+            />
         </>
     );
 }

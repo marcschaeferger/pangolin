@@ -188,6 +188,8 @@ export async function updateTarget(
             );
         }
 
+        const pathMatchTypeRemoved = parsedBody.data.pathMatchType === null;
+
         const [updatedTarget] = await db
             .update(targets)
             .set({
@@ -200,8 +202,8 @@ export async function updateTarget(
                 path: parsedBody.data.path,
                 pathMatchType: parsedBody.data.pathMatchType,
                 priority: parsedBody.data.priority,
-                rewritePath: parsedBody.data.rewritePath,
-                rewritePathType: parsedBody.data.rewritePathType
+                rewritePath: pathMatchTypeRemoved ? null : parsedBody.data.rewritePath,
+                rewritePathType: pathMatchTypeRemoved ? null : parsedBody.data.rewritePathType
             })
             .where(eq(targets.targetId, targetId))
             .returning();
@@ -213,9 +215,11 @@ export async function updateTarget(
 
         // When health check is disabled, reset hcHealth to "unknown"
         // to prevent previously unhealthy targets from being excluded
+        // Also when the site is not a newt, set hcHealth to "unknown"
         const hcHealthValue =
             parsedBody.data.hcEnabled === false ||
-            parsedBody.data.hcEnabled === null
+            parsedBody.data.hcEnabled === null ||
+            site.type !== "newt"
                 ? "unknown"
                 : undefined;
 
@@ -260,7 +264,7 @@ export async function updateTarget(
                     [updatedTarget],
                     [updatedHc],
                     resource.protocol,
-                    resource.proxyPort
+                    newt.version
                 );
             }
         }

@@ -1,28 +1,25 @@
-import {
-    clientSiteResourcesAssociationsCache,
-    db,
-    orgs,
-    siteResources
-} from "@server/db";
+import { db, orgs } from "@server/db";
 import { MessageHandler } from "@server/routers/ws";
 import {
     clients,
     clientSitesAssociationsCache,
-    exitNodes,
     Olm,
     olms,
     sites
 } from "@server/db";
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { addPeer, deletePeer } from "../newt/peers";
+import { count, eq } from "drizzle-orm";
 import logger from "@server/logger";
-import { generateAliasConfig } from "@server/lib/ip";
-import { generateRemoteSubnets } from "@server/lib/ip";
 import { checkOrgAccessPolicy } from "#dynamic/lib/checkOrgAccessPolicy";
 import { validateSessionToken } from "@server/auth/sessions/app";
-import config from "@server/lib/config";
 import { encodeHexLowerCase } from "@oslojs/encoding";
 import { sha256 } from "@oslojs/crypto/sha2";
+import { getUserDeviceName } from "@server/db/names";
+import { buildSiteConfigurationForOlmClient } from "./buildConfiguration";
+import { OlmErrorCodes, sendOlmError } from "./error";
+import { handleFingerprintInsertion } from "./fingerprintingUtils";
+import { Alias } from "@server/lib/ip";
+import { build } from "@server/build";
+import { canCompress } from "@server/lib/clientVersionChecks";
 
 export const handleOlmRegisterMessage: MessageHandler = async (context) => {
     logger.info("Handling register olm message!");
@@ -36,12 +33,49 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         return;
     }
 
-    const { publicKey, relay, olmVersion, olmAgent, orgId, userToken } =
-        message.data;
+    const {
+        publicKey,
+        relay,
+        olmVersion,
+        olmAgent,
+        orgId,
+        userToken,
+        fingerprint,
+        postures,
+        chainId
+    } = message.data;
 
     if (!olm.clientId) {
         logger.warn("Olm client ID not found");
+        sendOlmError(OlmErrorCodes.CLIENT_ID_NOT_FOUND, olm.olmId);
         return;
+    }
+
+    logger.debug("Handling fingerprint insertion for olm register...", {
+        olmId: olm.olmId,
+        fingerprint,
+        postures
+    });
+
+    const isUserDevice = olm.userId !== null && olm.userId !== undefined;
+
+    if (isUserDevice) {
+        await handleFingerprintInsertion(olm, fingerprint, postures);
+    }
+
+    if (
+        (olmVersion && olm.version !== olmVersion) ||
+        (olmAgent && olm.agent !== olmAgent) ||
+        olm.archived
+    ) {
+        await db
+            .update(olms)
+            .set({
+                version: olmVersion,
+                agent: olmAgent,
+                archived: false
+            })
+            .where(eq(olms.olmId, olm.olmId));
     }
 
     const [client] = await db
@@ -52,7 +86,39 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
 
     if (!client) {
         logger.warn("Client ID not found");
+        sendOlmError(OlmErrorCodes.CLIENT_NOT_FOUND, olm.olmId);
         return;
+    }
+
+    if (client.blocked) {
+        logger.debug(
+            `Client ${client.clientId} is blocked. Ignoring register.`
+        );
+        sendOlmError(OlmErrorCodes.CLIENT_BLOCKED, olm.olmId);
+        return;
+    }
+
+    if (client.approvalState == "pending") {
+        logger.debug(
+            `Client ${client.clientId} approval is pending. Ignoring register.`
+        );
+        sendOlmError(OlmErrorCodes.CLIENT_PENDING, olm.olmId);
+        return;
+    }
+
+    const deviceModel = fingerprint?.deviceModel ?? null;
+    const computedName = getUserDeviceName(deviceModel, client.name);
+    if (computedName && computedName !== client.name) {
+        await db
+            .update(clients)
+            .set({ name: computedName })
+            .where(eq(clients.clientId, client.clientId));
+    }
+    if (computedName && computedName !== olm.name) {
+        await db
+            .update(olms)
+            .set({ name: computedName })
+            .where(eq(olms.olmId, olm.olmId));
     }
 
     const [org] = await db
@@ -63,12 +129,14 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
 
     if (!org) {
         logger.warn("Org not found");
+        sendOlmError(OlmErrorCodes.ORG_NOT_FOUND, olm.olmId);
         return;
     }
 
     if (orgId) {
         if (!olm.userId) {
             logger.warn("Olm has no user ID");
+            sendOlmError(OlmErrorCodes.USER_ID_NOT_FOUND, olm.olmId);
             return;
         }
 
@@ -76,10 +144,12 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
             await validateSessionToken(userToken);
         if (!userSession || !user) {
             logger.warn("Invalid user session for olm register");
-            return; // by returning here we just ignore the ping and the setInterval will force it to disconnect
+            sendOlmError(OlmErrorCodes.INVALID_USER_SESSION, olm.olmId);
+            return;
         }
         if (user.userId !== olm.userId) {
             logger.warn("User ID mismatch for olm register");
+            sendOlmError(OlmErrorCodes.USER_ID_MISMATCH, olm.olmId);
             return;
         }
 
@@ -93,12 +163,78 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
             sessionId // this is the user token passed in the message
         });
 
-        if (!policyCheck.allowed) {
+        logger.debug("Policy check result:", policyCheck);
+
+        if (policyCheck?.error) {
+            logger.error(
+                `Error checking access policies for olm user ${olm.userId} in org ${orgId}: ${policyCheck?.error}`
+            );
+            sendOlmError(OlmErrorCodes.ORG_ACCESS_POLICY_DENIED, olm.olmId);
+            return;
+        }
+
+        if (policyCheck.policies?.passwordAge?.compliant === false) {
+            logger.warn(
+                `Olm user ${olm.userId} has non-compliant password age for org ${orgId}`
+            );
+            sendOlmError(
+                OlmErrorCodes.ORG_ACCESS_POLICY_PASSWORD_EXPIRED,
+                olm.olmId
+            );
+            return;
+        } else if (
+            policyCheck.policies?.maxSessionLength?.compliant === false
+        ) {
+            logger.warn(
+                `Olm user ${olm.userId} has non-compliant session length for org ${orgId}`
+            );
+            sendOlmError(
+                OlmErrorCodes.ORG_ACCESS_POLICY_SESSION_EXPIRED,
+                olm.olmId
+            );
+            return;
+        } else if (policyCheck.policies?.requiredTwoFactor === false) {
+            logger.warn(
+                `Olm user ${olm.userId} does not have 2FA enabled for org ${orgId}`
+            );
+            sendOlmError(
+                OlmErrorCodes.ORG_ACCESS_POLICY_2FA_REQUIRED,
+                olm.olmId
+            );
+            return;
+        } else if (!policyCheck.allowed) {
             logger.warn(
                 `Olm user ${olm.userId} does not pass access policies for org ${orgId}: ${policyCheck.error}`
             );
+            sendOlmError(OlmErrorCodes.ORG_ACCESS_POLICY_DENIED, olm.olmId);
             return;
         }
+    }
+
+    // Get all sites data
+    const sitesCountResult = await db
+        .select({ count: count() })
+        .from(sites)
+        .innerJoin(
+            clientSitesAssociationsCache,
+            eq(sites.siteId, clientSitesAssociationsCache.siteId)
+        )
+        .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
+
+    // Extract the count value from the result array
+    const sitesCount =
+        sitesCountResult.length > 0 ? sitesCountResult[0].count : 0;
+
+    // Prepare an array to store site configurations
+    logger.debug(`Found ${sitesCount} sites for client ${client.clientId}`);
+
+    let jitMode = false;
+    if (sitesCount > 250 && build == "saas") {
+        // THIS IS THE MAX ON THE BUSINESS TIER
+        // we have too many sites
+        // If we have too many sites we need to drop into fully JIT mode by not sending any of the sites
+        logger.info("Too many sites (%d), dropping into JIT mode", sitesCount);
+        jitMode = true;
     }
 
     logger.debug(
@@ -110,20 +246,7 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         return;
     }
 
-    if (
-        (olmVersion && olm.version !== olmVersion) ||
-        (olmAgent && olm.agent !== olmAgent)
-    ) {
-        await db
-            .update(olms)
-            .set({
-                version: olmVersion,
-                agent: olmAgent
-            })
-            .where(eq(olms.olmId, olm.olmId));
-    }
-
-    if (client.pubKey !== publicKey) {
+    if (client.pubKey !== publicKey || client.archived) {
         logger.info(
             "Public key mismatch. Updating public key and clearing session info..."
         );
@@ -131,7 +254,8 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         await db
             .update(clients)
             .set({
-                pubKey: publicKey
+                pubKey: publicKey,
+                archived: false
             })
             .where(eq(clients.clientId, client.clientId));
 
@@ -139,161 +263,29 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
         await db
             .update(clientSitesAssociationsCache)
             .set({
-                isRelayed: relay == true
+                isRelayed: relay == true,
+                isJitMode: jitMode
             })
             .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
     }
 
-    // Get all sites data
-    const sitesData = await db
-        .select()
-        .from(sites)
-        .innerJoin(
-            clientSitesAssociationsCache,
-            eq(sites.siteId, clientSitesAssociationsCache.siteId)
-        )
-        .where(eq(clientSitesAssociationsCache.clientId, client.clientId));
-
-    // Prepare an array to store site configurations
-    const siteConfigurations = [];
-    logger.debug(
-        `Found ${sitesData.length} sites for client ${client.clientId}`
-    );
-
     // this prevents us from accepting a register from an olm that has not hole punched yet.
     // the olm will pump the register so we can keep checking
     // TODO: I still think there is a better way to do this rather than locking it out here but ???
-    if (now - (client.lastHolePunch || 0) > 5 && sitesData.length > 0) {
+    if (now - (client.lastHolePunch || 0) > 5 && sitesCount > 0) {
         logger.warn(
             "Client last hole punch is too old and we have sites to send; skipping this register"
         );
         return;
     }
 
-    // Process each site
-    for (const {
-        sites: site,
-        clientSitesAssociationsCache: association
-    } of sitesData) {
-        if (!site.exitNodeId) {
-            logger.warn(
-                `Site ${site.siteId} does not have exit node, skipping`
-            );
-            continue;
-        }
-
-        // Validate endpoint and hole punch status
-        if (!site.endpoint) {
-            logger.warn(
-                `In olm register: site ${site.siteId} has no endpoint, skipping`
-            );
-            continue;
-        }
-
-        // if (site.lastHolePunch && now - site.lastHolePunch > 6 && relay) {
-        //     logger.warn(
-        //         `Site ${site.siteId} last hole punch is too old, skipping`
-        //     );
-        //     continue;
-        // }
-
-        // If public key changed, delete old peer from this site
-        if (client.pubKey && client.pubKey != publicKey) {
-            logger.info(
-                `Public key mismatch. Deleting old peer from site ${site.siteId}...`
-            );
-            await deletePeer(site.siteId, client.pubKey!);
-        }
-
-        if (!site.subnet) {
-            logger.warn(`Site ${site.siteId} has no subnet, skipping`);
-            continue;
-        }
-
-        const [clientSite] = await db
-            .select()
-            .from(clientSitesAssociationsCache)
-            .where(
-                and(
-                    eq(clientSitesAssociationsCache.clientId, client.clientId),
-                    eq(clientSitesAssociationsCache.siteId, site.siteId)
-                )
-            )
-            .limit(1);
-
-        // Add the peer to the exit node for this site
-        if (clientSite.endpoint) {
-            logger.info(
-                `Adding peer ${publicKey} to site ${site.siteId} with endpoint ${clientSite.endpoint}`
-            );
-            await addPeer(site.siteId, {
-                publicKey: publicKey,
-                allowedIps: [`${client.subnet.split("/")[0]}/32`], // we want to only allow from that client
-                endpoint: relay ? "" : clientSite.endpoint
-            });
-        } else {
-            logger.warn(
-                `Client ${client.clientId} has no endpoint, skipping peer addition`
-            );
-        }
-
-        let relayEndpoint: string | undefined = undefined;
-        if (relay) {
-            const [exitNode] = await db
-                .select()
-                .from(exitNodes)
-                .where(eq(exitNodes.exitNodeId, site.exitNodeId))
-                .limit(1);
-            if (!exitNode) {
-                logger.warn(`Exit node not found for site ${site.siteId}`);
-                continue;
-            }
-            relayEndpoint = `${exitNode.endpoint}:${config.getRawConfig().gerbil.clients_start_port}`;
-        }
-
-        const allSiteResources = await db // only get the site resources that this client has access to
-            .select()
-            .from(siteResources)
-            .innerJoin(
-                clientSiteResourcesAssociationsCache,
-                eq(
-                    siteResources.siteResourceId,
-                    clientSiteResourcesAssociationsCache.siteResourceId
-                )
-            )
-            .where(
-                and(
-                    eq(siteResources.siteId, site.siteId),
-                    eq(
-                        clientSiteResourcesAssociationsCache.clientId,
-                        client.clientId
-                    )
-                )
-            );
-
-        // Add site configuration to the array
-        siteConfigurations.push({
-            siteId: site.siteId,
-            name: site.name,
-            // relayEndpoint: relayEndpoint, // this can be undefined now if not relayed // lets not do this for now because it would conflict with the hole punch testing
-            endpoint: site.endpoint,
-            publicKey: site.publicKey,
-            serverIP: site.address,
-            serverPort: site.listenPort,
-            remoteSubnets: generateRemoteSubnets(
-                allSiteResources.map(({ siteResources }) => siteResources)
-            ),
-            aliases: generateAliasConfig(
-                allSiteResources.map(({ siteResources }) => siteResources)
-            )
-        });
-    }
-
-    // REMOVED THIS SO IT CREATES THE INTERFACE AND JUST WAITS FOR THE SITES
-    // if (siteConfigurations.length === 0) {
-    //     logger.warn("No valid site configurations found");
-    //     return;
-    // }
+   // NOTE: its important that the client here is the old client and the public key is the new key
+    const siteConfigurations = await buildSiteConfigurationForOlmClient(
+        client,
+        publicKey,
+        relay,
+        jitMode
+    );
 
     // Return connect message with all site configurations
     return {
@@ -302,8 +294,12 @@ export const handleOlmRegisterMessage: MessageHandler = async (context) => {
             data: {
                 sites: siteConfigurations,
                 tunnelIP: client.subnet,
-                utilitySubnet: org.utilitySubnet
+                utilitySubnet: org.utilitySubnet,
+                chainId: chainId
             }
+        },
+        options: {
+            compress: canCompress(olm.version, "olm")
         },
         broadcast: false,
         excludeSender: false

@@ -4,23 +4,23 @@ import {
     getResourceByDomain,
     getResourceRules,
     getRoleResourceAccess,
-    getUserOrgRole,
     getUserResourceAccess,
     getOrgLoginPage,
     getUserSessionWithUser
 } from "@server/db/queries/verifySessionQueries";
+import { getUserOrgRoles } from "@server/lib/userOrgRoles";
 import {
     LoginPage,
     Org,
     Resource,
     ResourceHeaderAuth,
+    ResourceHeaderAuthExtendedCompatibility,
     ResourcePassword,
     ResourcePincode,
-    ResourceRule,
-    resourceSessions
+    ResourceRule
 } from "@server/db";
 import config from "@server/lib/config";
-import { isIpInCidr } from "@server/lib/ip";
+import { isIpInCidr, stripPortFromHost } from "@server/lib/ip";
 import { response } from "@server/lib/response";
 import logger from "@server/logger";
 import HttpCode from "@server/types/HttpCode";
@@ -30,16 +30,17 @@ import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { getCountryCodeForIp } from "@server/lib/geoip";
 import { getAsnForIp } from "@server/lib/asn";
-import { getOrgTierData } from "#dynamic/lib/billing";
-import { TierId } from "@server/lib/billing/tiers";
 import { verifyPassword } from "@server/auth/password";
 import {
     checkOrgAccessPolicy,
     enforceResourceSessionLength
 } from "#dynamic/lib/checkOrgAccessPolicy";
 import { logRequestAudit } from "./logRequestAudit";
-import cache from "@server/lib/cache";
 import { REGIONS } from "@server/db/regions";
+import { localCache } from "#dynamic/lib/cache";
+import { APP_VERSION } from "@server/lib/consts";
+import { isSubscribed } from "#dynamic/lib/isSubscribed";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 
 const verifyResourceSessionSchema = z.object({
     sessions: z.record(z.string(), z.string()).optional(),
@@ -51,7 +52,8 @@ const verifyResourceSessionSchema = z.object({
     path: z.string(),
     method: z.string(),
     tls: z.boolean(),
-    requestIp: z.string().optional()
+    requestIp: z.string().optional(),
+    badgerVersion: z.string().optional()
 });
 
 export type VerifyResourceSessionSchema = z.infer<
@@ -67,8 +69,10 @@ type BasicUserData = {
 
 export type VerifyUserResponse = {
     valid: boolean;
+    headerAuthChallenged?: boolean;
     redirectUrl?: string;
     userData?: BasicUserData;
+    pangolinVersion?: string;
 };
 
 export async function verifyResourceSession(
@@ -97,31 +101,15 @@ export async function verifyResourceSession(
             requestIp,
             path,
             headers,
-            query
+            query,
+            badgerVersion
         } = parsedBody.data;
 
         // Extract HTTP Basic Auth credentials if present
         const clientHeaderAuth = extractBasicAuth(headers);
 
         const clientIp = requestIp
-            ? (() => {
-                  logger.debug("Request IP:", { requestIp });
-                  if (requestIp.startsWith("[") && requestIp.includes("]")) {
-                      // if brackets are found, extract the IPv6 address from between the brackets
-                      const ipv6Match = requestIp.match(/\[(.*?)\]/);
-                      if (ipv6Match) {
-                          return ipv6Match[1];
-                      }
-                  }
-
-                  // ivp4
-                  // split at last colon
-                  const lastColonIndex = requestIp.lastIndexOf(":");
-                  if (lastColonIndex !== -1) {
-                      return requestIp.substring(0, lastColonIndex);
-                  }
-                  return requestIp;
-              })()
+            ? stripPortFromHost(requestIp, badgerVersion)
             : undefined;
 
         logger.debug("Client IP:", { clientIp });
@@ -130,9 +118,7 @@ export async function verifyResourceSession(
             ? await getCountryCodeFromIp(clientIp)
             : undefined;
 
-        const ipAsn = clientIp
-            ? await getAsnFromIp(clientIp)
-            : undefined;
+        const ipAsn = clientIp ? await getAsnFromIp(clientIp) : undefined;
 
         let cleanHost = host;
         // if the host ends with :port, strip it
@@ -148,9 +134,10 @@ export async function verifyResourceSession(
                   pincode: ResourcePincode | null;
                   password: ResourcePassword | null;
                   headerAuth: ResourceHeaderAuth | null;
+                  headerAuthExtendedCompatibility: ResourceHeaderAuthExtendedCompatibility | null;
                   org: Org;
               }
-            | undefined = cache.get(resourceCacheKey);
+            | undefined = localCache.get(resourceCacheKey);
 
         if (!resourceData) {
             const result = await getResourceByDomain(cleanHost);
@@ -174,10 +161,16 @@ export async function verifyResourceSession(
             }
 
             resourceData = result;
-            cache.set(resourceCacheKey, resourceData, 5);
+            localCache.set(resourceCacheKey, resourceData, 5);
         }
 
-        const { resource, pincode, password, headerAuth } = resourceData;
+        const {
+            resource,
+            pincode,
+            password,
+            headerAuth,
+            headerAuthExtendedCompatibility
+        } = resourceData;
 
         if (!resource) {
             logger.debug(`Resource not found ${cleanHost}`);
@@ -412,7 +405,7 @@ export async function verifyResourceSession(
         // check for HTTP Basic Auth header
         const clientHeaderAuthKey = `headerAuth:${clientHeaderAuth}`;
         if (headerAuth && clientHeaderAuth) {
-            if (cache.get(clientHeaderAuthKey)) {
+            if (localCache.get(clientHeaderAuthKey)) {
                 logger.debug(
                     "Resource allowed because header auth is valid (cached)"
                 );
@@ -435,7 +428,7 @@ export async function verifyResourceSession(
                     headerAuth.headerAuthHash
                 )
             ) {
-                cache.set(clientHeaderAuthKey, clientHeaderAuth, 5);
+                localCache.set(clientHeaderAuthKey, clientHeaderAuth, 5);
                 logger.debug("Resource allowed because header auth is valid");
 
                 logRequestAudit(
@@ -457,7 +450,8 @@ export async function verifyResourceSession(
                 !sso &&
                 !pincode &&
                 !password &&
-                !resource.emailWhitelistEnabled
+                !resource.emailWhitelistEnabled &&
+                !headerAuthExtendedCompatibility?.extendedCompatibilityIsActivated
             ) {
                 logRequestAudit(
                     {
@@ -478,7 +472,8 @@ export async function verifyResourceSession(
                 !sso &&
                 !pincode &&
                 !password &&
-                !resource.emailWhitelistEnabled
+                !resource.emailWhitelistEnabled &&
+                !headerAuthExtendedCompatibility?.extendedCompatibilityIsActivated
             ) {
                 logRequestAudit(
                     {
@@ -525,7 +520,7 @@ export async function verifyResourceSession(
 
         if (resourceSessionToken) {
             const sessionCacheKey = `session:${resourceSessionToken}`;
-            let resourceSession: any = cache.get(sessionCacheKey);
+            let resourceSession: any = localCache.get(sessionCacheKey);
 
             if (!resourceSession) {
                 const result = await validateResourceSessionToken(
@@ -534,7 +529,7 @@ export async function verifyResourceSession(
                 );
 
                 resourceSession = result?.resourceSession;
-                cache.set(sessionCacheKey, resourceSession, 5);
+                localCache.set(sessionCacheKey, resourceSession, 5);
             }
 
             if (resourceSession?.isRequestToken) {
@@ -564,7 +559,7 @@ export async function verifyResourceSession(
             }
 
             if (resourceSession) {
-                // only run this check if not SSO sesion; SSO session length is checked later
+                // only run this check if not SSO session; SSO session length is checked later
                 const accessPolicy = await enforceResourceSessionLength(
                     resourceSession,
                     resourceData.org
@@ -667,7 +662,7 @@ export async function verifyResourceSession(
                     }:${resource.resourceId}`;
 
                     let allowedUserData: BasicUserData | null | undefined =
-                        cache.get(userAccessCacheKey);
+                        localCache.get(userAccessCacheKey);
 
                     if (allowedUserData === undefined) {
                         allowedUserData = await isUserAllowedToAccessResource(
@@ -676,7 +671,7 @@ export async function verifyResourceSession(
                             resourceData.org
                         );
 
-                        cache.set(userAccessCacheKey, allowedUserData, 5);
+                        localCache.set(userAccessCacheKey, allowedUserData, 5);
                     }
 
                     if (
@@ -706,6 +701,15 @@ export async function verifyResourceSession(
                     }
                 }
             }
+        }
+
+        // If headerAuthExtendedCompatibility is activated but no clientHeaderAuth provided, force client to challenge
+        if (
+            headerAuthExtendedCompatibility &&
+            headerAuthExtendedCompatibility.extendedCompatibilityIsActivated &&
+            !clientHeaderAuth
+        ) {
+            return headerAuthChallenged(res, redirectPath, resource.orgId);
         }
 
         logger.debug("No more auth to check, resource not allowed");
@@ -793,8 +797,12 @@ async function notAllowed(
 ) {
     let loginPage: LoginPage | null = null;
     if (orgId) {
-        const { tier } = await getOrgTierData(orgId); // returns null in oss
-        if (tier === TierId.STANDARD) {
+        const subscribed = await isSubscribed(
+            // this is fine because the org login page is only a saas feature
+            orgId,
+            tierMatrix.loginPageDomain
+        );
+        if (subscribed) {
             loginPage = await getOrgLoginPage(orgId);
         }
     }
@@ -816,7 +824,7 @@ async function notAllowed(
     }
 
     const data = {
-        data: { valid: false, redirectUrl },
+        data: { valid: false, redirectUrl, pangolinVersion: APP_VERSION },
         success: true,
         error: false,
         message: "Access denied",
@@ -830,13 +838,61 @@ function allowed(res: Response, userData?: BasicUserData) {
     const data = {
         data:
             userData !== undefined && userData !== null
-                ? { valid: true, ...userData }
-                : { valid: true },
+                ? { valid: true, ...userData, pangolinVersion: APP_VERSION }
+                : { valid: true, pangolinVersion: APP_VERSION },
         success: true,
         error: false,
         message: "Access allowed",
         status: HttpCode.OK
     };
+    return response<VerifyUserResponse>(res, data);
+}
+
+async function headerAuthChallenged(
+    res: Response,
+    redirectPath?: string,
+    orgId?: string
+) {
+    let loginPage: LoginPage | null = null;
+    if (orgId) {
+        const subscribed = await isSubscribed(
+            orgId,
+            tierMatrix.loginPageDomain
+        ); // this is fine because the org login page is only a saas feature
+        if (subscribed) {
+            loginPage = await getOrgLoginPage(orgId);
+        }
+    }
+
+    let redirectUrl: string | undefined = undefined;
+    if (redirectPath) {
+        let endpoint: string;
+
+        if (loginPage && loginPage.domainId && loginPage.fullDomain) {
+            const secure = config
+                .getRawConfig()
+                .app.dashboard_url?.startsWith("https");
+            const method = secure ? "https" : "http";
+            endpoint = `${method}://${loginPage.fullDomain}`;
+        } else {
+            endpoint = config.getRawConfig().app.dashboard_url!;
+        }
+        redirectUrl = `${endpoint}${redirectPath}`;
+    }
+
+    const data = {
+        data: {
+            headerAuthChallenged: true,
+            valid: false,
+            redirectUrl,
+            pangolinVersion: APP_VERSION
+        },
+        success: true,
+        error: false,
+        message: "Access denied",
+        status: HttpCode.OK
+    };
+    logger.debug(JSON.stringify(data));
     return response<VerifyUserResponse>(res, data);
 }
 
@@ -864,9 +920,9 @@ async function isUserAllowedToAccessResource(
         return null;
     }
 
-    const userOrgRole = await getUserOrgRole(user.userId, resource.orgId);
+    const userOrgRoles = await getUserOrgRoles(user.userId, resource.orgId);
 
-    if (!userOrgRole) {
+    if (!userOrgRoles.length) {
         return null;
     }
 
@@ -884,15 +940,14 @@ async function isUserAllowedToAccessResource(
 
     const roleResourceAccess = await getRoleResourceAccess(
         resource.resourceId,
-        userOrgRole.roleId
+        userOrgRoles.map((r) => r.roleId)
     );
-
-    if (roleResourceAccess) {
+    if (roleResourceAccess && roleResourceAccess.length > 0) {
         return {
             username: user.username,
             email: user.email,
             name: user.name,
-            role: user.role
+            role: userOrgRoles.map((r) => r.roleName).join(", ")
         };
     }
 
@@ -906,7 +961,7 @@ async function isUserAllowedToAccessResource(
             username: user.username,
             email: user.email,
             name: user.name,
-            role: user.role
+            role: userOrgRoles.map((r) => r.roleName).join(", ")
         };
     }
 
@@ -922,11 +977,11 @@ async function checkRules(
 ): Promise<"ACCEPT" | "DROP" | "PASS" | undefined> {
     const ruleCacheKey = `rules:${resourceId}`;
 
-    let rules: ResourceRule[] | undefined = cache.get(ruleCacheKey);
+    let rules: ResourceRule[] | undefined = localCache.get(ruleCacheKey);
 
     if (!rules) {
         rules = await getResourceRules(resourceId);
-        cache.set(ruleCacheKey, rules, 5);
+        localCache.set(ruleCacheKey, rules, 5);
     }
 
     if (rules.length === 0) {
@@ -991,14 +1046,29 @@ export function isPathAllowed(pattern: string, path: string): boolean {
     logger.debug(`Normalized pattern parts: [${patternParts.join(", ")}]`);
     logger.debug(`Normalized path parts: [${pathParts.join(", ")}]`);
 
+    // Maximum recursion depth to prevent stack overflow and memory issues
+    const MAX_RECURSION_DEPTH = 100;
+
     // Recursive function to try different wildcard matches
-    function matchSegments(patternIndex: number, pathIndex: number): boolean {
-        const indent = "  ".repeat(pathIndex); // Indent based on recursion depth
+    function matchSegments(
+        patternIndex: number,
+        pathIndex: number,
+        depth: number = 0
+    ): boolean {
+        // Check recursion depth limit
+        if (depth > MAX_RECURSION_DEPTH) {
+            logger.warn(
+                `Path matching exceeded maximum recursion depth (${MAX_RECURSION_DEPTH}) for pattern "${pattern}" and path "${path}"`
+            );
+            return false;
+        }
+
+        const indent = "  ".repeat(depth); // Indent based on recursion depth
         const currentPatternPart = patternParts[patternIndex];
         const currentPathPart = pathParts[pathIndex];
 
         logger.debug(
-            `${indent}Checking patternIndex=${patternIndex} (${currentPatternPart || "END"}) vs pathIndex=${pathIndex} (${currentPathPart || "END"})`
+            `${indent}Checking patternIndex=${patternIndex} (${currentPatternPart || "END"}) vs pathIndex=${pathIndex} (${currentPathPart || "END"}) [depth=${depth}]`
         );
 
         // If we've consumed all pattern parts, we should have consumed all path parts
@@ -1031,7 +1101,7 @@ export function isPathAllowed(pattern: string, path: string): boolean {
             logger.debug(
                 `${indent}Trying to skip wildcard (consume 0 segments)`
             );
-            if (matchSegments(patternIndex + 1, pathIndex)) {
+            if (matchSegments(patternIndex + 1, pathIndex, depth + 1)) {
                 logger.debug(
                     `${indent}Successfully matched by skipping wildcard`
                 );
@@ -1042,7 +1112,7 @@ export function isPathAllowed(pattern: string, path: string): boolean {
             logger.debug(
                 `${indent}Trying to consume segment "${currentPathPart}" for wildcard`
             );
-            if (matchSegments(patternIndex, pathIndex + 1)) {
+            if (matchSegments(patternIndex, pathIndex + 1, depth + 1)) {
                 logger.debug(
                     `${indent}Successfully matched by consuming segment for wildcard`
                 );
@@ -1070,7 +1140,11 @@ export function isPathAllowed(pattern: string, path: string): boolean {
                 logger.debug(
                     `${indent}Segment with wildcard matches: "${currentPatternPart}" matches "${currentPathPart}"`
                 );
-                return matchSegments(patternIndex + 1, pathIndex + 1);
+                return matchSegments(
+                    patternIndex + 1,
+                    pathIndex + 1,
+                    depth + 1
+                );
             }
 
             logger.debug(
@@ -1091,10 +1165,10 @@ export function isPathAllowed(pattern: string, path: string): boolean {
             `${indent}Segments match: "${currentPatternPart}" = "${currentPathPart}"`
         );
         // Move to next segments in both pattern and path
-        return matchSegments(patternIndex + 1, pathIndex + 1);
+        return matchSegments(patternIndex + 1, pathIndex + 1, depth + 1);
     }
 
-    const result = matchSegments(0, 0);
+    const result = matchSegments(0, 0, 0);
     logger.debug(`Final result: ${result}`);
     return result;
 }
@@ -1182,13 +1256,13 @@ export async function isIpInRegion(
 async function getAsnFromIp(ip: string): Promise<number | undefined> {
     const asnCacheKey = `asn:${ip}`;
 
-    let cachedAsn: number | undefined = cache.get(asnCacheKey);
+    let cachedAsn: number | undefined = localCache.get(asnCacheKey);
 
     if (!cachedAsn) {
         cachedAsn = await getAsnForIp(ip); // do it locally
         // Cache for longer since IP ASN doesn't change frequently
         if (cachedAsn) {
-            cache.set(asnCacheKey, cachedAsn, 300); // 5 minutes
+            localCache.set(asnCacheKey, cachedAsn, 300); // 5 minutes
         }
     }
 
@@ -1198,12 +1272,15 @@ async function getAsnFromIp(ip: string): Promise<number | undefined> {
 async function getCountryCodeFromIp(ip: string): Promise<string | undefined> {
     const geoIpCacheKey = `geoip:${ip}`;
 
-    let cachedCountryCode: string | undefined = cache.get(geoIpCacheKey);
+    let cachedCountryCode: string | undefined = localCache.get(geoIpCacheKey);
 
     if (!cachedCountryCode) {
         cachedCountryCode = await getCountryCodeForIp(ip); // do it locally
-        // Cache for longer since IP geolocation doesn't change frequently
-        cache.set(geoIpCacheKey, cachedCountryCode, 300); // 5 minutes
+        // Only cache successful lookups to avoid filling cache with undefined values
+        if (cachedCountryCode) {
+            // Cache for longer since IP geolocation doesn't change frequently
+            localCache.set(geoIpCacheKey, cachedCountryCode, 300); // 5 minutes
+        }
     }
 
     return cachedCountryCode;

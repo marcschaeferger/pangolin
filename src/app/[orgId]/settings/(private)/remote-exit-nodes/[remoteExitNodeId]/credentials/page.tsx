@@ -23,10 +23,6 @@ import {
 } from "@server/routers/remoteExitNode/types";
 import { useRemoteExitNodeContext } from "@app/hooks/useRemoteExitNodeContext";
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
-import { useSubscriptionStatusContext } from "@app/hooks/useSubscriptionStatusContext";
-import { useLicenseStatusContext } from "@app/hooks/useLicenseStatusContext";
-import { build } from "@server/build";
-import { SecurityFeaturesAlert } from "@app/components/SecurityFeaturesAlert";
 import {
     InfoSection,
     InfoSectionContent,
@@ -36,6 +32,9 @@ import {
 import CopyToClipboard from "@app/components/CopyToClipboard";
 import { Alert, AlertDescription, AlertTitle } from "@app/components/ui/alert";
 import { InfoIcon } from "lucide-react";
+import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
+import { usePaidStatus } from "@app/hooks/usePaidStatus";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 
 export default function CredentialsPage() {
     const { env } = useEnvContext();
@@ -44,6 +43,8 @@ export default function CredentialsPage() {
     const router = useRouter();
     const t = useTranslations();
     const { remoteExitNode } = useRemoteExitNodeContext();
+
+    const { isPaidUser } = usePaidStatus();
 
     const [modalOpen, setModalOpen] = useState(false);
     const [credentials, setCredentials] =
@@ -56,16 +57,6 @@ export default function CredentialsPage() {
     );
     const [showCredentialsAlert, setShowCredentialsAlert] = useState(false);
     const [shouldDisconnect, setShouldDisconnect] = useState(true);
-
-    const { licenseStatus, isUnlocked } = useLicenseStatusContext();
-    const subscription = useSubscriptionStatusContext();
-
-    const isSecurityFeatureDisabled = () => {
-        const isEnterpriseNotLicensed = build === "enterprise" && !isUnlocked();
-        const isSaasNotSubscribed =
-            build === "saas" && !subscription?.isSubscribed();
-        return isEnterpriseNotLicensed || isSaasNotSubscribed;
-    };
 
     const handleConfirmRegenerate = async () => {
         try {
@@ -131,19 +122,21 @@ export default function CredentialsPage() {
                 <SettingsSection>
                     <SettingsSectionHeader>
                         <SettingsSectionTitle>
-                            {t("generatedcredentials")}
+                            {t("credentials")}
                         </SettingsSectionTitle>
                         <SettingsSectionDescription>
-                            {t("regenerateCredentials")}
+                            {t("remoteNodeCredentialsDescription")}
                         </SettingsSectionDescription>
                     </SettingsSectionHeader>
                     <SettingsSectionBody>
-                        <SecurityFeaturesAlert />
+                        <PaidFeaturesAlert
+                            tiers={tierMatrix.rotateCredentials}
+                        />
 
                         <InfoSections cols={3}>
                             <InfoSection>
                                 <InfoSectionTitle>
-                                    {t("endpoint") || "Endpoint"}
+                                    {t("endpoint")}
                                 </InfoSectionTitle>
                                 <InfoSectionContent>
                                     <CopyToClipboard
@@ -153,8 +146,7 @@ export default function CredentialsPage() {
                             </InfoSection>
                             <InfoSection>
                                 <InfoSectionTitle>
-                                    {t("remoteExitNodeId") ||
-                                        "Remote Exit Node ID"}
+                                    {t("remoteExitNodeId")}
                                 </InfoSectionTitle>
                                 <InfoSectionContent>
                                     {displayRemoteExitNodeId ? (
@@ -168,7 +160,7 @@ export default function CredentialsPage() {
                             </InfoSection>
                             <InfoSection>
                                 <InfoSectionTitle>
-                                    {t("secretKey") || "Secret Key"}
+                                    {t("remoteExitNodeSecretKey")}
                                 </InfoSectionTitle>
                                 <InfoSectionContent>
                                     {displaySecret ? (
@@ -196,7 +188,7 @@ export default function CredentialsPage() {
                             </Alert>
                         )}
                     </SettingsSectionBody>
-                    {build !== "oss" && (
+                    {!env.flags.disableEnterpriseFeatures && (
                         <SettingsSectionFooter>
                             <Button
                                 variant="outline"
@@ -204,7 +196,9 @@ export default function CredentialsPage() {
                                     setShouldDisconnect(false);
                                     setModalOpen(true);
                                 }}
-                                disabled={isSecurityFeatureDisabled()}
+                                disabled={
+                                    !isPaidUser(tierMatrix.rotateCredentials)
+                                }
                             >
                                 {t("regenerateCredentialsButton")}
                             </Button>
@@ -213,7 +207,9 @@ export default function CredentialsPage() {
                                     setShouldDisconnect(true);
                                     setModalOpen(true);
                                 }}
-                                disabled={isSecurityFeatureDisabled()}
+                                disabled={
+                                    !isPaidUser(tierMatrix.rotateCredentials)
+                                }
                             >
                                 {t("remoteExitNodeRegenerateAndDisconnect")}
                             </Button>

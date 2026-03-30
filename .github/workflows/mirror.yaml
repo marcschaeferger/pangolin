@@ -23,7 +23,7 @@ jobs:
           skopeo --version
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
 
       - name: Input check
         run: |
@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           skopeo list-tags --retry-times 3 docker://"${SOURCE_IMAGE}" \
-            | jq -r '.Tags[]' | sort -u > src-tags.txt
+            | jq -r '.Tags[]' | grep -v -e '-arm64' -e '-amd64' | sort -u > src-tags.txt
           echo "Found source tags: $(wc -l < src-tags.txt)"
           head -n 20 src-tags.txt || true
 

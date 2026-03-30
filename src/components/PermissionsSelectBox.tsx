@@ -26,14 +26,27 @@ function getActionsCategories(root: boolean) {
             [t("actionGetOrg")]: "getOrg",
             [t("actionUpdateOrg")]: "updateOrg",
             [t("actionGetOrgUser")]: "getOrgUser",
+            [t("actionResetSiteBandwidth")]: "resetSiteBandwidth",
             [t("actionInviteUser")]: "inviteUser",
+            [t("actionRemoveInvitation")]: "removeInvitation",
             [t("actionListInvitations")]: "listInvitations",
             [t("actionRemoveUser")]: "removeUser",
             [t("actionListUsers")]: "listUsers",
-            [t("actionListOrgDomains")]: "listOrgDomains",
             [t("updateOrgUser")]: "updateOrgUser",
             [t("createOrgUser")]: "createOrgUser",
-            [t("actionApplyBlueprint")]: "applyBlueprint"
+            [t("actionApplyBlueprint")]: "applyBlueprint",
+            [t("actionListBlueprints")]: "listBlueprints",
+            [t("actionGetBlueprint")]: "getBlueprint"
+        },
+
+        Domain: {
+            [t("actionListOrgDomains")]: "listOrgDomains",
+            [t("actionGetDomain")]: "getDomain",
+            [t("actionCreateOrgDomain")]: "createOrgDomain",
+            [t("actionUpdateOrgDomain")]: "updateOrgDomain",
+            [t("actionDeleteOrgDomain")]: "deleteOrgDomain",
+            [t("actionGetDNSRecords")]: "getDNSRecords",
+            [t("actionRestartOrgDomain")]: "restartOrgDomain"
         },
 
         Site: {
@@ -82,7 +95,8 @@ function getActionsCategories(root: boolean) {
             [t("actionListRole")]: "listRoles",
             [t("actionUpdateRole")]: "updateRole",
             [t("actionListAllowedRoleResources")]: "listRoleResources",
-            [t("actionAddUserRole")]: "addUserRole"
+            [t("actionAddUserRole")]: "addUserRole",
+            [t("actionRemoveUserRole")]: "removeUserRole"
         },
         "Access Token": {
             [t("actionGenerateAccessToken")]: "generateAccessToken",
@@ -100,6 +114,10 @@ function getActionsCategories(root: boolean) {
         Client: {
             [t("actionCreateClient")]: "createClient",
             [t("actionDeleteClient")]: "deleteClient",
+            [t("actionArchiveClient")]: "archiveClient",
+            [t("actionUnarchiveClient")]: "unarchiveClient",
+            [t("actionBlockClient")]: "blockClient",
+            [t("actionUnblockClient")]: "unblockClient",
             [t("actionUpdateClient")]: "updateClient",
             [t("actionListClients")]: "listClients",
             [t("actionGetClient")]: "getClient"
@@ -110,6 +128,16 @@ function getActionsCategories(root: boolean) {
             [t("actionViewLogs")]: "viewLogs"
         }
     };
+
+    if (root || build === "saas" || env.app.identityProviderMode === "org") {
+        actionsByCategory["Identity Provider (IDP)"] = {
+            [t("actionCreateIdp")]: "createIdp",
+            [t("actionUpdateIdp")]: "updateIdp",
+            [t("actionDeleteIdp")]: "deleteIdp",
+            [t("actionListIdps")]: "listIdps",
+            [t("actionGetIdp")]: "getIdp"
+        };
+    }
 
     if (root) {
         actionsByCategory["Organization"] = {
@@ -125,24 +153,21 @@ function getActionsCategories(root: boolean) {
             ...actionsByCategory["Organization"]
         };
 
-        actionsByCategory["Identity Provider (IDP)"] = {
-            [t("actionCreateIdp")]: "createIdp",
-            [t("actionUpdateIdp")]: "updateIdp",
-            [t("actionDeleteIdp")]: "deleteIdp",
-            [t("actionListIdps")]: "listIdps",
-            [t("actionGetIdp")]: "getIdp",
-            [t("actionCreateIdpOrg")]: "createIdpOrg",
-            [t("actionDeleteIdpOrg")]: "deleteIdpOrg",
-            [t("actionListIdpOrgs")]: "listIdpOrgs",
-            [t("actionUpdateIdpOrg")]: "updateIdpOrg"
-        };
+        actionsByCategory["Identity Provider (IDP)"][t("actionCreateIdpOrg")] =
+            "createIdpOrg";
+        actionsByCategory["Identity Provider (IDP)"][t("actionDeleteIdpOrg")] =
+            "deleteIdpOrg";
+        actionsByCategory["Identity Provider (IDP)"][t("actionListIdpOrgs")] =
+            "listIdpOrgs";
+        actionsByCategory["Identity Provider (IDP)"][t("actionUpdateIdpOrg")] =
+            "updateIdpOrg";
 
         actionsByCategory["User"] = {
             [t("actionUpdateUser")]: "updateUser",
             [t("actionGetUser")]: "getUser"
         };
 
-        if (build == "saas") {
+        if (build === "saas") {
             actionsByCategory["SAAS"] = {
                 ["Send Usage Notification Email"]: "sendUsageNotification"
             };

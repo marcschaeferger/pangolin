@@ -1,15 +1,17 @@
 import type { ClientRow } from "@app/components/MachineClientsTable";
 import MachineClientsTable from "@app/components/MachineClientsTable";
 import SettingsSectionTitle from "@app/components/SettingsSectionTitle";
+import MachineClientsBanner from "@app/components/MachineClientsBanner";
 import { internal } from "@app/lib/api";
 import { authCookieHeader } from "@app/lib/api/cookies";
 import { ListClientsResponse } from "@server/routers/client";
 import { AxiosResponse } from "axios";
 import { getTranslations } from "next-intl/server";
+import type { Pagination } from "@server/types/Pagination";
 
 type ClientsPageProps = {
     params: Promise<{ orgId: string }>;
-    searchParams: Promise<{ view?: string }>;
+    searchParams: Promise<Record<string, string>>;
 };
 
 export const dynamic = "force-dynamic";
@@ -18,17 +20,25 @@ export default async function ClientsPage(props: ClientsPageProps) {
     const t = await getTranslations();
 
     const params = await props.params;
+    const searchParams = new URLSearchParams(await props.searchParams);
 
     let machineClients: ListClientsResponse["clients"] = [];
+    let pagination: Pagination = {
+        page: 1,
+        total: 0,
+        pageSize: 20
+    };
 
     try {
         const machineRes = await internal.get<
             AxiosResponse<ListClientsResponse>
         >(
-            `/org/${params.orgId}/clients?filter=machine`,
+            `/org/${params.orgId}/clients?${searchParams.toString()}`,
             await authCookieHeader()
         );
-        machineClients = machineRes.data.data.clients;
+        const responseData = machineRes.data.data;
+        machineClients = responseData.clients;
+        pagination = responseData.pagination;
     } catch (e) {}
 
     function formatSize(mb: number): string {
@@ -58,7 +68,10 @@ export default async function ClientsPage(props: ClientsPageProps) {
             username: client.username,
             userEmail: client.userEmail,
             niceId: client.niceId,
-            agent: client.agent
+            agent: client.agent,
+            archived: client.archived || false,
+            blocked: client.blocked || false,
+            approvalState: client.approvalState ?? "approved"
         };
     };
 
@@ -71,9 +84,16 @@ export default async function ClientsPage(props: ClientsPageProps) {
                 description={t("manageMachineClientsDescription")}
             />
 
+            <MachineClientsBanner orgId={params.orgId} />
+
             <MachineClientsTable
                 machineClients={machineClientRows}
                 orgId={params.orgId}
+                rowCount={pagination.total}
+                pagination={{
+                    pageIndex: pagination.page - 1,
+                    pageSize: pagination.pageSize
+                }}
             />
         </>
     );

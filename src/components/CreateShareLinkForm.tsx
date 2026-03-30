@@ -20,7 +20,7 @@ import {
 import { toast } from "@app/hooks/useToast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AxiosResponse } from "axios";
-import { useEffect, useState } from "react";
+import { useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import CopyTextBox from "@app/components/CopyTextBox";
@@ -39,7 +39,8 @@ import { formatAxiosError } from "@app/lib/api";
 import { cn } from "@app/lib/cn";
 import { createApiClient } from "@app/lib/api";
 import { useEnvContext } from "@app/hooks/useEnvContext";
-import { ListResourcesResponse } from "@server/routers/resource";
+import { useQuery } from "@tanstack/react-query";
+import { orgQueries } from "@app/lib/queries";
 import {
     Popover,
     PopoverContent,
@@ -68,6 +69,7 @@ import {
 import AccessTokenSection from "@app/components/AccessTokenUsage";
 import { useTranslations } from "next-intl";
 import { toUnicode } from "punycode";
+import { ResourceSelector, type SelectedResource } from "./resource-selector";
 
 type FormProps = {
     open: boolean;
@@ -94,14 +96,25 @@ export default function CreateShareLinkForm({
     const [isOpen, setIsOpen] = useState(false);
     const t = useTranslations();
 
-    const [resources, setResources] = useState<
-        {
-            resourceId: number;
-            name: string;
-            niceId: string;
-            resourceUrl: string;
-        }[]
-    >([]);
+    const { data: allResources = [] } = useQuery(
+        orgQueries.resources({ orgId: org?.org.orgId ?? "" })
+    );
+
+    const [selectedResource, setSelectedResource] =
+        useState<SelectedResource | null>(null);
+
+    // const resources = useMemo(
+    //     () =>
+    //         allResources
+    //             .filter((r) => r.http)
+    //             .map((r) => ({
+    //                 resourceId: r.resourceId,
+    //                 name: r.name,
+    //                 niceId: r.niceId,
+    //                 resourceUrl: `${r.ssl ? "https://" : "http://"}${toUnicode(r.fullDomain || "")}/`
+    //             })),
+    //     [allResources]
+    // );
 
     const formSchema = z.object({
         resourceId: z.number({ message: t("shareErrorSelectResource") }),
@@ -129,47 +142,6 @@ export default function CreateShareLinkForm({
             title: ""
         }
     });
-
-    useEffect(() => {
-        if (!open) {
-            return;
-        }
-
-        async function fetchResources() {
-            const res = await api
-                .get<
-                    AxiosResponse<ListResourcesResponse>
-                >(`/org/${org?.org.orgId}/resources`)
-                .catch((e) => {
-                    console.error(e);
-                    toast({
-                        variant: "destructive",
-                        title: t("shareErrorFetchResource"),
-                        description: formatAxiosError(
-                            e,
-                            t("shareErrorFetchResourceDescription")
-                        )
-                    });
-                });
-
-            if (res?.status === 200) {
-                setResources(
-                    res.data.data.resources
-                        .filter((r) => {
-                            return r.http;
-                        })
-                        .map((r) => ({
-                            resourceId: r.resourceId,
-                            name: r.name,
-                            niceId: r.niceId,
-                            resourceUrl: `${r.ssl ? "https://" : "http://"}${toUnicode(r.fullDomain || "")}/`
-                        }))
-                );
-            }
-        }
-
-        fetchResources();
-    }, [open]);
 
     async function onSubmit(values: z.infer<typeof formSchema>) {
         setLoading(true);
@@ -231,15 +203,11 @@ export default function CreateShareLinkForm({
             setAccessToken(token.accessToken);
             setAccessTokenId(token.accessTokenId);
 
-            const resource = resources.find(
-                (r) => r.resourceId === values.resourceId
-            );
-
             onCreated?.({
                 accessTokenId: token.accessTokenId,
                 resourceId: token.resourceId,
                 resourceName: values.resourceName,
-                resourceNiceId: resource ? resource.niceId : "",
+                resourceNiceId: selectedResource ? selectedResource.niceId : "",
                 title: token.title,
                 createdAt: token.createdAt,
                 expiresAt: token.expiresAt
@@ -247,11 +215,6 @@ export default function CreateShareLinkForm({
         }
 
         setLoading(false);
-    }
-
-    function getSelectedResourceName(id: number) {
-        const resource = resources.find((r) => r.resourceId === id);
-        return `${resource?.name}`;
     }
 
     return (
@@ -273,7 +236,7 @@ export default function CreateShareLinkForm({
                         </CredenzaDescription>
                     </CredenzaHeader>
                     <CredenzaBody>
-                        <div className="space-y-4">
+                        <div className="flex flex-col gap-y-4 px-1">
                             {!link && (
                                 <Form {...form}>
                                     <form
@@ -301,10 +264,8 @@ export default function CreateShareLinkForm({
                                                                             "text-muted-foreground"
                                                                     )}
                                                                 >
-                                                                    {field.value
-                                                                        ? getSelectedResourceName(
-                                                                              field.value
-                                                                          )
+                                                                    {selectedResource?.name
+                                                                        ? selectedResource.name
                                                                         : t(
                                                                               "resourceSelect"
                                                                           )}
@@ -313,59 +274,34 @@ export default function CreateShareLinkForm({
                                                             </FormControl>
                                                         </PopoverTrigger>
                                                         <PopoverContent className="p-0">
-                                                            <Command>
-                                                                <CommandInput
-                                                                    placeholder={t(
-                                                                        "resourceSearch"
-                                                                    )}
-                                                                />
-                                                                <CommandList>
-                                                                    <CommandEmpty>
-                                                                        {t(
-                                                                            "resourcesNotFound"
-                                                                        )}
-                                                                    </CommandEmpty>
-                                                                    <CommandGroup>
-                                                                        {resources.map(
-                                                                            (
-                                                                                r
-                                                                            ) => (
-                                                                                <CommandItem
-                                                                                    value={`${r.name}:${r.resourceId}`}
-                                                                                    key={
-                                                                                        r.resourceId
-                                                                                    }
-                                                                                    onSelect={() => {
-                                                                                        form.setValue(
-                                                                                            "resourceId",
-                                                                                            r.resourceId
-                                                                                        );
-                                                                                        form.setValue(
-                                                                                            "resourceName",
-                                                                                            r.name
-                                                                                        );
-                                                                                        form.setValue(
-                                                                                            "resourceUrl",
-                                                                                            r.resourceUrl
-                                                                                        );
-                                                                                    }}
-                                                                                >
-                                                                                    <CheckIcon
-                                                                                        className={cn(
-                                                                                            "mr-2 h-4 w-4",
-                                                                                            r.resourceId ===
-                                                                                                field.value
-                                                                                                ? "opacity-100"
-                                                                                                : "opacity-0"
-                                                                                        )}
-                                                                                    />
-                                                                                    {`${r.name}`}
-                                                                                </CommandItem>
-                                                                            )
-                                                                        )}
-                                                                    </CommandGroup>
-                                                                </CommandList>
-                                                            </Command>
+                                                            <ResourceSelector
+                                                                orgId={
+                                                                    org.org
+                                                                        .orgId
+                                                                }
+                                                                selectedResource={
+                                                                    selectedResource
+                                                                }
+                                                                onSelectResource={(
+                                                                    r
+                                                                ) => {
+                                                                    form.setValue(
+                                                                        "resourceId",
+                                                                        r.resourceId
+                                                                    );
+                                                                    form.setValue(
+                                                                        "resourceName",
+                                                                        r.name
+                                                                    );
+                                                                    form.setValue(
+                                                                        "resourceUrl",
+                                                                        `${r.ssl ? "https://" : "http://"}${toUnicode(r.fullDomain || "")}/`
+                                                                    );
+                                                                    setSelectedResource(
+                                                                        r
+                                                                    );
+                                                                }}
+                                                            />
                                                         </PopoverContent>
                                                     </Popover>
                                                     <FormMessage />

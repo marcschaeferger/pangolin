@@ -24,7 +24,7 @@ import {
     PopoverContent,
     PopoverTrigger
 } from "@app/components/ui/popover";
-import { ChevronDown } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { build } from "@server/build";
 
 export type SidebarNavItem = {
@@ -46,11 +46,13 @@ export interface SidebarNavProps extends React.HTMLAttributes<HTMLElement> {
     disabled?: boolean;
     onItemClick?: () => void;
     isCollapsed?: boolean;
+    notificationCounts?: Record<string, number | undefined>;
 }
 
 type CollapsibleNavItemProps = {
     item: SidebarNavItem;
     level: number;
+    isActive: boolean;
     isChildActive: boolean;
     isDisabled: boolean;
     isCollapsed: boolean;
@@ -58,19 +60,23 @@ type CollapsibleNavItemProps = {
     t: (key: string) => string;
     build: string;
     isUnlocked: () => boolean;
+    getNotificationCount: (item: SidebarNavItem) => number | undefined;
 };
 
 function CollapsibleNavItem({
     item,
     level,
+    isActive,
     isChildActive,
     isDisabled,
     isCollapsed,
     renderNavItem,
     t,
     build,
-    isUnlocked
+    isUnlocked,
+    getNotificationCount
 }: CollapsibleNavItemProps) {
+    const notificationCount = getNotificationCount(item);
     const storageKey = `pangolin-sidebar-expanded-${item.title}`;
 
     // Get initial state from localStorage or use isChildActive
@@ -112,30 +118,39 @@ function CollapsibleNavItem({
             <CollapsibleTrigger asChild>
                 <button
                     className={cn(
-                        "flex items-center w-full rounded transition-colors hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-md",
-                        level === 0 ? "p-3 py-1.5" : "py-1.5",
-                        isChildActive
-                            ? "text-primary font-medium"
-                            : "text-muted-foreground hover:text-foreground",
+                        "flex items-center w-full rounded-md transition-colors",
+                        "px-3 py-1.5",
+                        isActive
+                            ? "bg-secondary font-medium"
+                            : "text-muted-foreground hover:bg-secondary/80 dark:hover:bg-secondary/50 hover:text-foreground",
                         isDisabled && "cursor-not-allowed opacity-60"
                     )}
                     disabled={isDisabled}
                 >
                     {item.icon && (
-                        <span className="flex-shrink-0 mr-2">{item.icon}</span>
+                        <span className="flex-shrink-0 mr-3 w-5 h-5 flex items-center justify-center text-muted-foreground">
+                            {item.icon}
+                        </span>
                     )}
-                    <div className="flex items-center gap-1.5 flex-1">
-                        <span className="text-left">{t(item.title)}</span>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-left truncate">
+                            {t(item.title)}
+                        </span>
                         {item.isBeta && (
-                            <Badge
-                                variant="outline"
-                                className="text-muted-foreground"
-                            >
+                            <span className="uppercase font-mono text-yellow-600 dark:text-yellow-800 font-black text-xs">
                                 {t("beta")}
-                            </Badge>
+                            </span>
                         )}
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                        {notificationCount !== undefined &&
+                            notificationCount > 0 && (
+                                <Badge variant="secondary">
+                                    {notificationCount > 99
+                                        ? "99+"
+                                        : notificationCount}
+                                </Badge>
+                            )}
                         {build === "enterprise" &&
                             item.showEE &&
                             !isUnlocked() && (
@@ -143,28 +158,198 @@ function CollapsibleNavItem({
                                     {t("licenseBadge")}
                                 </Badge>
                             )}
-                        <ChevronDown
+                        <ChevronRight
                             className={cn(
-                                "h-4 w-4 transition-transform duration-300 ease-in-out",
-                                "group-data-[state=open]/collapsible:rotate-180"
+                                "h-4 w-4 transition-transform duration-300 ease-in-out text-muted-foreground",
+                                "group-data-[state=open]/collapsible:rotate-90"
                             )}
                         />
                     </div>
                 </button>
             </CollapsibleTrigger>
-            <CollapsibleContent>
+            <CollapsibleContent forceMount>
                 <div
                     className={cn(
-                        "border-l ml-3 pl-2 mt-1 space-y-1",
-                        "border-border"
+                        "grid overflow-hidden transition-[grid-template-rows] duration-200 ease-in-out",
+                        isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                     )}
                 >
-                    {item.items!.map((childItem) =>
-                        renderNavItem(childItem, level + 1)
-                    )}
+                    <div className="min-h-0">
+                        <div
+                            className={cn(
+                                "border-l ml-[22px] pl-[9px] mt-0 space-y-0",
+                                "border-border"
+                            )}
+                        >
+                            {item.items!.map((childItem) =>
+                                renderNavItem(childItem, level + 1)
+                            )}
+                        </div>
+                    </div>
                 </div>
             </CollapsibleContent>
         </Collapsible>
+    );
+}
+
+type CollapsedNavItemWithPopoverProps = {
+    item: SidebarNavItem;
+    tooltipText: string;
+    isActive: boolean;
+    isChildActive: boolean;
+    isDisabled: boolean;
+    hydrateHref: (val?: string) => string | undefined;
+    pathname: string;
+    build: string;
+    isUnlocked: () => boolean;
+    disabled: boolean;
+    t: (key: string) => string;
+    onItemClick?: () => void;
+};
+
+const TOOLTIP_SUPPRESS_MS = 400;
+
+function CollapsedNavItemWithPopover({
+    item,
+    tooltipText,
+    isActive,
+    isChildActive,
+    isDisabled,
+    hydrateHref,
+    pathname,
+    build,
+    isUnlocked,
+    disabled,
+    t,
+    onItemClick
+}: CollapsedNavItemWithPopoverProps) {
+    const [popoverOpen, setPopoverOpen] = React.useState(false);
+    const [tooltipOpen, setTooltipOpen] = React.useState(false);
+    const suppressTooltipRef = React.useRef(false);
+
+    const handlePopoverOpenChange = React.useCallback((open: boolean) => {
+        setPopoverOpen(open);
+        if (!open) {
+            setTooltipOpen(false);
+            suppressTooltipRef.current = true;
+            window.setTimeout(() => {
+                suppressTooltipRef.current = false;
+            }, TOOLTIP_SUPPRESS_MS);
+        }
+    }, []);
+
+    const handleTooltipOpenChange = React.useCallback((open: boolean) => {
+        if (open && suppressTooltipRef.current) return;
+        setTooltipOpen(open);
+    }, []);
+
+    return (
+        <TooltipProvider>
+            <Tooltip open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
+                <Popover
+                    open={popoverOpen}
+                    onOpenChange={handlePopoverOpenChange}
+                >
+                    <PopoverTrigger asChild>
+                        <TooltipTrigger asChild>
+                            <button
+                                className={cn(
+                                    "flex items-center rounded-md transition-colors px-2 py-2 justify-center w-full",
+                                    isActive || isChildActive
+                                        ? "bg-secondary font-medium"
+                                        : "text-muted-foreground hover:bg-secondary/80 dark:hover:bg-secondary/50 hover:text-foreground",
+                                    isDisabled &&
+                                        "cursor-not-allowed opacity-60"
+                                )}
+                                disabled={isDisabled}
+                            >
+                                {item.icon && (
+                                    <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-muted-foreground">
+                                        {item.icon}
+                                    </span>
+                                )}
+                            </button>
+                        </TooltipTrigger>
+                    </PopoverTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                        <p>{tooltipText}</p>
+                    </TooltipContent>
+                    <PopoverContent
+                        side="right"
+                        align="start"
+                        className="w-56 p-1"
+                    >
+                        <div className="space-y-1">
+                            {item.items!.map((childItem) => {
+                                const childHydratedHref = hydrateHref(
+                                    childItem.href
+                                );
+                                const childIsActive = childHydratedHref
+                                    ? pathname.startsWith(childHydratedHref)
+                                    : false;
+                                const childIsEE =
+                                    build === "enterprise" &&
+                                    childItem.showEE &&
+                                    !isUnlocked();
+                                const childIsDisabled = disabled || childIsEE;
+
+                                if (!childHydratedHref) {
+                                    return null;
+                                }
+
+                                return (
+                                    <Link
+                                        key={childItem.title}
+                                        href={
+                                            childIsDisabled
+                                                ? "#"
+                                                : childHydratedHref
+                                        }
+                                        className={cn(
+                                            "flex items-center rounded-md transition-colors px-3 py-1.5 text-sm",
+                                            childIsActive
+                                                ? "bg-secondary font-medium"
+                                                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+                                            childIsDisabled &&
+                                                "cursor-not-allowed opacity-60"
+                                        )}
+                                        onClick={(e) => {
+                                            if (childIsDisabled) {
+                                                e.preventDefault();
+                                            } else {
+                                                handlePopoverOpenChange(false);
+                                                onItemClick?.();
+                                            }
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                                            <span className="truncate">
+                                                {t(childItem.title)}
+                                            </span>
+                                            {childItem.isBeta && (
+                                                <span className="uppercase font-mono text-yellow-600 dark:text-yellow-800 font-black text-xs">
+                                                    {t("beta")}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {build === "enterprise" &&
+                                            childItem.showEE &&
+                                            !isUnlocked() && (
+                                                <Badge
+                                                    variant="outlinePrimary"
+                                                    className="flex-shrink-0 ml-2"
+                                                >
+                                                    {t("licenseBadge")}
+                                                </Badge>
+                                            )}
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    </PopoverContent>
+                </Popover>
+            </Tooltip>
+        </TooltipProvider>
     );
 }
 
@@ -174,6 +359,7 @@ export function SidebarNav({
     disabled = false,
     onItemClick,
     isCollapsed = false,
+    notificationCounts,
     ...props
 }: SidebarNavProps) {
     const pathname = usePathname();
@@ -187,6 +373,11 @@ export function SidebarNav({
     const { licenseStatus, isUnlocked } = useLicenseStatusContext();
     const { user } = useUserContext();
     const t = useTranslations();
+
+    function getNotificationCount(item: SidebarNavItem): number | undefined {
+        if (!notificationCounts) return undefined;
+        return notificationCounts[item.title];
+    }
 
     function hydrateHref(val?: string): string | undefined {
         if (!val) return undefined;
@@ -236,6 +427,7 @@ export function SidebarNav({
                     key={item.title}
                     item={item}
                     level={level}
+                    isActive={isActive}
                     isChildActive={isChildActive}
                     isDisabled={isDisabled || false}
                     isCollapsed={isCollapsed}
@@ -243,20 +435,23 @@ export function SidebarNav({
                     t={t}
                     build={build}
                     isUnlocked={isUnlocked}
+                    getNotificationCount={getNotificationCount}
                 />
             );
         }
+
+        const notificationCount = getNotificationCount(item);
 
         // Regular item without nested items
         const itemContent = hydratedHref ? (
             <Link
                 href={isDisabled ? "#" : hydratedHref}
                 className={cn(
-                    "flex items-center rounded transition-colors hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-md",
+                    "flex items-center rounded-md transition-colors relative",
                     isCollapsed ? "px-2 py-2 justify-center" : "px-3 py-1.5",
                     isActive
-                        ? "text-primary font-medium"
-                        : "text-muted-foreground hover:text-foreground",
+                        ? "bg-secondary font-medium"
+                        : "text-muted-foreground hover:bg-secondary/80 dark:hover:bg-secondary/50 hover:text-foreground",
                     isDisabled && "cursor-not-allowed opacity-60"
                 )}
                 onClick={(e) => {
@@ -269,61 +464,105 @@ export function SidebarNav({
                 tabIndex={isDisabled ? -1 : undefined}
                 aria-disabled={isDisabled}
             >
-                {item.icon && (
+                {item.icon && level === 0 && (
                     <span
-                        className={cn("flex-shrink-0", !isCollapsed && "mr-2")}
+                        className={cn(
+                            "flex-shrink-0 w-5 h-5 flex items-center justify-center",
+                            isCollapsed
+                                ? "text-muted-foreground"
+                                : "text-muted-foreground",
+                            !isCollapsed && "mr-3"
+                        )}
                     >
                         {item.icon}
                     </span>
                 )}
                 {!isCollapsed && (
                     <>
-                        <div className="flex items-center gap-1.5 flex-1">
-                            <span>{t(item.title)}</span>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="truncate">{t(item.title)}</span>
                             {item.isBeta && (
-                                <Badge
-                                    variant="outline"
-                                    className="text-muted-foreground"
-                                >
+                                <span className="uppercase font-mono text-yellow-600 dark:text-yellow-800 font-black text-xs">
                                     {t("beta")}
-                                </Badge>
+                                </span>
                             )}
                         </div>
-                        {build === "enterprise" &&
-                            item.showEE &&
-                            !isUnlocked() && (
-                                <Badge variant="outlinePrimary">
-                                    {t("licenseBadge")}
-                                </Badge>
-                            )}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {notificationCount !== undefined &&
+                                notificationCount > 0 && (
+                                    <Badge variant="secondary">
+                                        {notificationCount > 99
+                                            ? "99+"
+                                            : notificationCount}
+                                    </Badge>
+                                )}
+                            {build === "enterprise" &&
+                                item.showEE &&
+                                !isUnlocked() && (
+                                    <Badge
+                                        variant="outlinePrimary"
+                                        className="flex-shrink-0"
+                                    >
+                                        {t("licenseBadge")}
+                                    </Badge>
+                                )}
+                        </div>
                     </>
                 )}
+                {isCollapsed &&
+                    notificationCount !== undefined &&
+                    notificationCount > 0 && (
+                        <Badge
+                            variant="secondary"
+                            className="absolute -top-1 -right-1 h-5 min-w-5 px-1.5 flex items-center justify-center text-xs"
+                        >
+                            {notificationCount > 99 ? "99+" : notificationCount}
+                        </Badge>
+                    )}
             </Link>
         ) : (
             <div
                 className={cn(
-                    "flex items-center rounded transition-colors px-3 py-1.5",
+                    "flex items-center rounded-md transition-colors",
+                    "px-3 py-1.5",
                     "text-muted-foreground",
                     isDisabled && "cursor-not-allowed opacity-60"
                 )}
             >
-                {item.icon && (
-                    <span className="flex-shrink-0 mr-2">{item.icon}</span>
+                {item.icon && level === 0 && (
+                    <span className="flex-shrink-0 mr-3 w-5 h-5 flex items-center justify-center text-muted-foreground">
+                        {item.icon}
+                    </span>
                 )}
-                <div className="flex items-center gap-1.5 flex-1">
-                    <span>{t(item.title)}</span>
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="truncate">{t(item.title)}</span>
                     {item.isBeta && (
-                        <Badge
-                            variant="outline"
-                            className="text-muted-foreground"
-                        >
+                        <span className="uppercase font-mono text-yellow-600 dark:text-yellow-800 font-black text-xs">
                             {t("beta")}
+                        </span>
+                    )}
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                    {notificationCount !== undefined &&
+                        notificationCount > 0 && (
+                            <Badge
+                                variant="secondary"
+                                className="flex-shrink-0 bg-primary text-primary-foreground"
+                            >
+                                {notificationCount > 99
+                                    ? "99+"
+                                    : notificationCount}
+                            </Badge>
+                        )}
+                    {build === "enterprise" && item.showEE && !isUnlocked() && (
+                        <Badge
+                            variant="outlinePrimary"
+                            className="flex-shrink-0"
+                        >
+                            {t("licenseBadge")}
                         </Badge>
                     )}
                 </div>
-                {build === "enterprise" && item.showEE && !isUnlocked() && (
-                    <Badge variant="outlinePrimary">{t("licenseBadge")}</Badge>
-                )}
             </div>
         );
 
@@ -331,120 +570,21 @@ export function SidebarNav({
             // If item has nested items, show both tooltip and popover
             if (hasNestedItems) {
                 return (
-                    <TooltipProvider key={item.title}>
-                        <Tooltip>
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <TooltipTrigger asChild>
-                                        <button
-                                            className={cn(
-                                                "flex items-center rounded transition-colors hover:bg-secondary/50 dark:hover:bg-secondary/20 rounded-md px-2 py-2 justify-center w-full",
-                                                isChildActive
-                                                    ? "text-primary font-medium"
-                                                    : "text-muted-foreground hover:text-foreground",
-                                                isDisabled &&
-                                                    "cursor-not-allowed opacity-60"
-                                            )}
-                                            disabled={isDisabled}
-                                        >
-                                            {item.icon && (
-                                                <span className="flex-shrink-0">
-                                                    {item.icon}
-                                                </span>
-                                            )}
-                                        </button>
-                                    </TooltipTrigger>
-                                </PopoverTrigger>
-                                <TooltipContent side="right" sideOffset={8}>
-                                    <p>{tooltipText}</p>
-                                </TooltipContent>
-                                <PopoverContent
-                                    side="right"
-                                    align="start"
-                                    className="w-56 p-1"
-                                >
-                                    <div className="space-y-1">
-                                        {item.items!.map((childItem) => {
-                                            const childHydratedHref =
-                                                hydrateHref(childItem.href);
-                                            const childIsActive =
-                                                childHydratedHref
-                                                    ? pathname.startsWith(
-                                                          childHydratedHref
-                                                      )
-                                                    : false;
-                                            const childIsEE =
-                                                build === "enterprise" &&
-                                                childItem.showEE &&
-                                                !isUnlocked();
-                                            const childIsDisabled =
-                                                disabled || childIsEE;
-
-                                            if (!childHydratedHref) {
-                                                return null;
-                                            }
-
-                                            return (
-                                                <Link
-                                                    key={childItem.title}
-                                                    href={
-                                                        childIsDisabled
-                                                            ? "#"
-                                                            : childHydratedHref
-                                                    }
-                                                    className={cn(
-                                                        "flex items-center rounded transition-colors px-3 py-1.5 text-sm",
-                                                        childIsActive
-                                                            ? "bg-secondary text-primary font-medium"
-                                                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
-                                                        childIsDisabled &&
-                                                            "cursor-not-allowed opacity-60"
-                                                    )}
-                                                    onClick={(e) => {
-                                                        if (childIsDisabled) {
-                                                            e.preventDefault();
-                                                        } else if (
-                                                            onItemClick
-                                                        ) {
-                                                            onItemClick();
-                                                        }
-                                                    }}
-                                                >
-                                                    {childItem.icon && (
-                                                        <span className="flex-shrink-0 mr-2">
-                                                            {childItem.icon}
-                                                        </span>
-                                                    )}
-                                                    <div className="flex items-center gap-1.5 flex-1">
-                                                        <span>
-                                                            {t(childItem.title)}
-                                                        </span>
-                                                        {childItem.isBeta && (
-                                                            <Badge
-                                                                variant="outline"
-                                                                className="text-muted-foreground"
-                                                            >
-                                                                {t("beta")}
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                    {build === "enterprise" &&
-                                                        childItem.showEE &&
-                                                        !isUnlocked() && (
-                                                            <Badge variant="outlinePrimary">
-                                                                {t(
-                                                                    "licenseBadge"
-                                                                )}
-                                                            </Badge>
-                                                        )}
-                                                </Link>
-                                            );
-                                        })}
-                                    </div>
-                                </PopoverContent>
-                            </Popover>
-                        </Tooltip>
-                    </TooltipProvider>
+                    <CollapsedNavItemWithPopover
+                        key={item.title}
+                        item={item}
+                        tooltipText={tooltipText}
+                        isActive={isActive}
+                        isChildActive={isChildActive}
+                        isDisabled={!!isDisabled}
+                        hydrateHref={hydrateHref}
+                        pathname={pathname}
+                        build={build}
+                        isUnlocked={isUnlocked}
+                        disabled={disabled ?? false}
+                        t={t}
+                        onItemClick={onItemClick}
+                    />
                 );
             }
 
@@ -467,20 +607,23 @@ export function SidebarNav({
     return (
         <nav
             className={cn(
-                "flex flex-col gap-2 text-sm",
+                "flex flex-col text-sm",
                 disabled && "pointer-events-none opacity-60",
                 className
             )}
             {...props}
         >
-            {sections.map((section) => (
-                <div key={section.heading} className="mb-2">
+            {sections.map((section, sectionIndex) => (
+                <div
+                    key={section.heading}
+                    className={cn(sectionIndex > 0 && "mt-4")}
+                >
                     {!isCollapsed && (
-                        <div className="px-3 py-1 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide">
+                        <div className="px-3 py-2 text-xs font-medium text-foreground uppercase tracking-wider">
                             {t(`${section.heading}`)}
                         </div>
                     )}
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-0">
                         {section.items.map((item) => renderNavItem(item, 0))}
                     </div>
                 </div>

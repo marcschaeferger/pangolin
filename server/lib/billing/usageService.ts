@@ -1,74 +1,32 @@
 import { eq, sql, and } from "drizzle-orm";
-import { v4 as uuidv4 } from "uuid";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import * as fs from "fs/promises";
-import * as path from "path";
 import {
     db,
     usage,
     customers,
-    sites,
-    newts,
     limits,
     Usage,
     Limit,
-    Transaction
+    Transaction,
+    orgs
 } from "@server/db";
 import { FeatureId, getFeatureMeterId } from "./features";
 import logger from "@server/logger";
-import { sendToClient } from "#dynamic/routers/ws";
 import { build } from "@server/build";
-import { s3Client } from "@server/lib/s3";
-import cache from "@server/lib/cache";
-
-interface StripeEvent {
-    identifier?: string;
-    timestamp: number;
-    event_name: string;
-    payload: {
-        value: number;
-        stripe_customer_id: string;
-    };
-}
+import cache from "#dynamic/lib/cache";
 
 export function noop() {
-    if (
-        build !== "saas" ||
-        !process.env.S3_BUCKET ||
-        !process.env.LOCAL_FILE_PATH
-    ) {
+    if (build !== "saas") {
         return true;
     }
     return false;
 }
 
 export class UsageService {
-    private bucketName: string | undefined;
-    private currentEventFile: string | null = null;
-    private currentFileStartTime: number = 0;
-    private eventsDir: string | undefined;
-    private uploadingFiles: Set<string> = new Set();
 
     constructor() {
         if (noop()) {
             return;
         }
-        // this.bucketName = privateConfig.getRawPrivateConfig().stripe?.s3Bucket;
-        // this.eventsDir = privateConfig.getRawPrivateConfig().stripe?.localFilePath;
-        this.bucketName = process.env.S3_BUCKET || undefined;
-        this.eventsDir = process.env.LOCAL_FILE_PATH || undefined;
-
-        // Ensure events directory exists
-        this.initializeEventsDirectory().then(() => {
-            this.uploadPendingEventFilesOnStartup();
-        });
-
-        // Periodically check for old event files to upload
-        setInterval(() => {
-            this.uploadOldEventFiles().catch((err) => {
-                logger.error("Error in periodic event file upload:", err);
-            });
-        }, 30000); // every 30 seconds
     }
 
     /**
@@ -76,85 +34,6 @@ export class UsageService {
      */
     private truncateValue(value: number): number {
         return Math.round(value * 100000000000) / 100000000000; // 11 decimal places
-    }
-
-    private async initializeEventsDirectory(): Promise<void> {
-        if (!this.eventsDir) {
-            logger.warn(
-                "Stripe local file path is not configured, skipping events directory initialization."
-            );
-            return;
-        }
-        try {
-            await fs.mkdir(this.eventsDir, { recursive: true });
-        } catch (error) {
-            logger.error("Failed to create events directory:", error);
-        }
-    }
-
-    private async uploadPendingEventFilesOnStartup(): Promise<void> {
-        if (!this.eventsDir || !this.bucketName) {
-            logger.warn(
-                "Stripe local file path or bucket name is not configured, skipping leftover event file upload."
-            );
-            return;
-        }
-        try {
-            const files = await fs.readdir(this.eventsDir);
-            for (const file of files) {
-                if (file.endsWith(".json")) {
-                    const filePath = path.join(this.eventsDir, file);
-                    try {
-                        const fileContent = await fs.readFile(
-                            filePath,
-                            "utf-8"
-                        );
-                        const events = JSON.parse(fileContent);
-                        if (Array.isArray(events) && events.length > 0) {
-                            // Upload to S3
-                            const uploadCommand = new PutObjectCommand({
-                                Bucket: this.bucketName,
-                                Key: file,
-                                Body: fileContent,
-                                ContentType: "application/json"
-                            });
-                            await s3Client.send(uploadCommand);
-
-                            // Check if file still exists before unlinking
-                            try {
-                                await fs.access(filePath);
-                                await fs.unlink(filePath);
-                            } catch (unlinkError) {
-                                logger.debug(
-                                    `Startup file ${file} was already deleted`
-                                );
-                            }
-
-                            logger.info(
-                                `Uploaded leftover event file ${file} to S3 with ${events.length} events`
-                            );
-                        } else {
-                            // Remove empty file
-                            try {
-                                await fs.access(filePath);
-                                await fs.unlink(filePath);
-                            } catch (unlinkError) {
-                                logger.debug(
-                                    `Empty startup file ${file} was already deleted`
-                                );
-                            }
-                        }
-                    } catch (err) {
-                        logger.error(
-                            `Error processing leftover event file ${file}:`,
-                            err
-                        );
-                    }
-                }
-            }
-        } catch (error) {
-            logger.error("Failed to scan for leftover event files");
-        }
     }
 
     public async add(
@@ -176,37 +55,26 @@ export class UsageService {
 
         while (attempt <= maxRetries) {
             try {
-                // Get subscription data for this org (with caching)
-                const customerId = await this.getCustomerId(orgId, featureId);
-
-                if (!customerId) {
-                    logger.warn(
-                        `No subscription data found for org ${orgId} and feature ${featureId}`
-                    );
-                    return null;
-                }
-
                 let usage;
                 if (transaction) {
+                    const orgIdToUse = await this.getBillingOrg(orgId, transaction);
                     usage = await this.internalAddUsage(
-                        orgId,
+                        orgIdToUse,
                         featureId,
                         value,
                         transaction
                     );
                 } else {
                     await db.transaction(async (trx) => {
+                        const orgIdToUse = await this.getBillingOrg(orgId, trx);
                         usage = await this.internalAddUsage(
-                            orgId,
+                            orgIdToUse,
                             featureId,
                             value,
                             trx
                         );
                     });
                 }
-
-                // Log event for Stripe
-                await this.logStripeEvent(featureId, value, customerId);
 
                 return usage || null;
             } catch (error: any) {
@@ -243,7 +111,7 @@ export class UsageService {
     }
 
     private async internalAddUsage(
-        orgId: string,
+        orgId: string, // here the orgId is the billing org already resolved by getBillingOrg in updateCount
         featureId: FeatureId,
         value: number,
         trx: Transaction
@@ -262,16 +130,21 @@ export class UsageService {
                 featureId,
                 orgId,
                 meterId,
-                latestValue: value,
+                instantaneousValue: value || 0,
+                latestValue: value || 0,
                 updatedAt: Math.floor(Date.now() / 1000)
             })
             .onConflictDoUpdate({
                 target: usage.usageId,
                 set: {
-                    latestValue: sql`${usage.latestValue} + ${value}`
+                    instantaneousValue: sql`COALESCE(${usage.instantaneousValue}, 0) + ${value}`
                 }
             })
             .returning();
+
+        logger.debug(
+            `Added usage for org ${orgId} feature ${featureId}: +${value}, new instantaneousValue: ${returnUsage.instantaneousValue}`
+        );
 
         return returnUsage;
     }
@@ -286,7 +159,7 @@ export class UsageService {
         return new Date(date * 1000).toISOString().split("T")[0];
     }
 
-    async updateDaily(
+    async updateCount(
         orgId: string,
         featureId: FeatureId,
         value?: number,
@@ -295,30 +168,20 @@ export class UsageService {
         if (noop()) {
             return;
         }
-        try {
-            if (!customerId) {
-                customerId =
-                    (await this.getCustomerId(orgId, featureId)) || undefined;
-                if (!customerId) {
-                    logger.warn(
-                        `No subscription data found for org ${orgId} and feature ${featureId}`
-                    );
-                    return;
-                }
-            }
 
+        const orgIdToUse = await this.getBillingOrg(orgId);
+
+        try {
             // Truncate value to 11 decimal places if provided
             if (value !== undefined && value !== null) {
                 value = this.truncateValue(value);
             }
 
-            const today = this.getTodayDateString();
-
             let currentUsage: Usage | null = null;
 
             await db.transaction(async (trx) => {
                 // Get existing meter record
-                const usageId = `${orgId}-${featureId}`;
+                const usageId = `${orgIdToUse}-${featureId}`;
                 // Get current usage record
                 [currentUsage] = await trx
                     .select()
@@ -327,66 +190,34 @@ export class UsageService {
                     .limit(1);
 
                 if (currentUsage) {
-                    const lastUpdateDate = this.getDateString(
-                        currentUsage.updatedAt
-                    );
-                    const currentRunningTotal = currentUsage.latestValue;
-                    const lastDailyValue = currentUsage.instantaneousValue || 0;
-
-                    if (value == undefined || value === null) {
-                        value = currentUsage.instantaneousValue || 0;
-                    }
-
-                    if (lastUpdateDate === today) {
-                        // Same day update: replace the daily value
-                        // Remove old daily value from running total, add new value
-                        const newRunningTotal = this.truncateValue(
-                            currentRunningTotal - lastDailyValue + value
-                        );
-
-                        await trx
-                            .update(usage)
-                            .set({
-                                latestValue: newRunningTotal,
-                                instantaneousValue: value,
-                                updatedAt: Math.floor(Date.now() / 1000)
-                            })
-                            .where(eq(usage.usageId, usageId));
-                    } else {
-                        // New day: add to running total
-                        const newRunningTotal = this.truncateValue(
-                            currentRunningTotal + value
-                        );
-
-                        await trx
-                            .update(usage)
-                            .set({
-                                latestValue: newRunningTotal,
-                                instantaneousValue: value,
-                                updatedAt: Math.floor(Date.now() / 1000)
-                            })
-                            .where(eq(usage.usageId, usageId));
-                    }
+                    await trx
+                        .update(usage)
+                        .set({
+                            instantaneousValue: value,
+                            updatedAt: Math.floor(Date.now() / 1000)
+                        })
+                        .where(eq(usage.usageId, usageId));
                 } else {
                     // First record for this meter
                     const meterId = getFeatureMeterId(featureId);
-                    const truncatedValue = this.truncateValue(value || 0);
                     await trx.insert(usage).values({
                         usageId,
                         featureId,
-                        orgId,
+                        orgId: orgIdToUse,
                         meterId,
-                        instantaneousValue: truncatedValue,
-                        latestValue: truncatedValue,
+                        instantaneousValue: value || 0,
+                        latestValue: value || 0,
                         updatedAt: Math.floor(Date.now() / 1000)
                     });
                 }
             });
 
-            await this.logStripeEvent(featureId, value || 0, customerId);
+            // if (privateConfig.getRawPrivateConfig().flags.usage_reporting) {
+            //     await this.logStripeEvent(featureId, value || 0, customerId);
+            // }
         } catch (error) {
             logger.error(
-                `Failed to update daily usage for ${orgId}/${featureId}:`,
+                `Failed to update count usage for ${orgIdToUse}/${featureId}:`,
                 error
             );
         }
@@ -396,8 +227,10 @@ export class UsageService {
         orgId: string,
         featureId: FeatureId
     ): Promise<string | null> {
-        const cacheKey = `customer_${orgId}_${featureId}`;
-        const cached = cache.get<string>(cacheKey);
+        const orgIdToUse = await this.getBillingOrg(orgId);
+
+        const cacheKey = `customer_${orgIdToUse}_${featureId}`;
+        const cached = await cache.get<string>(cacheKey);
 
         if (cached) {
             return cached;
@@ -410,7 +243,7 @@ export class UsageService {
                     customerId: customers.customerId
                 })
                 .from(customers)
-                .where(eq(customers.orgId, orgId))
+                .where(eq(customers.orgId, orgIdToUse))
                 .limit(1);
 
             if (!customer) {
@@ -420,192 +253,16 @@ export class UsageService {
             const customerId = customer.customerId;
 
             // Cache the result
-            cache.set(cacheKey, customerId, 300); // 5 minute TTL
+            await cache.set(cacheKey, customerId, 300); // 5 minute TTL
 
             return customerId;
         } catch (error) {
             logger.error(
-                `Failed to get subscription data for ${orgId}/${featureId}:`,
+                `Failed to get subscription data for ${orgIdToUse}/${featureId}:`,
                 error
             );
             return null;
         }
-    }
-
-    private async logStripeEvent(
-        featureId: FeatureId,
-        value: number,
-        customerId: string
-    ): Promise<void> {
-        // Truncate value to 11 decimal places before sending to Stripe
-        const truncatedValue = this.truncateValue(value);
-
-        const event: StripeEvent = {
-            identifier: uuidv4(),
-            timestamp: Math.floor(new Date().getTime() / 1000),
-            event_name: featureId,
-            payload: {
-                value: truncatedValue,
-                stripe_customer_id: customerId
-            }
-        };
-
-        await this.writeEventToFile(event);
-        await this.checkAndUploadFile();
-    }
-
-    private async writeEventToFile(event: StripeEvent): Promise<void> {
-        if (!this.eventsDir || !this.bucketName) {
-            logger.warn(
-                "Stripe local file path or bucket name is not configured, skipping event file write."
-            );
-            return;
-        }
-        if (!this.currentEventFile) {
-            this.currentEventFile = this.generateEventFileName();
-            this.currentFileStartTime = Date.now();
-        }
-
-        const filePath = path.join(this.eventsDir, this.currentEventFile);
-
-        try {
-            let events: StripeEvent[] = [];
-
-            // Try to read existing file
-            try {
-                const fileContent = await fs.readFile(filePath, "utf-8");
-                events = JSON.parse(fileContent);
-            } catch (error) {
-                // File doesn't exist or is empty, start with empty array
-                events = [];
-            }
-
-            // Add new event
-            events.push(event);
-
-            // Write back to file
-            await fs.writeFile(filePath, JSON.stringify(events, null, 2));
-        } catch (error) {
-            logger.error("Failed to write event to file:", error);
-        }
-    }
-
-    private async checkAndUploadFile(): Promise<void> {
-        if (!this.currentEventFile) {
-            return;
-        }
-
-        const now = Date.now();
-        const fileAge = now - this.currentFileStartTime;
-
-        // Check if file is at least 1 minute old
-        if (fileAge >= 60000) {
-            // 60 seconds
-            await this.uploadFileToS3();
-        }
-    }
-
-    private async uploadFileToS3(): Promise<void> {
-        if (!this.bucketName || !this.eventsDir) {
-            logger.warn(
-                "Stripe local file path or bucket name is not configured, skipping S3 upload."
-            );
-            return;
-        }
-        if (!this.currentEventFile) {
-            return;
-        }
-
-        const fileName = this.currentEventFile;
-        const filePath = path.join(this.eventsDir, fileName);
-
-        // Check if this file is already being uploaded
-        if (this.uploadingFiles.has(fileName)) {
-            logger.debug(
-                `File ${fileName} is already being uploaded, skipping`
-            );
-            return;
-        }
-
-        // Mark file as being uploaded
-        this.uploadingFiles.add(fileName);
-
-        try {
-            // Check if file exists before trying to read it
-            try {
-                await fs.access(filePath);
-            } catch (error) {
-                logger.debug(
-                    `File ${fileName} does not exist, may have been already processed`
-                );
-                this.uploadingFiles.delete(fileName);
-                // Reset current file if it was this file
-                if (this.currentEventFile === fileName) {
-                    this.currentEventFile = null;
-                    this.currentFileStartTime = 0;
-                }
-                return;
-            }
-
-            // Check if file exists and has content
-            const fileContent = await fs.readFile(filePath, "utf-8");
-            const events = JSON.parse(fileContent);
-
-            if (events.length === 0) {
-                // No events to upload, just clean up
-                try {
-                    await fs.unlink(filePath);
-                } catch (unlinkError) {
-                    // File may have been already deleted
-                    logger.debug(
-                        `File ${fileName} was already deleted during cleanup`
-                    );
-                }
-                this.currentEventFile = null;
-                this.uploadingFiles.delete(fileName);
-                return;
-            }
-
-            // Upload to S3
-            const uploadCommand = new PutObjectCommand({
-                Bucket: this.bucketName,
-                Key: fileName,
-                Body: fileContent,
-                ContentType: "application/json"
-            });
-
-            await s3Client.send(uploadCommand);
-
-            // Clean up local file - check if it still exists before unlinking
-            try {
-                await fs.access(filePath);
-                await fs.unlink(filePath);
-            } catch (unlinkError) {
-                // File may have been already deleted by another process
-                logger.debug(
-                    `File ${fileName} was already deleted during upload`
-                );
-            }
-
-            logger.info(
-                `Uploaded ${fileName} to S3 with ${events.length} events`
-            );
-
-            // Reset for next file
-            this.currentEventFile = null;
-            this.currentFileStartTime = 0;
-        } catch (error) {
-            logger.error(`Failed to upload ${fileName} to S3:`, error);
-        } finally {
-            // Always remove from uploading set
-            this.uploadingFiles.delete(fileName);
-        }
-    }
-
-    private generateEventFileName(): string {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const uuid = uuidv4().substring(0, 8);
-        return `events-${timestamp}-${uuid}.json`;
     }
 
     public async getUsage(
@@ -617,7 +274,9 @@ export class UsageService {
             return null;
         }
 
-        const usageId = `${orgId}-${featureId}`;
+        const orgIdToUse = await this.getBillingOrg(orgId, trx);
+
+        const usageId = `${orgIdToUse}-${featureId}`;
 
         try {
             const [result] = await trx
@@ -629,7 +288,7 @@ export class UsageService {
             if (!result) {
                 // Lets create one if it doesn't exist using upsert to handle race conditions
                 logger.info(
-                    `Creating new usage record for ${orgId}/${featureId}`
+                    `Creating new usage record for ${orgIdToUse}/${featureId}`
                 );
                 const meterId = getFeatureMeterId(featureId);
 
@@ -639,7 +298,7 @@ export class UsageService {
                         .values({
                             usageId,
                             featureId,
-                            orgId,
+                            orgId: orgIdToUse,
                             meterId,
                             latestValue: 0,
                             updatedAt: Math.floor(Date.now() / 1000)
@@ -661,7 +320,7 @@ export class UsageService {
                 } catch (insertError) {
                     // Fallback: try to fetch existing record in case of any insert issues
                     logger.warn(
-                        `Insert failed for ${orgId}/${featureId}, attempting to fetch existing record:`,
+                        `Insert failed for ${orgIdToUse}/${featureId}, attempting to fetch existing record:`,
                         insertError
                     );
                     const [existingUsage] = await trx
@@ -676,136 +335,45 @@ export class UsageService {
             return result;
         } catch (error) {
             logger.error(
-                `Failed to get usage for ${orgId}/${featureId}:`,
+                `Failed to get usage for ${orgIdToUse}/${featureId}:`,
                 error
             );
             throw error;
         }
     }
 
-    public async getUsageDaily(
+    public async getBillingOrg(
         orgId: string,
-        featureId: FeatureId
-    ): Promise<Usage | null> {
-        if (noop()) {
-            return null;
+        trx: Transaction | typeof db = db
+    ): Promise<string> {
+        let orgIdToUse = orgId;
+
+        // get the org
+        const [org] = await trx
+            .select()
+            .from(orgs)
+            .where(eq(orgs.orgId, orgId))
+            .limit(1);
+
+        if (!org) {
+            throw new Error(`Organization with ID ${orgId} not found`);
         }
-        await this.updateDaily(orgId, featureId); // Ensure daily usage is updated
-        return this.getUsage(orgId, featureId);
-    }
 
-    public async forceUpload(): Promise<void> {
-        await this.uploadFileToS3();
-    }
-
-    /**
-     * Scan the events directory for files older than 1 minute and upload them if not empty.
-     */
-    private async uploadOldEventFiles(): Promise<void> {
-        if (!this.eventsDir || !this.bucketName) {
-            logger.warn(
-                "Stripe local file path or bucket name is not configured, skipping old event file upload."
-            );
-            return;
-        }
-        try {
-            const files = await fs.readdir(this.eventsDir);
-            const now = Date.now();
-            for (const file of files) {
-                if (!file.endsWith(".json")) continue;
-
-                // Skip files that are already being uploaded
-                if (this.uploadingFiles.has(file)) {
-                    logger.debug(
-                        `Skipping file ${file} as it's already being uploaded`
-                    );
-                    continue;
-                }
-
-                const filePath = path.join(this.eventsDir, file);
-
-                try {
-                    // Check if file still exists before processing
-                    try {
-                        await fs.access(filePath);
-                    } catch (accessError) {
-                        logger.debug(`File ${file} does not exist, skipping`);
-                        continue;
-                    }
-
-                    const stat = await fs.stat(filePath);
-                    const age = now - stat.mtimeMs;
-                    if (age >= 90000) {
-                        // 1.5 minutes - Mark as being uploaded
-                        this.uploadingFiles.add(file);
-
-                        try {
-                            const fileContent = await fs.readFile(
-                                filePath,
-                                "utf-8"
-                            );
-                            const events = JSON.parse(fileContent);
-                            if (Array.isArray(events) && events.length > 0) {
-                                // Upload to S3
-                                const uploadCommand = new PutObjectCommand({
-                                    Bucket: this.bucketName,
-                                    Key: file,
-                                    Body: fileContent,
-                                    ContentType: "application/json"
-                                });
-                                await s3Client.send(uploadCommand);
-
-                                // Check if file still exists before unlinking
-                                try {
-                                    await fs.access(filePath);
-                                    await fs.unlink(filePath);
-                                } catch (unlinkError) {
-                                    logger.debug(
-                                        `File ${file} was already deleted during interval upload`
-                                    );
-                                }
-
-                                logger.info(
-                                    `Interval: Uploaded event file ${file} to S3 with ${events.length} events`
-                                );
-                                // If this was the current event file, reset it
-                                if (this.currentEventFile === file) {
-                                    this.currentEventFile = null;
-                                    this.currentFileStartTime = 0;
-                                }
-                            } else {
-                                // Remove empty file
-                                try {
-                                    await fs.access(filePath);
-                                    await fs.unlink(filePath);
-                                } catch (unlinkError) {
-                                    logger.debug(
-                                        `Empty file ${file} was already deleted`
-                                    );
-                                }
-                            }
-                        } finally {
-                            // Always remove from uploading set
-                            this.uploadingFiles.delete(file);
-                        }
-                    }
-                } catch (err) {
-                    logger.error(
-                        `Interval: Error processing event file ${file}:`,
-                        err
-                    );
-                    // Remove from uploading set on error
-                    this.uploadingFiles.delete(file);
-                }
+        if (!org.isBillingOrg) {
+            if (org.billingOrgId) {
+                orgIdToUse = org.billingOrgId;
+            } else {
+                throw new Error(
+                    `Organization ${orgId} is not a billing org and does not have a billingOrgId set`
+                );
             }
-        } catch (err) {
-            logger.error("Interval: Failed to scan for event files:", err);
         }
+
+        return orgIdToUse;
     }
 
     public async checkLimitSet(
         orgId: string,
-        kickSites = false,
         featureId?: FeatureId,
         usage?: Usage,
         trx: Transaction | typeof db = db
@@ -813,6 +381,9 @@ export class UsageService {
         if (noop()) {
             return false;
         }
+
+        const orgIdToUse = await this.getBillingOrg(orgId, trx);
+
         // This method should check the current usage against the limits set for the organization
         // and kick out all of the sites on the org
         let hasExceededLimits = false;
@@ -826,7 +397,7 @@ export class UsageService {
                     .from(limits)
                     .where(
                         and(
-                            eq(limits.orgId, orgId),
+                            eq(limits.orgId, orgIdToUse),
                             eq(limits.featureId, featureId)
                         )
                     );
@@ -835,11 +406,11 @@ export class UsageService {
                 orgLimits = await trx
                     .select()
                     .from(limits)
-                    .where(eq(limits.orgId, orgId));
+                    .where(eq(limits.orgId, orgIdToUse));
             }
 
             if (orgLimits.length === 0) {
-                logger.debug(`No limits set for org ${orgId}`);
+                logger.debug(`No limits set for org ${orgIdToUse}`);
                 return false;
             }
 
@@ -850,7 +421,7 @@ export class UsageService {
                     currentUsage = usage;
                 } else {
                     currentUsage = await this.getUsage(
-                        orgId,
+                        orgIdToUse,
                         limit.featureId as FeatureId,
                         trx
                     );
@@ -861,10 +432,10 @@ export class UsageService {
                     currentUsage?.latestValue ||
                     0;
                 logger.debug(
-                    `Current usage for org ${orgId} on feature ${limit.featureId}: ${usageValue}`
+                    `Current usage for org ${orgIdToUse} on feature ${limit.featureId}: ${usageValue}`
                 );
                 logger.debug(
-                    `Limit for org ${orgId} on feature ${limit.featureId}: ${limit.value}`
+                    `Limit for org ${orgIdToUse} on feature ${limit.featureId}: ${limit.value}`
                 );
                 if (
                     currentUsage &&
@@ -872,67 +443,15 @@ export class UsageService {
                     usageValue > limit.value
                 ) {
                     logger.debug(
-                        `Org ${orgId} has exceeded limit for ${limit.featureId}: ` +
+                        `Org ${orgIdToUse} has exceeded limit for ${limit.featureId}: ` +
                             `${usageValue} > ${limit.value}`
                     );
                     hasExceededLimits = true;
                     break; // Exit early if any limit is exceeded
                 }
             }
-
-            // If any limits are exceeded, disconnect all sites for this organization
-            if (hasExceededLimits && kickSites) {
-                logger.warn(
-                    `Disconnecting all sites for org ${orgId} due to exceeded limits`
-                );
-
-                // Get all sites for this organization
-                const orgSites = await trx
-                    .select()
-                    .from(sites)
-                    .where(eq(sites.orgId, orgId));
-
-                // Mark all sites as offline and send termination messages
-                const siteUpdates = orgSites.map((site) => site.siteId);
-
-                if (siteUpdates.length > 0) {
-                    // Send termination messages to newt sites
-                    for (const site of orgSites) {
-                        if (site.type === "newt") {
-                            const [newt] = await trx
-                                .select()
-                                .from(newts)
-                                .where(eq(newts.siteId, site.siteId))
-                                .limit(1);
-
-                            if (newt) {
-                                const payload = {
-                                    type: `newt/wg/terminate`,
-                                    data: {
-                                        reason: "Usage limits exceeded"
-                                    }
-                                };
-
-                                // Don't await to prevent blocking
-                                await sendToClient(newt.newtId, payload).catch(
-                                    (error: any) => {
-                                        logger.error(
-                                            `Failed to send termination message to newt ${newt.newtId}:`,
-                                            error
-                                        );
-                                    }
-                                );
-                            }
-                        }
-                    }
-
-                    logger.info(
-                        `Disconnected ${orgSites.length} sites for org ${orgId} due to exceeded limits`
-                    );
-                }
-            }
         } catch (error) {
-            logger.error(`Error checking limits for org ${orgId}:`, error);
+            logger.error(`Error checking limits for org ${orgIdToUse}:`, error);
         }
 
         return hasExceededLimits;

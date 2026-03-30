@@ -2,9 +2,8 @@
 
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
 import CopyToClipboard from "@app/components/CopyToClipboard";
-import { DataTable } from "@app/components/ui/data-table";
-import { ExtendedColumnDef } from "@app/components/ui/data-table";
 import { Button } from "@app/components/ui/button";
+import { ExtendedColumnDef } from "@app/components/ui/data-table";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -14,15 +13,20 @@ import {
 import { InfoPopup } from "@app/components/ui/info-popup";
 import { Switch } from "@app/components/ui/switch";
 import { useEnvContext } from "@app/hooks/useEnvContext";
+import { useNavigationContext } from "@app/hooks/useNavigationContext";
+import { getNextSortOrder, getSortDirection } from "@app/lib/sortColumn";
 import { toast } from "@app/hooks/useToast";
 import { createApiClient, formatAxiosError } from "@app/lib/api";
 import { UpdateResourceResponse } from "@server/routers/resource";
+import type { PaginationState } from "@tanstack/react-table";
 import { AxiosResponse } from "axios";
 import {
+    ArrowDown01Icon,
     ArrowRight,
-    ArrowUpDown,
+    ArrowUp10Icon,
     CheckCircle2,
     ChevronDown,
+    ChevronsUpDownIcon,
     Clock,
     MoreHorizontal,
     ShieldCheck,
@@ -32,14 +36,24 @@ import {
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import {
+    useOptimistic,
+    useRef,
+    useState,
+    useTransition,
+    type ComponentRef
+} from "react";
+import { useDebouncedCallback } from "use-debounce";
+import z from "zod";
+import { ColumnFilterButton } from "./ColumnFilterButton";
+import { ControlledDataTable } from "./ui/controlled-data-table";
 
 export type TargetHealth = {
     targetId: number;
     ip: string;
     port: number;
     enabled: boolean;
-    healthStatus?: "healthy" | "unhealthy" | "unknown";
+    healthStatus: "healthy" | "unhealthy" | "unknown" | null;
 };
 
 export type ResourceRow = {
@@ -117,18 +131,22 @@ function StatusIcon({
 type ProxyResourcesTableProps = {
     resources: ResourceRow[];
     orgId: string;
-    defaultSort?: {
-        id: string;
-        desc: boolean;
-    };
+    pagination: PaginationState;
+    rowCount: number;
 };
 
 export default function ProxyResourcesTable({
     resources,
     orgId,
-    defaultSort
+    pagination,
+    rowCount
 }: ProxyResourcesTableProps) {
     const router = useRouter();
+    const {
+        navigate: filter,
+        isNavigating: isFiltering,
+        searchParams
+    } = useNavigationContext();
     const t = useTranslations();
 
     const { env } = useEnvContext();
@@ -140,6 +158,7 @@ export default function ProxyResourcesTable({
         useState<ResourceRow | null>();
 
     const [isRefreshing, startTransition] = useTransition();
+    const [isNavigatingToAddPage, startNavigation] = useTransition();
 
     const refreshData = () => {
         startTransition(() => {
@@ -174,23 +193,24 @@ export default function ProxyResourcesTable({
     };
 
     async function toggleResourceEnabled(val: boolean, resourceId: number) {
-        await api
-            .post<AxiosResponse<UpdateResourceResponse>>(
+        try {
+            await api.post<AxiosResponse<UpdateResourceResponse>>(
                 `resource/${resourceId}`,
                 {
                     enabled: val
                 }
-            )
-            .catch((e) => {
-                toast({
-                    variant: "destructive",
-                    title: t("resourcesErrorUpdate"),
-                    description: formatAxiosError(
-                        e,
-                        t("resourcesErrorUpdateDescription")
-                    )
-                });
+            );
+            router.refresh();
+        } catch (e) {
+            toast({
+                variant: "destructive",
+                title: t("resourcesErrorUpdate"),
+                description: formatAxiosError(
+                    e,
+                    t("resourcesErrorUpdateDescription")
+                )
             });
+        }
     }
 
     function TargetStatusCell({ targets }: { targets?: TargetHealth[] }) {
@@ -198,7 +218,7 @@ export default function ProxyResourcesTable({
 
         if (!targets || targets.length === 0) {
             return (
-                <div className="flex items-center gap-2">
+                <div id="LOOK_FOR_ME" className="flex items-center gap-2">
                     <StatusIcon status="unknown" />
                     <span className="text-sm">
                         {t("resourcesTableNoTargets")}
@@ -236,7 +256,7 @@ export default function ProxyResourcesTable({
                         <ChevronDown className="h-3 w-3" />
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="min-w-[280px]">
+                <DropdownMenuContent align="start" className="min-w-70">
                     {monitoredTargets.length > 0 && (
                         <>
                             {monitoredTargets.map((target) => (
@@ -302,16 +322,23 @@ export default function ProxyResourcesTable({
             accessorKey: "name",
             enableHiding: false,
             friendlyName: t("name"),
-            header: ({ column }) => {
+            header: () => {
+                const nameOrder = getSortDirection("name", searchParams);
+                const Icon =
+                    nameOrder === "asc"
+                        ? ArrowDown01Icon
+                        : nameOrder === "desc"
+                          ? ArrowUp10Icon
+                          : ChevronsUpDownIcon;
+
                 return (
                     <Button
                         variant="ghost"
-                        onClick={() =>
-                            column.toggleSorting(column.getIsSorted() === "asc")
-                        }
+                        className="p-3"
+                        onClick={() => toggleSort("name")}
                     >
                         {t("name")}
-                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                        <Icon className="ml-2 h-4 w-4" />
                     </Button>
                 );
             }
@@ -321,19 +348,7 @@ export default function ProxyResourcesTable({
             accessorKey: "nice",
             friendlyName: t("identifier"),
             enableHiding: true,
-            header: ({ column }) => {
-                return (
-                    <Button
-                        variant="ghost"
-                        onClick={() =>
-                            column.toggleSorting(column.getIsSorted() === "asc")
-                        }
-                    >
-                        {t("identifier")}
-                        <ArrowUpDown className="ml-2 h-4 w-4" />
-                    </Button>
-                );
-            },
+            header: () => <span className="p-3">{t("identifier")}</span>,
             cell: ({ row }) => {
                 return <span>{row.original.nice || "-"}</span>;
             }
@@ -359,19 +374,33 @@ export default function ProxyResourcesTable({
             id: "status",
             accessorKey: "status",
             friendlyName: t("status"),
-            header: ({ column }) => {
-                return (
-                    <Button
-                        variant="ghost"
-                        onClick={() =>
-                            column.toggleSorting(column.getIsSorted() === "asc")
-                        }
-                    >
-                        {t("status")}
-                        <ArrowUpDown className="ml-2 h-4 w-4" />
-                    </Button>
-                );
-            },
+            header: () => (
+                <ColumnFilterButton
+                    options={[
+                        { value: "healthy", label: t("resourcesTableHealthy") },
+                        {
+                            value: "degraded",
+                            label: t("resourcesTableDegraded")
+                        },
+                        { value: "offline", label: t("resourcesTableOffline") },
+                        {
+                            value: "no_targets",
+                            label: t("resourcesTableNoTargets")
+                        },
+                        { value: "unknown", label: t("resourcesTableUnknown") }
+                    ]}
+                    selectedValue={
+                        searchParams.get("healthStatus") ?? undefined
+                    }
+                    onValueChange={(value) =>
+                        handleFilterChange("healthStatus", value)
+                    }
+                    searchPlaceholder={t("searchPlaceholder")}
+                    emptyMessage={t("emptySearchOptions")}
+                    label={t("status")}
+                    className="p-3"
+                />
+            ),
             cell: ({ row }) => {
                 const resourceRow = row.original;
                 return <TargetStatusCell targets={resourceRow.targets} />;
@@ -419,19 +448,23 @@ export default function ProxyResourcesTable({
         {
             accessorKey: "authState",
             friendlyName: t("authentication"),
-            header: ({ column }) => {
-                return (
-                    <Button
-                        variant="ghost"
-                        onClick={() =>
-                            column.toggleSorting(column.getIsSorted() === "asc")
-                        }
-                    >
-                        {t("authentication")}
-                        <ArrowUpDown className="ml-2 h-4 w-4" />
-                    </Button>
-                );
-            },
+            header: () => (
+                <ColumnFilterButton
+                    options={[
+                        { value: "protected", label: t("protected") },
+                        { value: "not_protected", label: t("notProtected") },
+                        { value: "none", label: t("none") }
+                    ]}
+                    selectedValue={searchParams.get("authState") ?? undefined}
+                    onValueChange={(value) =>
+                        handleFilterChange("authState", value)
+                    }
+                    searchPlaceholder={t("searchPlaceholder")}
+                    emptyMessage={t("emptySearchOptions")}
+                    label={t("authentication")}
+                    className="p-3"
+                />
+            ),
             cell: ({ row }) => {
                 const resourceRow = row.original;
                 return (
@@ -456,20 +489,28 @@ export default function ProxyResourcesTable({
         {
             accessorKey: "enabled",
             friendlyName: t("enabled"),
-            header: () => <span className="p-3">{t("enabled")}</span>,
+            header: () => (
+                <ColumnFilterButton
+                    options={[
+                        { value: "true", label: t("enabled") },
+                        { value: "false", label: t("disabled") }
+                    ]}
+                    selectedValue={booleanSearchFilterSchema.parse(
+                        searchParams.get("enabled")
+                    )}
+                    onValueChange={(value) =>
+                        handleFilterChange("enabled", value)
+                    }
+                    searchPlaceholder={t("searchPlaceholder")}
+                    emptyMessage={t("emptySearchOptions")}
+                    label={t("enabled")}
+                    className="p-3"
+                />
+            ),
             cell: ({ row }) => (
-                <Switch
-                    defaultChecked={
-                        row.original.http
-                            ? !!row.original.domainId && row.original.enabled
-                            : row.original.enabled
-                    }
-                    disabled={
-                        row.original.http ? !row.original.domainId : false
-                    }
-                    onCheckedChange={(val) =>
-                        toggleResourceEnabled(val, row.original.id)
-                    }
+                <ResourceEnabledForm
+                    resource={row.original}
+                    onToggleResourceEnabled={toggleResourceEnabled}
                 />
             )
         },
@@ -525,6 +566,50 @@ export default function ProxyResourcesTable({
         }
     ];
 
+    const booleanSearchFilterSchema = z
+        .enum(["true", "false"])
+        .optional()
+        .catch(undefined);
+
+    function handleFilterChange(
+        column: string,
+        value: string | undefined | null
+    ) {
+        searchParams.delete(column);
+        searchParams.delete("page");
+
+        if (value) {
+            searchParams.set(column, value);
+        }
+        filter({
+            searchParams
+        });
+    }
+
+    function toggleSort(column: string) {
+        const newSearch = getNextSortOrder(column, searchParams);
+
+        filter({
+            searchParams: newSearch
+        });
+    }
+
+    const handlePaginationChange = (newPage: PaginationState) => {
+        searchParams.set("page", (newPage.pageIndex + 1).toString());
+        searchParams.set("pageSize", newPage.pageSize.toString());
+        filter({
+            searchParams
+        });
+    };
+
+    const handleSearchChange = useDebouncedCallback((query: string) => {
+        searchParams.set("query", query);
+        searchParams.delete("page");
+        filter({
+            searchParams
+        });
+    }, 300);
+
     return (
         <>
             {selectedResource && (
@@ -547,25 +632,69 @@ export default function ProxyResourcesTable({
                 />
             )}
 
-            <DataTable
+            <ControlledDataTable
                 columns={proxyColumns}
-                data={resources}
-                persistPageSize="proxy-resources"
+                rows={resources}
+                tableId="proxy-resources"
                 searchPlaceholder={t("resourcesSearch")}
-                searchColumn="name"
+                pagination={pagination}
+                rowCount={rowCount}
+                onSearch={handleSearchChange}
+                onPaginationChange={handlePaginationChange}
                 onAdd={() =>
-                    router.push(`/${orgId}/settings/resources/proxy/create`)
+                    startNavigation(() =>
+                        router.push(`/${orgId}/settings/resources/proxy/create`)
+                    )
                 }
                 addButtonText={t("resourceAdd")}
                 onRefresh={refreshData}
-                isRefreshing={isRefreshing}
-                defaultSort={defaultSort}
-                enableColumnVisibility={true}
-                persistColumnVisibility="proxy-resources"
+                isRefreshing={isRefreshing || isFiltering}
+                isNavigatingToAddPage={isNavigatingToAddPage}
+                enableColumnVisibility
                 columnVisibility={{ niceId: false }}
                 stickyLeftColumn="name"
                 stickyRightColumn="actions"
             />
         </>
+    );
+}
+
+type ResourceEnabledFormProps = {
+    resource: ResourceRow;
+    onToggleResourceEnabled: (
+        val: boolean,
+        resourceId: number
+    ) => Promise<void>;
+};
+
+function ResourceEnabledForm({
+    resource,
+    onToggleResourceEnabled
+}: ResourceEnabledFormProps) {
+    const enabled = resource.http
+        ? !!resource.domainId && resource.enabled
+        : resource.enabled;
+    const [optimisticEnabled, setOptimisticEnabled] = useOptimistic(enabled);
+
+    const formRef = useRef<ComponentRef<"form">>(null);
+
+    async function submitAction(formData: FormData) {
+        const newEnabled = !(formData.get("enabled") === "on");
+        setOptimisticEnabled(newEnabled);
+        await onToggleResourceEnabled(newEnabled, resource.id);
+    }
+
+    return (
+        <form action={submitAction} ref={formRef}>
+            <Switch
+                checked={optimisticEnabled}
+                disabled={
+                    (resource.http && !resource.domainId) ||
+                    optimisticEnabled !== enabled
+                }
+                name="enabled"
+                onCheckedChange={() => formRef.current?.requestSubmit()}
+            />
+        </form>
     );
 }

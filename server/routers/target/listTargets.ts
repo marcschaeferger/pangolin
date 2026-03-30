@@ -40,6 +40,7 @@ function queryTargets(resourceId: number) {
             resourceId: targets.resourceId,
             siteId: targets.siteId,
             siteType: sites.type,
+            siteName: sites.name,
             hcEnabled: targetHealthCheck.hcEnabled,
             hcPath: targetHealthCheck.hcPath,
             hcScheme: targetHealthCheck.hcScheme,
@@ -88,7 +89,7 @@ registry.registerPath({
     method: "get",
     path: "/resource/{resourceId}/targets",
     description: "List targets for a resource.",
-    tags: [OpenAPITags.Resource, OpenAPITags.Target],
+    tags: [OpenAPITags.PublicResource, OpenAPITags.Target],
     request: {
         params: listTargetsParamsSchema,
         query: listTargetsSchema

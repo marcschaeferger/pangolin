@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
-import { db, users } from "@server/db";
+import { bannedEmails, bannedIps, db, users } from "@server/db";
 import HttpCode from "@server/types/HttpCode";
-import { z } from "zod";
+import { email, z } from "zod";
 import { fromError } from "zod-validation-error";
 import createHttpError from "http-errors";
 import response from "@server/lib/response";
@@ -21,9 +21,7 @@ import { hashPassword } from "@server/auth/password";
 import { checkValidInvite } from "@server/auth/checkValidInvite";
 import { passwordSchema } from "@server/auth/passwordSchema";
 import { UserType } from "@server/types/UserTypes";
-import { createUserAccountOrg } from "@server/lib/createUserAccountOrg";
 import { build } from "@server/build";
-import resend, { AudienceIds, moveEmailToAudience } from "#dynamic/lib/resend";
 
 export const signupBodySchema = z.object({
     email: z.email().toLowerCase(),
@@ -31,7 +29,8 @@ export const signupBodySchema = z.object({
     inviteToken: z.string().optional(),
     inviteId: z.string().optional(),
     termsAcceptedTimestamp: z.string().nullable().optional(),
-    marketingEmailConsent: z.boolean().optional()
+    marketingEmailConsent: z.boolean().optional(),
+    skipVerificationEmail: z.boolean().optional()
 });
 
 export type SignUpBody = z.infer<typeof signupBodySchema>;
@@ -62,8 +61,33 @@ export async function signup(
         inviteToken,
         inviteId,
         termsAcceptedTimestamp,
-        marketingEmailConsent
+        marketingEmailConsent,
+        skipVerificationEmail
     } = parsedBody.data;
+
+    const [bannedEmail] = await db
+        .select()
+        .from(bannedEmails)
+        .where(eq(bannedEmails.email, email))
+        .limit(1);
+    if (bannedEmail) {
+        return next(
+            createHttpError(HttpCode.FORBIDDEN, "Signup blocked. Do not attempt to continue to use this service.")
+        );
+    }
+
+    if (req.ip) {
+        const [bannedIp] = await db
+            .select()
+            .from(bannedIps)
+            .where(eq(bannedIps.ip, req.ip))
+            .limit(1);
+        if (bannedIp) {
+            return next(
+                createHttpError(HttpCode.FORBIDDEN, "Signup blocked. Do not attempt to continue to use this service.")
+            );
+        }
+    }
 
     const passwordHash = await hashPassword(password);
     const userId = generateId(15);
@@ -188,6 +212,7 @@ export async function signup(
             dateCreated: moment().toISOString(),
             termsAcceptedTimestamp: termsAcceptedTimestamp || null,
             termsVersion: "1",
+            marketingEmailConsent: marketingEmailConsent ?? false,
             lastPasswordChange: new Date().getTime()
         });
 
@@ -197,26 +222,6 @@ export async function signup(
         //     actionId: ActionsEnum.createOrg,
         //     orgId: null,
         // });
-
-        if (build == "saas") {
-            const { success, error, org } = await createUserAccountOrg(
-                userId,
-                email
-            );
-            if (!success) {
-                if (error) {
-                    return next(
-                        createHttpError(HttpCode.INTERNAL_SERVER_ERROR, error)
-                    );
-                }
-                return next(
-                    createHttpError(
-                        HttpCode.INTERNAL_SERVER_ERROR,
-                        "Failed to create user account and organization"
-                    )
-                );
-            }
-        }
 
         const token = generateSessionToken();
         const sess = await createSession(token, userId);
@@ -231,11 +236,17 @@ export async function signup(
             logger.debug(
                 `User ${email} opted in to marketing emails during signup.`
             );
-            moveEmailToAudience(email, AudienceIds.SignUps);
+            // TODO: update user in Sendy
         }
 
         if (config.getRawConfig().flags?.require_email_verification) {
-            sendEmailVerificationCode(email, userId);
+            if (!skipVerificationEmail) {
+                sendEmailVerificationCode(email, userId);
+            } else {
+                logger.debug(
+                    `User ${email} opted out of verification email during signup.`
+                );
+            }
 
             return response<SignUpResponse>(res, {
                 data: {
@@ -243,7 +254,9 @@ export async function signup(
                 },
                 success: true,
                 error: false,
-                message: `User created successfully. We sent an email to ${email} with a verification code.`,
+                message: skipVerificationEmail
+                    ? "User created successfully. Please verify your email."
+                    : `User created successfully. We sent an email to ${email} with a verification code.`,
                 status: HttpCode.OK
             });
         }

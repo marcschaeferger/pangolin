@@ -1,10 +1,12 @@
 import { Router, Request, Response } from "express";
+import zlib from "zlib";
 import { Server as HttpServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { Socket } from "net";
-import { Newt, newts, NewtSession, olms, Olm, OlmSession } from "@server/db";
+import { Newt, newts, NewtSession, olms, Olm, OlmSession, sites } from "@server/db";
 import { eq } from "drizzle-orm";
 import { db } from "@server/db";
+import { recordPing } from "@server/routers/newt/pingAccumulator";
 import { validateNewtSessionToken } from "@server/auth/sessions/newt";
 import { validateOlmSessionToken } from "@server/auth/sessions/olm";
 import { messageHandlers } from "./messageHandlers";
@@ -15,7 +17,8 @@ import {
     TokenPayload,
     WebSocketRequest,
     WSMessage,
-    AuthenticatedWebSocket
+    AuthenticatedWebSocket,
+    SendMessageOptions
 } from "./types";
 import { validateSessionToken } from "@server/auth/sessions/app";
 
@@ -34,6 +37,8 @@ const NODE_ID = uuidv4();
 
 // Client tracking map (local to this node)
 const connectedClients: Map<string, AuthenticatedWebSocket[]> = new Map();
+// Config version tracking map (clientId -> version)
+const clientConfigVersions: Map<string, number> = new Map();
 // Helper to get map key
 const getClientMapKey = (clientId: string) => clientId;
 
@@ -52,6 +57,13 @@ const addClient = async (
     const existingClients = connectedClients.get(mapKey) || [];
     existingClients.push(ws);
     connectedClients.set(mapKey, existingClients);
+
+    // Initialize config version to 0 if not already set, otherwise use existing
+    if (!clientConfigVersions.has(clientId)) {
+        clientConfigVersions.set(clientId, 0);
+    }
+    // Set the current config version on the websocket
+    ws.configVersion = clientConfigVersions.get(clientId) || 0;
 
     logger.info(
         `Client added to tracking - ${clientType.toUpperCase()} ID: ${clientId}, Connection ID: ${connectionId}, Total connections: ${existingClients.length}`
@@ -84,34 +96,84 @@ const removeClient = async (
 // Local message sending (within this node)
 const sendToClientLocal = async (
     clientId: string,
-    message: WSMessage
+    message: WSMessage,
+    options: SendMessageOptions = {}
 ): Promise<boolean> => {
     const mapKey = getClientMapKey(clientId);
     const clients = connectedClients.get(mapKey);
     if (!clients || clients.length === 0) {
         return false;
     }
-    const messageString = JSON.stringify(message);
+
+    // Include config version in message
+    const configVersion = clientConfigVersions.get(clientId) || 0;
+    // Update version on all client connections
     clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(messageString);
-        }
+        client.configVersion = configVersion;
     });
+
+    const messageWithVersion = {
+        ...message,
+        configVersion
+    };
+
+    const messageString = JSON.stringify(messageWithVersion);
+    if (options.compress) {
+        const compressed = zlib.gzipSync(Buffer.from(messageString, "utf8"));
+        clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(compressed);
+            }
+        });
+    } else {
+        clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(messageString);
+            }
+        });
+    }
     return true;
 };
 
 const broadcastToAllExceptLocal = async (
     message: WSMessage,
-    excludeClientId?: string
+    excludeClientId?: string,
+    options: SendMessageOptions = {}
 ): Promise<void> => {
     connectedClients.forEach((clients, mapKey) => {
-        const [type, id] = mapKey.split(":");
-        if (!(excludeClientId && id === excludeClientId)) {
-            clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(message));
-                }
-            });
+        const clientId = mapKey; // mapKey is the clientId
+        if (!(excludeClientId && clientId === excludeClientId)) {
+            // Handle config version per client
+            if (options.incrementConfigVersion) {
+                const currentVersion = clientConfigVersions.get(clientId) || 0;
+                const newVersion = currentVersion + 1;
+                clientConfigVersions.set(clientId, newVersion);
+                clients.forEach((client) => {
+                    client.configVersion = newVersion;
+                });
+            }
+            // Include config version in message for this client
+            const configVersion = clientConfigVersions.get(clientId) || 0;
+            const messageWithVersion = {
+                ...message,
+                configVersion
+            };
+            if (options.compress) {
+                const compressed = zlib.gzipSync(
+                    Buffer.from(JSON.stringify(messageWithVersion), "utf8")
+                );
+                clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(compressed);
+                    }
+                });
+            } else {
+                clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(messageWithVersion));
+                    }
+                });
+            }
         }
     });
 };
@@ -119,10 +181,18 @@ const broadcastToAllExceptLocal = async (
 // Cross-node message sending
 const sendToClient = async (
     clientId: string,
-    message: WSMessage
+    message: WSMessage,
+    options: SendMessageOptions = {}
 ): Promise<boolean> => {
+    // Increment config version if requested
+    if (options.incrementConfigVersion) {
+        const currentVersion = clientConfigVersions.get(clientId) || 0;
+        const newVersion = currentVersion + 1;
+        clientConfigVersions.set(clientId, newVersion);
+    }
+
     // Try to send locally first
-    const localSent = await sendToClientLocal(clientId, message);
+    const localSent = await sendToClientLocal(clientId, message, options);
 
     logger.debug(
         `sendToClient: Message type ${message.type} sent to clientId ${clientId}`
@@ -133,10 +203,11 @@ const sendToClient = async (
 
 const broadcastToAllExcept = async (
     message: WSMessage,
-    excludeClientId?: string
+    excludeClientId?: string,
+    options: SendMessageOptions = {}
 ): Promise<void> => {
     // Broadcast locally
-    await broadcastToAllExceptLocal(message, excludeClientId);
+    await broadcastToAllExceptLocal(message, excludeClientId, options);
 };
 
 // Check if a client has active connections across all nodes
@@ -144,6 +215,13 @@ const hasActiveConnections = async (clientId: string): Promise<boolean> => {
     const mapKey = getClientMapKey(clientId);
     const clients = connectedClients.get(mapKey);
     return !!(clients && clients.length > 0);
+};
+
+// Get the current config version for a client
+const getClientConfigVersion = async (clientId: string): Promise<number | undefined> => {
+    const version = clientConfigVersions.get(clientId);
+    logger.debug(`getClientConfigVersion called for clientId: ${clientId}, returning: ${version} (type: ${typeof version})`);
+    return version;
 };
 
 // Get all active nodes for a client
@@ -230,9 +308,12 @@ const setupConnection = async (
         clientType === "newt" ? (client as Newt).newtId : (client as Olm).olmId;
     await addClient(clientType, clientId, ws);
 
-    ws.on("message", async (data) => {
+    ws.on("message", async (data, isBinary) => {
         try {
-            const message: WSMessage = JSON.parse(data.toString());
+            const messageBuffer = isBinary
+                ? zlib.gunzipSync(data as Buffer)
+                : (data as Buffer);
+            const message: WSMessage = JSON.parse(messageBuffer.toString());
 
             if (!message.type || typeof message.type !== "string") {
                 throw new Error(
@@ -259,15 +340,21 @@ const setupConnection = async (
                 if (response.broadcast) {
                     await broadcastToAllExcept(
                         response.message,
-                        response.excludeSender ? clientId : undefined
+                        response.excludeSender ? clientId : undefined,
+                        response.options
                     );
                 } else if (response.targetClientId) {
                     await sendToClient(
                         response.targetClientId,
-                        response.message
+                        response.message,
+                        response.options
                     );
                 } else {
-                    ws.send(JSON.stringify(response.message));
+                    await sendToClient(
+                        clientId,
+                        response.message,
+                        response.options
+                    );
                 }
             }
         } catch (error) {
@@ -293,6 +380,23 @@ const setupConnection = async (
             `Client disconnected - ${clientType.toUpperCase()} ID: ${clientId}`
         );
     });
+
+    // Handle WebSocket protocol-level pings from older newt clients that do
+    // not send application-level "newt/ping" messages. Update the site's
+    // online state and lastPing timestamp so the offline checker treats them
+    // the same as modern newt clients.
+    if (clientType === "newt") {
+        const newtClient = client as Newt;
+        ws.on("ping", () => {
+            if (!newtClient.siteId) return;
+            // Record the ping in the accumulator instead of writing to the
+            // database on every WS ping frame. The accumulator flushes all
+            // pending pings in a single batched UPDATE every ~10s, which
+            // prevents connection pool exhaustion under load (especially
+            // with cross-region latency to the database).
+            recordPing(newtClient.siteId);
+        });
+    }
 
     ws.on("error", (error: Error) => {
         logger.error(
@@ -434,5 +538,6 @@ export {
     getActiveNodes,
     disconnectClient,
     NODE_ID,
-    cleanup
+    cleanup,
+    getClientConfigVersion
 };

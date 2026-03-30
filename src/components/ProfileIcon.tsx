@@ -14,9 +14,12 @@ import {
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { toast } from "@app/hooks/useToast";
 import { formatAxiosError } from "@app/lib/api";
-import { Laptop, LogOut, Moon, Sun, Smartphone } from "lucide-react";
+import { getUserDisplayName } from "@app/lib/getUserDisplayName";
+import { Laptop, LogOut, Moon, Sun, Smartphone, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { build } from "@server/build";
 import { useState } from "react";
 import { useUserContext } from "@app/hooks/useUserContext";
 import Disable2FaForm from "./Disable2FaForm";
@@ -49,9 +52,8 @@ export default function ProfileIcon() {
     const t = useTranslations();
 
     function getInitials() {
-        return (user.email || user.name || user.username)
-            .substring(0, 1)
-            .toUpperCase();
+        const displayName = getUserDisplayName({ user });
+        return displayName.substring(0, 1).toUpperCase();
     }
 
     function handleThemeChange(theme: "light" | "dark" | "system") {
@@ -109,7 +111,7 @@ export default function ProfileIcon() {
                                 {t("signingAs")}
                             </p>
                             <p className="text-xs leading-none text-muted-foreground">
-                                {user.email || user.name || user.username}
+                                {getUserDisplayName({ user })}
                             </p>
                         </div>
                         {user.serverAdmin ? (
@@ -187,6 +189,20 @@ export default function ProfileIcon() {
                     <DropdownMenuSeparator />
                     <LocaleSwitcher />
                     <DropdownMenuSeparator />
+                    {user?.type === UserType.Internal && !user?.serverAdmin && (
+                        <>
+                            <DropdownMenuItem asChild>
+                                <Link
+                                    href="/auth/delete-account"
+                                    className="flex cursor-pointer items-center"
+                                >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    <span>{t("deleteAccount")}</span>
+                                </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                        </>
+                    )}
                     <DropdownMenuItem onClick={() => logout()}>
                         {/* <LogOut className="mr-2 h-4 w-4" /> */}
                         <span>{t("logout")}</span>

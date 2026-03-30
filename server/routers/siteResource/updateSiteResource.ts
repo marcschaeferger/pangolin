@@ -1,44 +1,55 @@
-import { Request, Response, NextFunction } from "express";
-import { z } from "zod";
+import { isLicensedOrSubscribed } from "#dynamic/lib/isLicencedOrSubscribed";
 import {
     clientSiteResources,
     clientSiteResourcesAssociationsCache,
     db,
     newts,
+    orgs,
     roles,
     roleSiteResources,
+    SiteResource,
+    siteResources,
     sites,
     Transaction,
     userSiteResources
 } from "@server/db";
-import { siteResources, SiteResource } from "@server/db";
-import response from "@server/lib/response";
-import HttpCode from "@server/types/HttpCode";
-import createHttpError from "http-errors";
-import { eq, and, ne } from "drizzle-orm";
-import { fromError } from "zod-validation-error";
-import logger from "@server/logger";
-import { OpenAPITags, registry } from "@server/openApi";
-import { updatePeerData, updateTargets } from "@server/routers/client/targets";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import {
     generateAliasConfig,
     generateRemoteSubnets,
-    generateSubnetProxyTargets
+    generateSubnetProxyTargetV2,
+    isIpInCidr,
+    portRangeStringSchema
 } from "@server/lib/ip";
-import {
-    getClientSiteResourceAccess,
-    rebuildClientAssociationsFromSiteResource
-} from "@server/lib/rebuildClientAssociations";
+import { rebuildClientAssociationsFromSiteResource } from "@server/lib/rebuildClientAssociations";
+import response from "@server/lib/response";
+import logger from "@server/logger";
+import { OpenAPITags, registry } from "@server/openApi";
+import { updatePeerData, updateTargets } from "@server/routers/client/targets";
+import HttpCode from "@server/types/HttpCode";
+import { and, eq, ne } from "drizzle-orm";
+import { NextFunction, Request, Response } from "express";
+import createHttpError from "http-errors";
+import { z } from "zod";
+import { fromError } from "zod-validation-error";
 
 const updateSiteResourceParamsSchema = z.strictObject({
-    siteResourceId: z.string().transform(Number).pipe(z.int().positive()),
-    siteId: z.string().transform(Number).pipe(z.int().positive()),
-    orgId: z.string()
+    siteResourceId: z.string().transform(Number).pipe(z.int().positive())
 });
 
 const updateSiteResourceSchema = z
     .strictObject({
         name: z.string().min(1).max(255).optional(),
+        siteId: z.int(),
+        niceId: z
+            .string()
+            .min(1)
+            .max(255)
+            .regex(
+                /^[a-zA-Z0-9-]+$/,
+                "niceId can only contain letters, numbers, and dashes"
+            )
+            .optional(),
         // mode: z.enum(["host", "cidr", "port"]).optional(),
         mode: z.enum(["host", "cidr"]).optional(),
         // protocol: z.enum(["tcp", "udp"]).nullish(),
@@ -49,13 +60,18 @@ const updateSiteResourceSchema = z
         alias: z
             .string()
             .regex(
-                /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/,
-                "Alias must be a fully qualified domain name (e.g., example.internal)"
+                /^(?:[a-zA-Z0-9*?](?:[a-zA-Z0-9*?-]{0,61}[a-zA-Z0-9*?])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/,
+                "Alias must be a fully qualified domain name with optional wildcards (e.g., example.internal, *.example.internal, host-0?.example.internal)"
             )
             .nullish(),
         userIds: z.array(z.string()),
         roleIds: z.array(z.int()),
-        clientIds: z.array(z.int())
+        clientIds: z.array(z.int()),
+        tcpPortRangeString: portRangeStringSchema,
+        udpPortRangeString: portRangeStringSchema,
+        disableIcmp: z.boolean().optional(),
+        authDaemonPort: z.int().positive().nullish(),
+        authDaemonMode: z.enum(["site", "remote"]).optional()
     })
     .strict()
     .refine(
@@ -74,7 +90,10 @@ const updateSiteResourceSchema = z
                 const domainRegex =
                     /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
                 const isValidDomain = domainRegex.test(data.destination);
-                const isValidAlias = data.alias && domainRegex.test(data.alias);
+                const isValidAlias =
+                    data.alias !== undefined &&
+                    data.alias !== null &&
+                    data.alias.trim() !== "";
 
                 return isValidDomain && isValidAlias; // require the alias to be set in the case of domain
             }
@@ -90,8 +109,7 @@ const updateSiteResourceSchema = z
             if (data.mode === "cidr" && data.destination) {
                 // Check if it's a valid CIDR (v4 or v6)
                 const isValidCIDR = z
-                    // .union([z.cidrv4(), z.cidrv6()])
-                    .union([z.cidrv4()]) // for now lets just do ipv4 until we verify ipv6 works everywhere
+                    .union([z.cidrv4(), z.cidrv6()])
                     .safeParse(data.destination).success;
                 return isValidCIDR;
             }
@@ -107,9 +125,9 @@ export type UpdateSiteResourceResponse = SiteResource;
 
 registry.registerPath({
     method: "post",
-    path: "/org/{orgId}/site/{siteId}/resource/{siteResourceId}",
+    path: "/site-resource/{siteResourceId}",
     description: "Update a site resource.",
-    tags: [OpenAPITags.Client, OpenAPITags.Org],
+    tags: [OpenAPITags.PrivateResource],
     request: {
         params: updateSiteResourceParamsSchema,
         body: {
@@ -151,22 +169,29 @@ export async function updateSiteResource(
             );
         }
 
-        const { siteResourceId, siteId, orgId } = parsedParams.data;
+        const { siteResourceId } = parsedParams.data;
         const {
             name,
+            siteId, // because it can change
+            niceId,
             mode,
             destination,
             alias,
             enabled,
             userIds,
             roleIds,
-            clientIds
+            clientIds,
+            tcpPortRangeString,
+            udpPortRangeString,
+            disableIcmp,
+            authDaemonPort,
+            authDaemonMode
         } = parsedBody.data;
 
         const [site] = await db
             .select()
             .from(sites)
-            .where(and(eq(sites.siteId, siteId), eq(sites.orgId, orgId)))
+            .where(eq(sites.siteId, siteId))
             .limit(1);
 
         if (!site) {
@@ -177,19 +202,77 @@ export async function updateSiteResource(
         const [existingSiteResource] = await db
             .select()
             .from(siteResources)
-            .where(
-                and(
-                    eq(siteResources.siteResourceId, siteResourceId),
-                    eq(siteResources.siteId, siteId),
-                    eq(siteResources.orgId, orgId)
-                )
-            )
+            .where(and(eq(siteResources.siteResourceId, siteResourceId)))
             .limit(1);
 
         if (!existingSiteResource) {
             return next(
                 createHttpError(HttpCode.NOT_FOUND, "Site resource not found")
             );
+        }
+
+        const isLicensedSshPam = await isLicensedOrSubscribed(
+            existingSiteResource.orgId,
+            tierMatrix.sshPam
+        );
+
+        const [org] = await db
+            .select()
+            .from(orgs)
+            .where(eq(orgs.orgId, existingSiteResource.orgId))
+            .limit(1);
+
+        if (!org) {
+            return next(
+                createHttpError(HttpCode.NOT_FOUND, "Organization not found")
+            );
+        }
+
+        if (!org.subnet || !org.utilitySubnet) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    `Organization with ID ${existingSiteResource.orgId} has no subnet or utilitySubnet defined defined`
+                )
+            );
+        }
+
+        // Only check if destination is an IP address
+        const isIp = z
+            .union([z.ipv4(), z.ipv6()])
+            .safeParse(destination).success;
+        if (
+            isIp &&
+            (isIpInCidr(destination!, org.subnet) ||
+                isIpInCidr(destination!, org.utilitySubnet))
+        ) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "IP can not be in the CIDR range of the organization's subnet or utility subnet"
+                )
+            );
+        }
+
+        let existingSite = site;
+        let siteChanged = false;
+        if (existingSiteResource.siteId !== siteId) {
+            siteChanged = true;
+            // get the existing site
+            [existingSite] = await db
+                .select()
+                .from(sites)
+                .where(eq(sites.siteId, existingSiteResource.siteId))
+                .limit(1);
+
+            if (!existingSite) {
+                return next(
+                    createHttpError(
+                        HttpCode.NOT_FOUND,
+                        "Existing site not found"
+                    )
+                );
+            }
         }
 
         // make sure the alias is unique within the org if provided
@@ -199,7 +282,7 @@ export async function updateSiteResource(
                 .from(siteResources)
                 .where(
                     and(
-                        eq(siteResources.orgId, orgId),
+                        eq(siteResources.orgId, existingSiteResource.orgId),
                         eq(siteResources.alias, alias.trim()),
                         ne(siteResources.siteResourceId, siteResourceId) // exclude self
                     )
@@ -218,97 +301,249 @@ export async function updateSiteResource(
 
         let updatedSiteResource: SiteResource | undefined;
         await db.transaction(async (trx) => {
-            // Update the site resource
-            [updatedSiteResource] = await trx
-                .update(siteResources)
-                .set({
-                    name: name,
-                    mode: mode,
-                    destination: destination,
-                    enabled: enabled,
-                    alias: alias && alias.trim() ? alias : null
-                })
-                .where(
-                    and(
-                        eq(siteResources.siteResourceId, siteResourceId),
-                        eq(siteResources.siteId, siteId),
-                        eq(siteResources.orgId, orgId)
-                    )
-                )
-                .returning();
-
-            //////////////////// update the associations ////////////////////
-
-            await trx
-                .delete(clientSiteResources)
-                .where(eq(clientSiteResources.siteResourceId, siteResourceId));
-
-            if (clientIds.length > 0) {
-                await trx.insert(clientSiteResources).values(
-                    clientIds.map((clientId) => ({
-                        clientId,
-                        siteResourceId
-                    }))
-                );
-            }
-
-            await trx
-                .delete(userSiteResources)
-                .where(eq(userSiteResources.siteResourceId, siteResourceId));
-
-            if (userIds.length > 0) {
+            // if the site is changed we need to delete and recreate the resource to avoid complications with the rebuild function otherwise we can just update in place
+            if (siteChanged) {
+                // delete the existing site resource
                 await trx
-                    .insert(userSiteResources)
-                    .values(
-                        userIds.map((userId) => ({ userId, siteResourceId }))
+                    .delete(siteResources)
+                    .where(
+                        and(eq(siteResources.siteResourceId, siteResourceId))
                     );
-            }
 
-            // Get all admin role IDs for this org to exclude from deletion
-            const adminRoles = await trx
-                .select()
-                .from(roles)
-                .where(
-                    and(
-                        eq(roles.isAdmin, true),
-                        eq(roles.orgId, updatedSiteResource.orgId)
-                    )
+                await rebuildClientAssociationsFromSiteResource(
+                    existingSiteResource,
+                    trx
                 );
-            const adminRoleIds = adminRoles.map((role) => role.roleId);
 
-            if (adminRoleIds.length > 0) {
-                await trx.delete(roleSiteResources).where(
-                    and(
-                        eq(roleSiteResources.siteResourceId, siteResourceId),
-                        ne(roleSiteResources.roleId, adminRoleIds[0]) // delete all but the admin role
+                // create the new site resource from the removed one - the ID should stay the same
+                const [insertedSiteResource] = await trx
+                    .insert(siteResources)
+                    .values({
+                        ...existingSiteResource
+                    })
+                    .returning();
+
+                // wait some time to allow for messages to be handled
+                await new Promise((resolve) => setTimeout(resolve, 750));
+
+                const sshPamSet =
+                    isLicensedSshPam &&
+                    (authDaemonPort !== undefined ||
+                        authDaemonMode !== undefined)
+                        ? {
+                              ...(authDaemonPort !== undefined && {
+                                  authDaemonPort
+                              }),
+                              ...(authDaemonMode !== undefined && {
+                                  authDaemonMode
+                              })
+                          }
+                        : {};
+                [updatedSiteResource] = await trx
+                    .update(siteResources)
+                    .set({
+                        name,
+                        siteId,
+                        niceId,
+                        mode,
+                        destination,
+                        enabled,
+                        alias: alias && alias.trim() ? alias : null,
+                        tcpPortRangeString,
+                        udpPortRangeString,
+                        disableIcmp,
+                        ...sshPamSet
+                    })
+                    .where(
+                        and(
+                            eq(
+                                siteResources.siteResourceId,
+                                insertedSiteResource.siteResourceId
+                            )
+                        )
                     )
+                    .returning();
+
+                if (!updatedSiteResource) {
+                    throw new Error(
+                        "Failed to create updated site resource after site change"
+                    );
+                }
+
+                //////////////////// update the associations ////////////////////
+
+                const [adminRole] = await trx
+                    .select()
+                    .from(roles)
+                    .where(
+                        and(
+                            eq(roles.isAdmin, true),
+                            eq(roles.orgId, updatedSiteResource.orgId)
+                        )
+                    )
+                    .limit(1);
+
+                if (!adminRole) {
+                    return next(
+                        createHttpError(
+                            HttpCode.NOT_FOUND,
+                            `Admin role not found`
+                        )
+                    );
+                }
+
+                await trx.insert(roleSiteResources).values({
+                    roleId: adminRole.roleId,
+                    siteResourceId: updatedSiteResource.siteResourceId
+                });
+
+                if (roleIds.length > 0) {
+                    await trx.insert(roleSiteResources).values(
+                        roleIds.map((roleId) => ({
+                            roleId,
+                            siteResourceId: updatedSiteResource!.siteResourceId
+                        }))
+                    );
+                }
+
+                if (userIds.length > 0) {
+                    await trx.insert(userSiteResources).values(
+                        userIds.map((userId) => ({
+                            userId,
+                            siteResourceId: updatedSiteResource!.siteResourceId
+                        }))
+                    );
+                }
+
+                if (clientIds.length > 0) {
+                    await trx.insert(clientSiteResources).values(
+                        clientIds.map((clientId) => ({
+                            clientId,
+                            siteResourceId: updatedSiteResource!.siteResourceId
+                        }))
+                    );
+                }
+
+                await rebuildClientAssociationsFromSiteResource(
+                    updatedSiteResource,
+                    trx
                 );
             } else {
-                await trx
-                    .delete(roleSiteResources)
+                // Update the site resource
+                const sshPamSet =
+                    isLicensedSshPam &&
+                    (authDaemonPort !== undefined ||
+                        authDaemonMode !== undefined)
+                        ? {
+                              ...(authDaemonPort !== undefined && {
+                                  authDaemonPort
+                              }),
+                              ...(authDaemonMode !== undefined && {
+                                  authDaemonMode
+                              })
+                          }
+                        : {};
+                [updatedSiteResource] = await trx
+                    .update(siteResources)
+                    .set({
+                        name: name,
+                        siteId: siteId,
+                        mode: mode,
+                        destination: destination,
+                        enabled: enabled,
+                        alias: alias && alias.trim() ? alias : null,
+                        tcpPortRangeString: tcpPortRangeString,
+                        udpPortRangeString: udpPortRangeString,
+                        disableIcmp: disableIcmp,
+                        ...sshPamSet
+                    })
                     .where(
-                        eq(roleSiteResources.siteResourceId, siteResourceId)
-                    );
-            }
+                        and(eq(siteResources.siteResourceId, siteResourceId))
+                    )
+                    .returning();
 
-            if (roleIds.length > 0) {
+                //////////////////// update the associations ////////////////////
+
                 await trx
-                    .insert(roleSiteResources)
-                    .values(
-                        roleIds.map((roleId) => ({ roleId, siteResourceId }))
+                    .delete(clientSiteResources)
+                    .where(
+                        eq(clientSiteResources.siteResourceId, siteResourceId)
                     );
+
+                if (clientIds.length > 0) {
+                    await trx.insert(clientSiteResources).values(
+                        clientIds.map((clientId) => ({
+                            clientId,
+                            siteResourceId
+                        }))
+                    );
+                }
+
+                await trx
+                    .delete(userSiteResources)
+                    .where(
+                        eq(userSiteResources.siteResourceId, siteResourceId)
+                    );
+
+                if (userIds.length > 0) {
+                    await trx.insert(userSiteResources).values(
+                        userIds.map((userId) => ({
+                            userId,
+                            siteResourceId
+                        }))
+                    );
+                }
+
+                // Get all admin role IDs for this org to exclude from deletion
+                const adminRoles = await trx
+                    .select()
+                    .from(roles)
+                    .where(
+                        and(
+                            eq(roles.isAdmin, true),
+                            eq(roles.orgId, updatedSiteResource.orgId)
+                        )
+                    );
+                const adminRoleIds = adminRoles.map((role) => role.roleId);
+
+                if (adminRoleIds.length > 0) {
+                    await trx.delete(roleSiteResources).where(
+                        and(
+                            eq(
+                                roleSiteResources.siteResourceId,
+                                siteResourceId
+                            ),
+                            ne(roleSiteResources.roleId, adminRoleIds[0]) // delete all but the admin role
+                        )
+                    );
+                } else {
+                    await trx
+                        .delete(roleSiteResources)
+                        .where(
+                            eq(roleSiteResources.siteResourceId, siteResourceId)
+                        );
+                }
+
+                if (roleIds.length > 0) {
+                    await trx.insert(roleSiteResources).values(
+                        roleIds.map((roleId) => ({
+                            roleId,
+                            siteResourceId
+                        }))
+                    );
+                }
+
+                logger.info(
+                    `Updated site resource ${siteResourceId} for site ${siteId}`
+                );
+
+                await handleMessagingForUpdatedSiteResource(
+                    existingSiteResource,
+                    updatedSiteResource,
+                    { siteId: site.siteId, orgId: site.orgId },
+                    trx
+                );
             }
-
-            logger.info(
-                `Updated site resource ${siteResourceId} for site ${siteId}`
-            );
-
-            await handleMessagingForUpdatedSiteResource(
-                existingSiteResource,
-                updatedSiteResource!,
-                { siteId: site.siteId, orgId: site.orgId },
-                trx
-            );
         });
 
         return response(res, {
@@ -335,6 +570,15 @@ export async function handleMessagingForUpdatedSiteResource(
     site: { siteId: number; orgId: string },
     trx: Transaction
 ) {
+    logger.debug(
+        "handleMessagingForUpdatedSiteResource: existingSiteResource is: ",
+        existingSiteResource
+    );
+    logger.debug(
+        "handleMessagingForUpdatedSiteResource: updatedSiteResource is: ",
+        updatedSiteResource
+    );
+
     const { mergedAllClients } =
         await rebuildClientAssociationsFromSiteResource(
             existingSiteResource || updatedSiteResource, // we want to rebuild based on the existing resource then we will apply the change to the destination below
@@ -348,10 +592,18 @@ export async function handleMessagingForUpdatedSiteResource(
     const aliasChanged =
         existingSiteResource &&
         existingSiteResource.alias !== updatedSiteResource.alias;
+    const portRangesChanged =
+        existingSiteResource &&
+        (existingSiteResource.tcpPortRangeString !==
+            updatedSiteResource.tcpPortRangeString ||
+            existingSiteResource.udpPortRangeString !==
+                updatedSiteResource.udpPortRangeString ||
+            existingSiteResource.disableIcmp !==
+                updatedSiteResource.disableIcmp);
 
     // if the existingSiteResource is undefined (new resource) we don't need to do anything here, the rebuild above handled it all
 
-    if (destinationChanged || aliasChanged) {
+    if (destinationChanged || aliasChanged || portRangesChanged) {
         const [newt] = await trx
             .select()
             .from(newts)
@@ -365,20 +617,24 @@ export async function handleMessagingForUpdatedSiteResource(
         }
 
         // Only update targets on newt if destination changed
-        if (destinationChanged) {
-            const oldTargets = generateSubnetProxyTargets(
+        if (destinationChanged || portRangesChanged) {
+            const oldTarget = generateSubnetProxyTargetV2(
                 existingSiteResource,
                 mergedAllClients
             );
-            const newTargets = generateSubnetProxyTargets(
+            const newTarget = generateSubnetProxyTargetV2(
                 updatedSiteResource,
                 mergedAllClients
             );
 
-            await updateTargets(newt.newtId, {
-                oldTargets: oldTargets,
-                newTargets: newTargets
-            });
+            await updateTargets(
+                newt.newtId,
+                {
+                    oldTargets: oldTarget ? [oldTarget] : [],
+                    newTargets: newTarget ? [newTarget] : []
+                },
+                newt.version
+            );
         }
 
         const olmJobs: Promise<void>[] = [];

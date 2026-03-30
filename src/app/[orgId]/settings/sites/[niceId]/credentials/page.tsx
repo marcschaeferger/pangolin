@@ -20,10 +20,6 @@ import { PickSiteDefaultsResponse } from "@server/routers/site";
 import { useSiteContext } from "@app/hooks/useSiteContext";
 import { generateKeypair } from "../wireguardConfig";
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
-import { useLicenseStatusContext } from "@app/hooks/useLicenseStatusContext";
-import { useSubscriptionStatusContext } from "@app/hooks/useSubscriptionStatusContext";
-import { build } from "@server/build";
-import { SecurityFeaturesAlert } from "@app/components/SecurityFeaturesAlert";
 import {
     InfoSection,
     InfoSectionContent,
@@ -39,6 +35,11 @@ import {
     generateObfuscatedWireGuardConfig
 } from "@app/lib/wireguard";
 import { QRCodeCanvas } from "qrcode.react";
+import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
+import { NewtSiteInstallCommands } from "@app/components/newt-install-commands";
+import { usePaidStatus } from "@app/hooks/usePaidStatus";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
+import type { AxiosResponse } from "axios";
 
 export default function CredentialsPage() {
     const { env } = useEnvContext();
@@ -64,15 +65,7 @@ export default function CredentialsPage() {
     const [loadingDefaults, setLoadingDefaults] = useState(false);
     const [shouldDisconnect, setShouldDisconnect] = useState(true);
 
-    const { licenseStatus, isUnlocked } = useLicenseStatusContext();
-    const subscription = useSubscriptionStatusContext();
-
-    const isSecurityFeatureDisabled = () => {
-        const isEnterpriseNotLicensed = build === "enterprise" && !isUnlocked();
-        const isSaasNotSubscribed =
-            build === "saas" && !subscription?.isSubscribed();
-        return isEnterpriseNotLicensed || isSaasNotSubscribed;
-    };
+    const { isPaidUser } = usePaidStatus();
 
     // Fetch site defaults for wireguard sites to show in obfuscated config
     useEffect(() => {
@@ -108,7 +101,9 @@ export default function CredentialsPage() {
                 generatedPublicKey = generatedKeypair.publicKey;
                 setPublicKey(generatedPublicKey);
 
-                const res = await api.get(`/org/${orgId}/pick-site-defaults`);
+                const res = await api.get<
+                    AxiosResponse<PickSiteDefaultsResponse>
+                >(`/org/${orgId}/pick-site-defaults`);
                 if (res && res.status === 200) {
                     const data = res.data.data;
                     setSiteDefaults(data);
@@ -116,7 +111,7 @@ export default function CredentialsPage() {
                     // generate config with the fetched data
                     generatedWgConfig = generateWireGuardConfig(
                         generatedKeypair.privateKey,
-                        data.publicKey,
+                        generatedKeypair.publicKey,
                         data.subnet,
                         data.address,
                         data.endpoint,
@@ -186,107 +181,129 @@ export default function CredentialsPage() {
         return site?.name || site?.niceId || "My site";
     };
 
-    const displayNewtId = currentNewtId || siteDefaults?.newtId || null;
-    const displaySecret = regeneratedSecret || null;
+    const displayNewtId = currentNewtId ?? siteDefaults?.newtId ?? null;
+    const displaySecret = regeneratedSecret ?? null;
 
     return (
         <>
             <SettingsContainer>
                 {site?.type === "newt" && (
-                    <SettingsSection>
-                        <SettingsSectionHeader>
-                            <SettingsSectionTitle>
-                                {t("siteNewtCredentials")}
-                            </SettingsSectionTitle>
-                            <SettingsSectionDescription>
-                                {t("siteNewtCredentialsDescription")}
-                            </SettingsSectionDescription>
-                        </SettingsSectionHeader>
+                    <>
+                        <SettingsSection>
+                            <SettingsSectionHeader>
+                                <SettingsSectionTitle>
+                                    {t("siteNewtCredentials")}
+                                </SettingsSectionTitle>
+                                <SettingsSectionDescription>
+                                    {t("siteNewtCredentialsDescription")}
+                                </SettingsSectionDescription>
+                            </SettingsSectionHeader>
 
-                        <SecurityFeaturesAlert />
+                            <PaidFeaturesAlert
+                                tiers={tierMatrix.rotateCredentials}
+                            />
 
-                        <SettingsSectionBody>
-                            <InfoSections cols={3}>
-                                <InfoSection>
-                                    <InfoSectionTitle>
-                                        {t("newtEndpoint")}
-                                    </InfoSectionTitle>
-                                    <InfoSectionContent>
-                                        <CopyToClipboard
-                                            text={env.app.dashboardUrl}
-                                        />
-                                    </InfoSectionContent>
-                                </InfoSection>
-                                <InfoSection>
-                                    <InfoSectionTitle>
-                                        {t("newtId")}
-                                    </InfoSectionTitle>
-                                    <InfoSectionContent>
-                                        {displayNewtId ? (
+                            <SettingsSectionBody>
+                                <InfoSections cols={3}>
+                                    <InfoSection>
+                                        <InfoSectionTitle>
+                                            {t("newtEndpoint")}
+                                        </InfoSectionTitle>
+                                        <InfoSectionContent>
                                             <CopyToClipboard
-                                                text={displayNewtId}
+                                                text={env.app.dashboardUrl}
                                             />
-                                        ) : (
-                                            <span>{"••••••••••••••••"}</span>
-                                        )}
-                                    </InfoSectionContent>
-                                </InfoSection>
-                                <InfoSection>
-                                    <InfoSectionTitle>
-                                        {t("newtSecretKey")}
-                                    </InfoSectionTitle>
-                                    <InfoSectionContent>
-                                        {displaySecret ? (
-                                            <CopyToClipboard
-                                                text={displaySecret}
-                                            />
-                                        ) : (
-                                            <span>
-                                                {
-                                                    "••••••••••••••••••••••••••••••••"
-                                                }
-                                            </span>
-                                        )}
-                                    </InfoSectionContent>
-                                </InfoSection>
-                            </InfoSections>
+                                        </InfoSectionContent>
+                                    </InfoSection>
+                                    <InfoSection>
+                                        <InfoSectionTitle>
+                                            {t("newtId")}
+                                        </InfoSectionTitle>
+                                        <InfoSectionContent>
+                                            {displayNewtId ? (
+                                                <CopyToClipboard
+                                                    text={displayNewtId}
+                                                />
+                                            ) : (
+                                                <span>
+                                                    {"••••••••••••••••"}
+                                                </span>
+                                            )}
+                                        </InfoSectionContent>
+                                    </InfoSection>
+                                    <InfoSection>
+                                        <InfoSectionTitle>
+                                            {t("newtSecretKey")}
+                                        </InfoSectionTitle>
+                                        <InfoSectionContent>
+                                            {displaySecret ? (
+                                                <CopyToClipboard
+                                                    text={displaySecret}
+                                                />
+                                            ) : (
+                                                <span>
+                                                    {
+                                                        "••••••••••••••••••••••••••••••••"
+                                                    }
+                                                </span>
+                                            )}
+                                        </InfoSectionContent>
+                                    </InfoSection>
+                                </InfoSections>
 
-                            {showCredentialsAlert && displaySecret && (
-                                <Alert variant="neutral" className="mt-4">
-                                    <InfoIcon className="h-4 w-4" />
-                                    <AlertTitle className="font-semibold">
-                                        {t("siteCredentialsSave")}
-                                    </AlertTitle>
-                                    <AlertDescription>
-                                        {t("siteCredentialsSaveDescription")}
-                                    </AlertDescription>
-                                </Alert>
+                                {showCredentialsAlert && displaySecret && (
+                                    <Alert variant="neutral" className="mt-4">
+                                        <InfoIcon className="h-4 w-4" />
+                                        <AlertTitle className="font-semibold">
+                                            {t("siteCredentialsSave")}
+                                        </AlertTitle>
+                                        <AlertDescription>
+                                            {t(
+                                                "siteCredentialsSaveDescription"
+                                            )}
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
+                            </SettingsSectionBody>
+                            {!env.flags.disableEnterpriseFeatures && (
+                                <SettingsSectionFooter>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            setShouldDisconnect(false);
+                                            setModalOpen(true);
+                                        }}
+                                        disabled={
+                                            !isPaidUser(
+                                                tierMatrix.rotateCredentials
+                                            )
+                                        }
+                                    >
+                                        {t("regenerateCredentialsButton")}
+                                    </Button>
+                                    <Button
+                                        onClick={() => {
+                                            setShouldDisconnect(true);
+                                            setModalOpen(true);
+                                        }}
+                                        disabled={
+                                            !isPaidUser(
+                                                tierMatrix.rotateCredentials
+                                            )
+                                        }
+                                    >
+                                        {t("siteRegenerateAndDisconnect")}
+                                    </Button>
+                                </SettingsSectionFooter>
                             )}
-                        </SettingsSectionBody>
-                        {build !== "oss" && (
-                            <SettingsSectionFooter>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => {
-                                        setShouldDisconnect(false);
-                                        setModalOpen(true);
-                                    }}
-                                    disabled={isSecurityFeatureDisabled()}
-                                >
-                                    {t("regenerateCredentialsButton")}
-                                </Button>
-                                <Button
-                                    onClick={() => {
-                                        setShouldDisconnect(true);
-                                        setModalOpen(true);
-                                    }}
-                                    disabled={isSecurityFeatureDisabled()}
-                                >
-                                    {t("siteRegenerateAndDisconnect")}
-                                </Button>
-                            </SettingsSectionFooter>
-                        )}
-                    </SettingsSection>
+                        </SettingsSection>
+
+                        <NewtSiteInstallCommands
+                            id={displayNewtId ?? "**********"}
+                            secret={displaySecret ?? "**************"}
+                            endpoint={env.app.dashboardUrl}
+                        />
+                    </>
                 )}
 
                 {site?.type === "wireguard" && (
@@ -300,13 +317,15 @@ export default function CredentialsPage() {
                             </SettingsSectionDescription>
                         </SettingsSectionHeader>
 
-                        <SecurityFeaturesAlert />
+                        <PaidFeaturesAlert
+                            tiers={tierMatrix.rotateCredentials}
+                        />
 
                         <SettingsSectionBody>
                             {!loadingDefaults && (
                                 <>
                                     {wgConfig ? (
-                                        <div className="flex items-center gap-4">
+                                        <div className="flex flex-col lg:flex-row items-center gap-4">
                                             <CopyTextBox
                                                 text={wgConfig}
                                                 outline={true}
@@ -326,25 +345,20 @@ export default function CredentialsPage() {
                                             text={generateObfuscatedWireGuardConfig(
                                                 {
                                                     subnet:
-                                                        siteDefaults?.subnet ||
                                                         site?.subnet ||
+                                                        siteDefaults?.subnet ||
                                                         null,
                                                     address:
-                                                        siteDefaults?.address ||
                                                         site?.address ||
+                                                        siteDefaults?.address ||
                                                         null,
                                                     endpoint:
-                                                        siteDefaults?.endpoint ||
                                                         site?.endpoint ||
+                                                        siteDefaults?.endpoint ||
                                                         null,
                                                     listenPort:
-                                                        siteDefaults?.listenPort ||
                                                         site?.listenPort ||
-                                                        null,
-                                                    publicKey:
-                                                        siteDefaults?.publicKey ||
-                                                        site?.publicKey ||
-                                                        site?.pubKey ||
+                                                        siteDefaults?.listenPort ||
                                                         null
                                                 }
                                             )}
@@ -370,11 +384,15 @@ export default function CredentialsPage() {
                                 </>
                             )}
                         </SettingsSectionBody>
-                        {build === "enterprise" && (
+                        {!env.flags.disableEnterpriseFeatures && (
                             <SettingsSectionFooter>
                                 <Button
                                     onClick={() => setModalOpen(true)}
-                                    disabled={isSecurityFeatureDisabled()}
+                                    disabled={
+                                        !isPaidUser(
+                                            tierMatrix.rotateCredentials
+                                        )
+                                    }
                                 >
                                     {t("siteRegenerateAndDisconnect")}
                                 </Button>

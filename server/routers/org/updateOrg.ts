@@ -10,10 +10,10 @@ import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
 import { OpenAPITags, registry } from "@server/openApi";
 import { build } from "@server/build";
-import license from "#dynamic/license/license";
+import { cache } from "#dynamic/lib/cache";
+import { isLicensedOrSubscribed } from "#dynamic/lib/isLicencedOrSubscribed";
+import { TierFeature, tierMatrix } from "@server/lib/billing/tierMatrix";
 import { getOrgTierData } from "#dynamic/lib/billing";
-import { TierId } from "@server/lib/billing/tiers";
-import { cache } from "@server/lib/cache";
 
 const updateOrgParamsSchema = z.strictObject({
     orgId: z.string()
@@ -34,6 +34,10 @@ const updateOrgBodySchema = z
             .min(build === "saas" ? 0 : -1)
             .optional(),
         settingsLogRetentionDaysAction: z
+            .number()
+            .min(build === "saas" ? 0 : -1)
+            .optional(),
+        settingsLogRetentionDaysConnection: z
             .number()
             .min(build === "saas" ? 0 : -1)
             .optional()
@@ -88,26 +92,94 @@ export async function updateOrg(
 
         const { orgId } = parsedParams.data;
 
-        const isLicensed = await isLicensedOrSubscribed(orgId);
-        if (build == "enterprise" && !isLicensed) {
+        // Check 2FA enforcement feature
+        const has2FAFeature = await isLicensedOrSubscribed(
+            orgId,
+            tierMatrix[TierFeature.TwoFactorEnforcement]
+        );
+        if (!has2FAFeature) {
             parsedBody.data.requireTwoFactor = undefined;
-            parsedBody.data.maxSessionLengthHours = undefined;
-            parsedBody.data.passwordExpiryDays = undefined;
         }
 
-        const { tier } = await getOrgTierData(orgId);
-        if (
-            build == "saas" &&
-            tier != TierId.STANDARD &&
-            parsedBody.data.settingsLogRetentionDaysRequest &&
-            parsedBody.data.settingsLogRetentionDaysRequest > 30
-        ) {
-            return next(
-                createHttpError(
-                    HttpCode.FORBIDDEN,
-                    "You are not allowed to set log retention days greater than 30 with your current subscription"
-                )
-            );
+        // Check session duration policies feature
+        const hasSessionDurationFeature = await isLicensedOrSubscribed(
+            orgId,
+            tierMatrix[TierFeature.SessionDurationPolicies]
+        );
+        if (!hasSessionDurationFeature) {
+            parsedBody.data.maxSessionLengthHours = undefined;
+        }
+
+        // Check password expiration policies feature
+        const hasPasswordExpirationFeature = await isLicensedOrSubscribed(
+            orgId,
+            tierMatrix[TierFeature.PasswordExpirationPolicies]
+        );
+        if (!hasPasswordExpirationFeature) {
+            parsedBody.data.passwordExpiryDays = undefined;
+        }
+        if (build == "saas") {
+            const { tier } = await getOrgTierData(orgId);
+
+            // Determine max allowed retention days based on tier
+            let maxRetentionDays: number | null = null;
+            if (!tier) {
+                maxRetentionDays = 3;
+            } else if (tier === "tier1") {
+                maxRetentionDays = 7;
+            } else if (tier === "tier2") {
+                maxRetentionDays = 30;
+            } else if (tier === "tier3") {
+                maxRetentionDays = 90;
+            }
+            // For enterprise tier, no check (maxRetentionDays remains null)
+
+            if (maxRetentionDays !== null) {
+                if (
+                    parsedBody.data.settingsLogRetentionDaysRequest !== undefined &&
+                    parsedBody.data.settingsLogRetentionDaysRequest > maxRetentionDays
+                ) {
+                    return next(
+                        createHttpError(
+                            HttpCode.FORBIDDEN,
+                            `You are not allowed to set log retention days greater than ${maxRetentionDays} with your current subscription`
+                        )
+                    );
+                }
+                if (
+                    parsedBody.data.settingsLogRetentionDaysAccess !== undefined &&
+                    parsedBody.data.settingsLogRetentionDaysAccess > maxRetentionDays
+                ) {
+                    return next(
+                        createHttpError(
+                            HttpCode.FORBIDDEN,
+                            `You are not allowed to set log retention days greater than ${maxRetentionDays} with your current subscription`
+                        )
+                    );
+                }
+                if (
+                    parsedBody.data.settingsLogRetentionDaysAction !== undefined &&
+                    parsedBody.data.settingsLogRetentionDaysAction > maxRetentionDays
+                ) {
+                    return next(
+                        createHttpError(
+                            HttpCode.FORBIDDEN,
+                            `You are not allowed to set log retention days greater than ${maxRetentionDays} with your current subscription`
+                        )
+                    );
+                }
+                if (
+                    parsedBody.data.settingsLogRetentionDaysConnection !== undefined &&
+                    parsedBody.data.settingsLogRetentionDaysConnection > maxRetentionDays
+                ) {
+                    return next(
+                        createHttpError(
+                            HttpCode.FORBIDDEN,
+                            `You are not allowed to set log retention days greater than ${maxRetentionDays} with your current subscription`
+                        )
+                    );
+                }
+            }
         }
 
         const updatedOrg = await db
@@ -122,7 +194,9 @@ export async function updateOrg(
                 settingsLogRetentionDaysAccess:
                     parsedBody.data.settingsLogRetentionDaysAccess,
                 settingsLogRetentionDaysAction:
-                    parsedBody.data.settingsLogRetentionDaysAction
+                    parsedBody.data.settingsLogRetentionDaysAction,
+                settingsLogRetentionDaysConnection:
+                    parsedBody.data.settingsLogRetentionDaysConnection
             })
             .where(eq(orgs.orgId, orgId))
             .returning();
@@ -137,9 +211,10 @@ export async function updateOrg(
         }
 
         // invalidate the cache for all of the orgs retention days
-        cache.del(`org_${orgId}_retentionDays`);
-        cache.del(`org_${orgId}_actionDays`);
-        cache.del(`org_${orgId}_accessDays`);
+        await cache.del(`org_${orgId}_retentionDays`);
+        await cache.del(`org_${orgId}_actionDays`);
+        await cache.del(`org_${orgId}_accessDays`);
+        await cache.del(`org_${orgId}_connectionDays`);
 
         return response(res, {
             data: updatedOrg[0],
@@ -154,23 +229,4 @@ export async function updateOrg(
             createHttpError(HttpCode.INTERNAL_SERVER_ERROR, "An error occurred")
         );
     }
-}
-
-async function isLicensedOrSubscribed(orgId: string): Promise<boolean> {
-    if (build === "enterprise") {
-        const isUnlocked = await license.isUnlocked();
-        if (!isUnlocked) {
-            return false;
-        }
-    }
-
-    if (build === "saas") {
-        const { tier } = await getOrgTierData(orgId);
-        const subscribed = tier === TierId.STANDARD;
-        if (!subscribed) {
-            return false;
-        }
-    }
-
-    return true;
 }

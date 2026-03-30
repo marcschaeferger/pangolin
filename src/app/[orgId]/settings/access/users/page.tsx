@@ -1,5 +1,6 @@
 import { internal } from "@app/lib/api";
 import { authCookieHeader } from "@app/lib/api/cookies";
+import { getUserDisplayName } from "@app/lib/getUserDisplayName";
 import { ListUsersResponse } from "@server/routers/user";
 import { AxiosResponse } from "axios";
 import UsersTable, { UserRow } from "../../../../../components/UsersTable";
@@ -73,7 +74,11 @@ export default async function UsersPage(props: UsersPageProps) {
         return {
             id: user.id,
             username: user.username,
-            displayUsername: user.email || user.name || user.username,
+            displayUsername: getUserDisplayName({
+                email: user.email,
+                name: user.name,
+                username: user.username
+            }),
             name: user.name,
             email: user.email,
             type: user.type,
@@ -81,9 +86,14 @@ export default async function UsersPage(props: UsersPageProps) {
             idpId: user.idpId,
             idpName: user.idpName || t("idpNameInternal"),
             status: t("userConfirmed"),
-            role: user.isOwner
-                ? t("accessRoleOwner")
-                : user.roleName || t("accessRoleMember"),
+            roleLabels: user.isOwner
+                ? [t("accessRoleOwner")]
+                : (() => {
+                      const names = (user.roles ?? [])
+                          .map((r) => r.roleName)
+                          .filter((n): n is string => Boolean(n?.length));
+                      return names.length ? names : [t("accessRoleMember")];
+                  })(),
             isOwner: user.isOwner || false
         };
     });

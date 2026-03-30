@@ -7,6 +7,7 @@ import { versionMigrations } from "../db/sqlite";
 import { __DIRNAME, APP_PATH, APP_VERSION } from "@server/lib/consts";
 import { SqliteError } from "better-sqlite3";
 import fs from "fs";
+import { build } from "@server/build";
 import m1 from "./scriptsSqlite/1.0.0-beta1";
 import m2 from "./scriptsSqlite/1.0.0-beta2";
 import m3 from "./scriptsSqlite/1.0.0-beta3";
@@ -33,6 +34,12 @@ import m28 from "./scriptsSqlite/1.11.0";
 import m29 from "./scriptsSqlite/1.11.1";
 import m30 from "./scriptsSqlite/1.12.0";
 import m31 from "./scriptsSqlite/1.13.0";
+import m32 from "./scriptsSqlite/1.14.0";
+import m33 from "./scriptsSqlite/1.15.0";
+import m34 from "./scriptsSqlite/1.15.3";
+import m35 from "./scriptsSqlite/1.15.4";
+import m36 from "./scriptsSqlite/1.16.0";
+import m37 from "./scriptsSqlite/1.17.0";
 
 // THIS CANNOT IMPORT ANYTHING FROM THE SERVER
 // EXCEPT FOR THE DATABASE AND THE SCHEMA
@@ -64,7 +71,13 @@ const migrations = [
     { version: "1.11.0", run: m28 },
     { version: "1.11.1", run: m29 },
     { version: "1.12.0", run: m30 },
-    { version: "1.13.0", run: m31 }
+    { version: "1.13.0", run: m31 },
+    { version: "1.14.0", run: m32 },
+    { version: "1.15.0", run: m33 },
+    { version: "1.15.3", run: m34 },
+    { version: "1.15.4", run: m35 },
+    { version: "1.16.0", run: m36 },
+    { version: "1.17.0", run: m37 }
     // Add new migrations here as they are created
 ] as const;
 
@@ -97,6 +110,10 @@ function backupDb() {
 }
 
 export async function runMigrations() {
+    if (build == "saas") {
+        console.log("Running in SaaS mode, skipping migrations...");
+        return;
+    }
     if (process.env.DISABLE_MIGRATIONS) {
         console.log("Migrations are disabled. Skipping...");
         return;

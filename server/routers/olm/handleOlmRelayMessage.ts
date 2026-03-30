@@ -4,6 +4,7 @@ import { clients, clientSitesAssociationsCache, Olm } from "@server/db";
 import { and, eq } from "drizzle-orm";
 import { updatePeer as newtUpdatePeer } from "../newt/peers";
 import logger from "@server/logger";
+import config from "@server/lib/config";
 
 export const handleOlmRelayMessage: MessageHandler = async (context) => {
     const { message, client: c, sendToClient } = context;
@@ -17,7 +18,7 @@ export const handleOlmRelayMessage: MessageHandler = async (context) => {
     }
 
     if (!olm.clientId) {
-        logger.warn("Olm has no site!"); // TODO: Maybe we create the site here?
+        logger.warn("Olm has no client!");
         return;
     }
 
@@ -40,7 +41,7 @@ export const handleOlmRelayMessage: MessageHandler = async (context) => {
         return;
     }
 
-    const { siteId } = message.data;
+    const { siteId, chainId } = message.data;
 
     // Get the site
     const [site] = await db
@@ -88,7 +89,9 @@ export const handleOlmRelayMessage: MessageHandler = async (context) => {
             type: "olm/wg/peer/relay",
             data: {
                 siteId: siteId,
-                relayEndpoint: exitNode.endpoint
+                relayEndpoint: exitNode.endpoint,
+                relayPort: config.getRawConfig().gerbil.clients_start_port,
+                chainId
             }
         },
         broadcast: false,

@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { db, UserOrg } from "@server/db";
-import { roles, userInvites, userOrgs, users } from "@server/db";
-import { eq } from "drizzle-orm";
+import { db, orgs } from "@server/db";
+import { roles, userInviteRoles, userInvites, userOrgs, users } from "@server/db";
+import { eq, and, inArray } from "drizzle-orm";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
@@ -13,6 +13,8 @@ import { verifySession } from "@server/auth/sessions/verifySession";
 import { usageService } from "@server/lib/billing/usageService";
 import { FeatureId } from "@server/lib/billing";
 import { calculateUserClientsForOrgs } from "@server/lib/calculateUserClientsForOrgs";
+import { build } from "@server/build";
+import { assignUserToOrg } from "@server/lib/userOrg";
 
 const acceptInviteBodySchema = z.strictObject({
     token: z.string(),
@@ -92,18 +94,81 @@ export async function acceptInvite(
             );
         }
 
-        let roleId: number;
-        let totalUsers: UserOrg[] | undefined;
-        // get the role to make sure it exists
-        const existingRole = await db
+        if (build == "saas") {
+            const usage = await usageService.getUsage(
+                existingInvite.orgId,
+                FeatureId.USERS
+            );
+            if (!usage) {
+                return next(
+                    createHttpError(
+                        HttpCode.NOT_FOUND,
+                        "No usage data found for this organization"
+                    )
+                );
+            }
+            const rejectUsers = await usageService.checkLimitSet(
+                existingInvite.orgId,
+
+                FeatureId.USERS,
+                {
+                    ...usage,
+                    instantaneousValue: (usage.instantaneousValue || 0) + 1
+                } // We need to add one to know if we are violating the limit
+            );
+            if (rejectUsers) {
+                return next(
+                    createHttpError(
+                        HttpCode.FORBIDDEN,
+                        "Can not accept because this org's user limit is exceeded. Please contact your administrator to upgrade their plan."
+                    )
+                );
+            }
+        }
+
+        const [org] = await db
+            .select()
+            .from(orgs)
+            .where(eq(orgs.orgId, existingInvite.orgId))
+            .limit(1);
+
+        if (!org) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "Organization does not exist. Please contact an admin."
+                )
+            );
+        }
+
+        const inviteRoleRows = await db
+            .select({ roleId: userInviteRoles.roleId })
+            .from(userInviteRoles)
+            .where(eq(userInviteRoles.inviteId, inviteId));
+
+        const inviteRoleIds = [
+            ...new Set(inviteRoleRows.map((r) => r.roleId))
+        ];
+        if (inviteRoleIds.length === 0) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "This invitation has no roles. Please contact an admin."
+                )
+            );
+        }
+
+        const existingRoles = await db
             .select()
             .from(roles)
-            .where(eq(roles.roleId, existingInvite.roleId))
-            .limit(1);
-        if (existingRole.length) {
-            roleId = existingRole[0].roleId;
-        } else {
-            // TODO: use the default role on the org instead of failing
+            .where(
+                and(
+                    eq(roles.orgId, existingInvite.orgId),
+                    inArray(roles.roleId, inviteRoleIds)
+                )
+            );
+
+        if (existingRoles.length !== inviteRoleIds.length) {
             return next(
                 createHttpError(
                     HttpCode.BAD_REQUEST,
@@ -113,34 +178,27 @@ export async function acceptInvite(
         }
 
         await db.transaction(async (trx) => {
-            // add the user to the org
-            await trx.insert(userOrgs).values({
-                userId: existingUser[0].userId,
-                orgId: existingInvite.orgId,
-                roleId: existingInvite.roleId
-            });
+            await assignUserToOrg(
+                org,
+                {
+                    userId: existingUser[0].userId,
+                    orgId: existingInvite.orgId
+                },
+                inviteRoleIds,
+                trx
+            );
 
             // delete the invite
             await trx
                 .delete(userInvites)
                 .where(eq(userInvites.inviteId, inviteId));
 
-            // Get the total number of users in the org now
-            totalUsers = await db
-                .select()
-                .from(userOrgs)
-                .where(eq(userOrgs.orgId, existingInvite.orgId));
-
             await calculateUserClientsForOrgs(existingUser[0].userId, trx);
-        });
 
-        if (totalUsers) {
-            await usageService.updateDaily(
-                existingInvite.orgId,
-                FeatureId.USERS,
-                totalUsers.length
+            logger.debug(
+                `User ${existingUser[0].userId} accepted invite to org ${existingInvite.orgId}`
             );
-        }
+        });
 
         return response<AcceptInviteResponse>(res, {
             data: { accepted: true, orgId: existingInvite.orgId },

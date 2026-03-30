@@ -24,9 +24,10 @@ import { idp, idpOidcConfig } from "@server/db";
 import { eq, and } from "drizzle-orm";
 import { encrypt } from "@server/lib/crypto";
 import config from "@server/lib/config";
+import { isSubscribed } from "#private/lib/isSubscribed";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
+import privateConfig from "#private/lib/config";
 import { build } from "@server/build";
-import { getOrgTierData } from "#private/lib/billing";
-import { TierId } from "@server/lib/billing/tiers";
 
 const paramsSchema = z
     .object({
@@ -46,30 +47,31 @@ const bodySchema = z.strictObject({
     namePath: z.string().optional(),
     scopes: z.string().optional(),
     autoProvision: z.boolean().optional(),
-    roleMapping: z.string().optional()
+    roleMapping: z.string().optional(),
+    tags: z.string().optional()
 });
 
 export type UpdateOrgIdpResponse = {
     idpId: number;
 };
 
-// registry.registerPath({
-//     method: "post",
-//     path: "/idp/{idpId}/oidc",
-//     description: "Update an OIDC IdP.",
-//     tags: [OpenAPITags.Idp],
-//     request: {
-//         params: paramsSchema,
-//         body: {
-//             content: {
-//                 "application/json": {
-//                     schema: bodySchema
-//                 }
-//             }
-//         }
-//     },
-//     responses: {}
-// });
+registry.registerPath({
+    method: "post",
+    path: "/org/{orgId}/idp/{idpId}/oidc",
+    description: "Update an OIDC IdP for a specific organization.",
+    tags: [OpenAPITags.OrgIdp],
+    request: {
+        params: paramsSchema,
+        body: {
+            content: {
+                "application/json": {
+                    schema: bodySchema
+                }
+            }
+        }
+    },
+    responses: {}
+});
 
 export async function updateOrgOidcIdp(
     req: Request,
@@ -97,6 +99,18 @@ export async function updateOrgOidcIdp(
             );
         }
 
+        if (
+            privateConfig.getRawPrivateConfig().app.identity_provider_mode !==
+            "org"
+        ) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "Organization-specific IdP creation is not allowed in the current identity provider mode. Set app.identity_provider_mode to 'org' in the private configuration to enable this feature."
+                )
+            );
+        }
+
         const { idpId, orgId } = parsedParams.data;
         const {
             clientId,
@@ -108,20 +122,20 @@ export async function updateOrgOidcIdp(
             emailPath,
             namePath,
             name,
-            autoProvision,
-            roleMapping
+            roleMapping,
+            tags
         } = parsedBody.data;
 
-        if (build === "saas") {
-            const { tier, active } = await getOrgTierData(orgId);
-            const subscribed = tier === TierId.STANDARD;
+        let { autoProvision } = parsedBody.data;
+
+        if (build == "saas") {
+            // this is not paywalled with a ee license because this whole endpoint is restricted
+            const subscribed = await isSubscribed(
+                orgId,
+                tierMatrix.deviceApprovals
+            );
             if (!subscribed) {
-                return next(
-                    createHttpError(
-                        HttpCode.FORBIDDEN,
-                        "This organization's current plan does not support this feature."
-                    )
-                );
+                autoProvision = false;
             }
         }
 
@@ -167,7 +181,8 @@ export async function updateOrgOidcIdp(
         await db.transaction(async (trx) => {
             const idpData = {
                 name,
-                autoProvision
+                autoProvision,
+                tags
             };
 
             // only update if at least one key is not undefined

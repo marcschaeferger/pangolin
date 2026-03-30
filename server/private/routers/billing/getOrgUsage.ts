@@ -31,16 +31,16 @@ const getOrgSchema = z.strictObject({
     orgId: z.string()
 });
 
-registry.registerPath({
-    method: "get",
-    path: "/org/{orgId}/billing/usage",
-    description: "Get an organization's billing usage",
-    tags: [OpenAPITags.Org],
-    request: {
-        params: getOrgSchema
-    },
-    responses: {}
-});
+// registry.registerPath({
+//     method: "get",
+//     path: "/org/{orgId}/billing/usage",
+//     description: "Get an organization's billing usage",
+//     tags: [OpenAPITags.Org],
+//     request: {
+//         params: getOrgSchema
+//     },
+//     responses: {}
+// });
 
 export async function getOrgUsage(
     req: Request,
@@ -78,38 +78,39 @@ export async function getOrgUsage(
         // Get usage for org
         const usageData = [];
 
-        const siteUptime = await usageService.getUsage(
-            orgId,
-            FeatureId.SITE_UPTIME
-        );
-        const users = await usageService.getUsageDaily(orgId, FeatureId.USERS);
-        const domains = await usageService.getUsageDaily(
-            orgId,
-            FeatureId.DOMAINS
-        );
-        const remoteExitNodes = await usageService.getUsageDaily(
+        const sites = await usageService.getUsage(orgId, FeatureId.SITES);
+        const users = await usageService.getUsage(orgId, FeatureId.USERS);
+        const domains = await usageService.getUsage(orgId, FeatureId.DOMAINS);
+        const remoteExitNodes = await usageService.getUsage(
             orgId,
             FeatureId.REMOTE_EXIT_NODES
         );
-        const egressData = await usageService.getUsage(
+        const organizations = await usageService.getUsage(
             orgId,
-            FeatureId.EGRESS_DATA_MB
+            FeatureId.ORGINIZATIONS
         );
+        // const egressData = await usageService.getUsage(
+        //     orgId,
+        //     FeatureId.EGRESS_DATA_MB
+        // );
 
-        if (siteUptime) {
-            usageData.push(siteUptime);
+        if (sites) {
+            usageData.push(sites);
         }
         if (users) {
             usageData.push(users);
         }
-        if (egressData) {
-            usageData.push(egressData);
-        }
+        // if (egressData) {
+        //     usageData.push(egressData);
+        // }
         if (domains) {
             usageData.push(domains);
         }
         if (remoteExitNodes) {
             usageData.push(remoteExitNodes);
+        }
+        if (organizations) {
+            usageData.push(organizations);
         }
 
         const orgLimits = await db

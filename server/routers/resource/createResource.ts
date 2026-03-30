@@ -36,7 +36,8 @@ const createHttpResourceSchema = z
         http: z.boolean(),
         protocol: z.enum(["tcp", "udp"]),
         domainId: z.string(),
-        stickySession: z.boolean().optional()
+        stickySession: z.boolean().optional(),
+        postAuthPath: z.string().nullable().optional()
     })
     .refine(
         (data) => {
@@ -78,7 +79,7 @@ registry.registerPath({
     method: "put",
     path: "/org/{orgId}/resource",
     description: "Create a resource.",
-    tags: [OpenAPITags.Org, OpenAPITags.Resource],
+    tags: [OpenAPITags.PublicResource],
     request: {
         params: createResourceParamsSchema,
         body: {
@@ -111,7 +112,7 @@ export async function createResource(
 
         const { orgId } = parsedParams.data;
 
-        if (req.user && !req.userOrgRoleId) {
+        if (req.user && (!req.userOrgRoleIds || req.userOrgRoleIds.length === 0)) {
             return next(
                 createHttpError(HttpCode.FORBIDDEN, "User does not have a role")
             );
@@ -188,7 +189,7 @@ async function createHttpResource(
         );
     }
 
-    const { name, domainId } = parsedBody.data;
+    const { name, domainId, postAuthPath } = parsedBody.data;
     const subdomain = parsedBody.data.subdomain;
     const stickySession = parsedBody.data.stickySession;
 
@@ -220,6 +221,20 @@ async function createHttpResource(
                 "Resource with that domain already exists"
             )
         );
+    }
+
+    // Prevent creating resource with same domain as dashboard
+    const dashboardUrl = config.getRawConfig().app.dashboard_url;
+    if (dashboardUrl) {
+        const dashboardHost = new URL(dashboardUrl).hostname;
+        if (fullDomain === dashboardHost) {
+            return next(
+                createHttpError(
+                    HttpCode.CONFLICT,
+                    "Resource domain cannot be the same as the dashboard domain"
+                )
+            );
+        }
     }
 
     if (build != "oss") {
@@ -255,7 +270,8 @@ async function createHttpResource(
                 http: true,
                 protocol: "tcp",
                 ssl: true,
-                stickySession: stickySession
+                stickySession: stickySession,
+                postAuthPath: postAuthPath
             })
             .returning();
 
@@ -276,7 +292,7 @@ async function createHttpResource(
             resourceId: newResource[0].resourceId
         });
 
-        if (req.user && req.userOrgRoleId != adminRole[0].roleId) {
+        if (req.user && !req.userOrgRoleIds?.includes(adminRole[0].roleId)) {
             // make sure the user can access the resource
             await trx.insert(userResources).values({
                 userId: req.user?.userId!,
@@ -369,7 +385,7 @@ async function createRawResource(
             resourceId: newResource[0].resourceId
         });
 
-        if (req.user && req.userOrgRoleId != adminRole[0].roleId) {
+        if (req.user && !req.userOrgRoleIds?.includes(adminRole[0].roleId)) {
             // make sure the user can access the resource
             await trx.insert(userResources).values({
                 userId: req.user?.userId!,

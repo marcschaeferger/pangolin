@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { portRangeStringSchema } from "@server/lib/ip";
+import { MaintenanceSchema } from "#dynamic/lib/blueprints/MaintenanceSchema";
 
 export const SiteSchema = z.object({
     name: z.string().min(1).max(100),
@@ -55,7 +57,8 @@ export const AuthSchema = z.object({
     "basic-auth": z
         .object({
             user: z.string().min(1),
-            password: z.string().min(1)
+            password: z.string().min(1),
+            extendedCompatibility: z.boolean().default(true)
         })
         .optional(),
     "sso-enabled": z.boolean().optional().default(false),
@@ -66,7 +69,7 @@ export const AuthSchema = z.object({
         .refine((roles) => !roles.includes("Admin"), {
             error: "Admin role cannot be included in sso-roles"
         }),
-    "sso-users": z.array(z.email()).optional().default([]),
+    "sso-users": z.array(z.string()).optional().default([]),
     "whitelist-users": z.array(z.email()).optional().default([]),
     "auto-login-idp": z.int().positive().optional()
 });
@@ -75,7 +78,8 @@ export const RuleSchema = z
     .object({
         action: z.enum(["allow", "deny", "pass"]),
         match: z.enum(["cidr", "path", "ip", "country", "asn"]),
-        value: z.string()
+        value: z.string(),
+        priority: z.int().optional()
     })
     .refine(
         (rule) => {
@@ -108,32 +112,30 @@ export const RuleSchema = z
     .refine(
         (rule) => {
             if (rule.match === "country") {
-                // Check if it's a valid 2-letter country code
-                return /^[A-Z]{2}$/.test(rule.value);
+                // Check if it's a valid 2-letter country code or "ALL"
+                return /^[A-Z]{2}$/.test(rule.value) || rule.value === "ALL";
             }
             return true;
         },
         {
             path: ["value"],
             message:
-                "Value must be a 2-letter country code when match is 'country'"
+                "Value must be a 2-letter country code or 'ALL' when match is 'country'"
         }
     )
     .refine(
         (rule) => {
             if (rule.match === "asn") {
-                // Check if it's either AS<number> format or just a number
+                // Check if it's either AS<number> format or "ALL"
                 const asNumberPattern = /^AS\d+$/i;
-                const isASFormat = asNumberPattern.test(rule.value);
-                const isNumeric = /^\d+$/.test(rule.value);
-                return isASFormat || isNumeric;
+                return asNumberPattern.test(rule.value) || rule.value === "ALL";
             }
             return true;
         },
         {
             path: ["value"],
             message:
-                "Value must be either 'AS<number>' format or a number when match is 'asn'"
+                "Value must be 'AS<number>' format or 'ALL' when match is 'asn'"
         }
     );
 
@@ -156,7 +158,8 @@ export const ResourceSchema = z
         "host-header": z.string().optional(),
         "tls-server-name": z.string().optional(),
         headers: z.array(HeaderSchema).optional(),
-        rules: z.array(RuleSchema).optional()
+        rules: z.array(RuleSchema).optional(),
+        maintenance: MaintenanceSchema.optional()
     })
     .refine(
         (resource) => {
@@ -266,6 +269,39 @@ export const ResourceSchema = z
             path: ["auth"],
             error: "When protocol is 'tcp' or 'udp', 'auth' must not be provided"
         }
+    )
+    .refine(
+        (resource) => {
+            // Skip validation for targets-only resources
+            if (isTargetsOnlyResource(resource)) {
+                return true;
+            }
+            // Skip validation if no rules are defined
+            if (!resource.rules || resource.rules.length === 0) return true;
+
+            const finalPriorities: number[] = [];
+            let priorityCounter = 1;
+
+            // Gather priorities, assigning auto-priorities where needed
+            // following the logic from the backend implementation where
+            // empty priorities are auto-assigned a value of 1 + index of rule
+            for (const rule of resource.rules) {
+                if (rule.priority !== undefined) {
+                    finalPriorities.push(rule.priority);
+                } else {
+                    finalPriorities.push(priorityCounter);
+                }
+                priorityCounter++;
+            }
+
+            // Validate for duplicate priorities
+            return finalPriorities.length === new Set(finalPriorities).size;
+        },
+        {
+            path: ["rules"],
+            message:
+                "Rules have conflicting or invalid priorities (must be unique, including auto-assigned ones)"
+        }
     );
 
 export function isTargetsOnlyResource(resource: any): boolean {
@@ -282,11 +318,14 @@ export const ClientResourceSchema = z
         // destinationPort: z.int().positive().optional(),
         destination: z.string().min(1),
         // enabled: z.boolean().default(true),
+        "tcp-ports": portRangeStringSchema.optional().default("*"),
+        "udp-ports": portRangeStringSchema.optional().default("*"),
+        "disable-icmp": z.boolean().optional().default(false),
         alias: z
             .string()
             .regex(
-                /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/,
-                "Alias must be a fully qualified domain name (e.g., example.com)"
+                /^(?:[a-zA-Z0-9*?](?:[a-zA-Z0-9*?-]{0,61}[a-zA-Z0-9*?])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/,
+                "Alias must be a fully qualified domain name with optional wildcards (e.g., example.com, *.example.com, host-0?.example.internal)"
             )
             .optional(),
         roles: z
@@ -296,7 +335,7 @@ export const ClientResourceSchema = z
             .refine((roles) => !roles.includes("Admin"), {
                 error: "Admin role cannot be included in roles"
             }),
-        users: z.array(z.email()).optional().default([]),
+        users: z.array(z.string()).optional().default([]),
         machines: z.array(z.string()).optional().default([])
     })
     .refine(

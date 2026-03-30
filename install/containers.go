@@ -73,7 +73,7 @@ func installDocker() error {
 	case strings.Contains(osRelease, "ID=ubuntu"):
 		installCmd = exec.Command("bash", "-c", fmt.Sprintf(`
 			apt-get update &&
-			apt-get install -y apt-transport-https ca-certificates curl &&
+			apt-get install -y apt-transport-https ca-certificates curl gpg &&
 			curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg &&
 			echo "deb [arch=%s signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list &&
 			apt-get update &&
@@ -82,7 +82,7 @@ func installDocker() error {
 	case strings.Contains(osRelease, "ID=debian"):
 		installCmd = exec.Command("bash", "-c", fmt.Sprintf(`
 			apt-get update &&
-			apt-get install -y apt-transport-https ca-certificates curl &&
+			apt-get install -y apt-transport-https ca-certificates curl gpg &&
 			curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg &&
 			echo "deb [arch=%s signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list &&
 			apt-get update &&
@@ -144,12 +144,13 @@ func installDocker() error {
 }
 
 func startDockerService() error {
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		cmd := exec.Command("systemctl", "enable", "--now", "docker")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
-	} else if runtime.GOOS == "darwin" {
+	case "darwin":
 		// On macOS, Docker is usually started via the Docker Desktop application
 		fmt.Println("Please start Docker Desktop manually on macOS.")
 		return nil
@@ -210,6 +211,47 @@ func isDockerRunning() bool {
 	return true
 }
 
+func isPodmanRunning() bool {
+	cmd := exec.Command("podman", "info")
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
+}
+
+// detectContainerType detects whether the system is currently using Docker or Podman
+// by checking which container runtime is running and has containers
+func detectContainerType() SupportedContainer {
+	// Check if we have running containers with podman
+	if isPodmanRunning() {
+		cmd := exec.Command("podman", "ps", "-q")
+		output, err := cmd.Output()
+		if err == nil && len(strings.TrimSpace(string(output))) > 0 {
+			return Podman
+		}
+	}
+
+	// Check if we have running containers with docker
+	if isDockerRunning() {
+		cmd := exec.Command("docker", "ps", "-q")
+		output, err := cmd.Output()
+		if err == nil && len(strings.TrimSpace(string(output))) > 0 {
+			return Docker
+		}
+	}
+
+	// If no containers are running, check which one is installed and running
+	if isPodmanRunning() && isPodmanInstalled() {
+		return Podman
+	}
+
+	if isDockerRunning() && isDockerInstalled() {
+		return Docker
+	}
+
+	return Undefined
+}
+
 // executeDockerComposeCommandWithArgs executes the appropriate docker command with arguments supplied
 func executeDockerComposeCommandWithArgs(args ...string) error {
 	var cmd *exec.Cmd
@@ -261,7 +303,7 @@ func pullContainers(containerType SupportedContainer) error {
 		return nil
 	}
 
-	return fmt.Errorf("Unsupported container type: %s", containerType)
+	return fmt.Errorf("unsupported container type: %s", containerType)
 }
 
 // startContainers starts the containers using the appropriate command.
@@ -284,7 +326,7 @@ func startContainers(containerType SupportedContainer) error {
 		return nil
 	}
 
-	return fmt.Errorf("Unsupported container type: %s", containerType)
+	return fmt.Errorf("unsupported container type: %s", containerType)
 }
 
 // stopContainers stops the containers using the appropriate command.
@@ -306,7 +348,7 @@ func stopContainers(containerType SupportedContainer) error {
 		return nil
 	}
 
-	return fmt.Errorf("Unsupported container type: %s", containerType)
+	return fmt.Errorf("unsupported container type: %s", containerType)
 }
 
 // restartContainer restarts a specific container using the appropriate command.
@@ -328,5 +370,5 @@ func restartContainer(container string, containerType SupportedContainer) error 
 		return nil
 	}
 
-	return fmt.Errorf("Unsupported container type: %s", containerType)
+	return fmt.Errorf("unsupported container type: %s", containerType)
 }

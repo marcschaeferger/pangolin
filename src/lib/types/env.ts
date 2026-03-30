@@ -8,6 +8,7 @@ export type Env = {
             product_updates: boolean;
             new_releases: boolean;
         };
+        identityProviderMode?: "global" | "org";
     };
     server: {
         externalPort: string;
@@ -33,6 +34,8 @@ export type Env = {
         disableBasicWireguardSites: boolean;
         hideSupporterKey: boolean;
         usePangolinDns: boolean;
+        disableProductHelpBanners: boolean;
+        disableEnterpriseFeatures: boolean;
     };
     branding: {
         appName?: string;

@@ -7,10 +7,21 @@ import {
     bigint,
     real,
     text,
-    index
+    index,
+    primaryKey
 } from "drizzle-orm/pg-core";
 import { InferSelectModel } from "drizzle-orm";
-import { domains, orgs, targets, users, exitNodes, sessions } from "./schema";
+import {
+    domains,
+    orgs,
+    targets,
+    users,
+    exitNodes,
+    sessions,
+    clients,
+    siteResources,
+    sites
+} from "./schema";
 
 export const certificates = pgTable("certificates", {
     certId: serial("certId").primaryKey(),
@@ -74,11 +85,16 @@ export const subscriptions = pgTable("subscriptions", {
     canceledAt: bigint("canceledAt", { mode: "number" }),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),
     updatedAt: bigint("updatedAt", { mode: "number" }),
-    billingCycleAnchor: bigint("billingCycleAnchor", { mode: "number" })
+    version: integer("version"),
+    billingCycleAnchor: bigint("billingCycleAnchor", { mode: "number" }),
+    type: varchar("type", { length: 50 }) // tier1, tier2, tier3, or license
 });
 
 export const subscriptionItems = pgTable("subscriptionItems", {
     subscriptionItemId: serial("subscriptionItemId").primaryKey(),
+    stripeSubscriptionItemId: varchar("stripeSubscriptionItemId", {
+        length: 255
+    }),
     subscriptionId: varchar("subscriptionId", { length: 255 })
         .notNull()
         .references(() => subscriptions.subscriptionId, {
@@ -86,6 +102,7 @@ export const subscriptionItems = pgTable("subscriptionItems", {
         }),
     planId: varchar("planId", { length: 255 }).notNull(),
     priceId: varchar("priceId", { length: 255 }),
+    featureId: varchar("featureId", { length: 255 }),
     meterId: varchar("meterId", { length: 255 }),
     unitAmount: real("unitAmount"),
     tiers: text("tiers"),
@@ -128,6 +145,7 @@ export const limits = pgTable("limits", {
         })
         .notNull(),
     value: real("value"),
+    override: boolean("override").default(false),
     description: text("description")
 });
 
@@ -204,6 +222,29 @@ export const loginPageOrg = pgTable("loginPageOrg", {
         .references(() => orgs.orgId, { onDelete: "cascade" })
 });
 
+export const loginPageBranding = pgTable("loginPageBranding", {
+    loginPageBrandingId: serial("loginPageBrandingId").primaryKey(),
+    logoUrl: text("logoUrl"),
+    logoWidth: integer("logoWidth").notNull(),
+    logoHeight: integer("logoHeight").notNull(),
+    primaryColor: text("primaryColor"),
+    resourceTitle: text("resourceTitle").notNull(),
+    resourceSubtitle: text("resourceSubtitle"),
+    orgTitle: text("orgTitle"),
+    orgSubtitle: text("orgSubtitle")
+});
+
+export const loginPageBrandingOrg = pgTable("loginPageBrandingOrg", {
+    loginPageBrandingId: integer("loginPageBrandingId")
+        .notNull()
+        .references(() => loginPageBranding.loginPageBrandingId, {
+            onDelete: "cascade"
+        }),
+    orgId: varchar("orgId")
+        .notNull()
+        .references(() => orgs.orgId, { onDelete: "cascade" })
+});
+
 export const sessionTransferToken = pgTable("sessionTransferToken", {
     token: varchar("token").primaryKey(),
     sessionId: varchar("sessionId")
@@ -250,6 +291,7 @@ export const accessAuditLog = pgTable(
         actor: varchar("actor", { length: 255 }),
         actorId: varchar("actorId", { length: 255 }),
         resourceId: integer("resourceId"),
+        siteResourceId: integer("siteResourceId"),
         ip: varchar("ip", { length: 45 }),
         type: varchar("type", { length: 100 }).notNull(),
         action: boolean("action").notNull(),
@@ -266,6 +308,115 @@ export const accessAuditLog = pgTable(
     ]
 );
 
+export const connectionAuditLog = pgTable(
+    "connectionAuditLog",
+    {
+        id: serial("id").primaryKey(),
+        sessionId: text("sessionId").notNull(),
+        siteResourceId: integer("siteResourceId").references(
+            () => siteResources.siteResourceId,
+            { onDelete: "cascade" }
+        ),
+        orgId: text("orgId").references(() => orgs.orgId, {
+            onDelete: "cascade"
+        }),
+        siteId: integer("siteId").references(() => sites.siteId, {
+            onDelete: "cascade"
+        }),
+        clientId: integer("clientId").references(() => clients.clientId, {
+            onDelete: "cascade"
+        }),
+        userId: text("userId").references(() => users.userId, {
+            onDelete: "cascade"
+        }),
+        sourceAddr: text("sourceAddr").notNull(),
+        destAddr: text("destAddr").notNull(),
+        protocol: text("protocol").notNull(),
+        startedAt: integer("startedAt").notNull(),
+        endedAt: integer("endedAt"),
+        bytesTx: integer("bytesTx"),
+        bytesRx: integer("bytesRx")
+    },
+    (table) => [
+        index("idx_accessAuditLog_startedAt").on(table.startedAt),
+        index("idx_accessAuditLog_org_startedAt").on(
+            table.orgId,
+            table.startedAt
+        ),
+        index("idx_accessAuditLog_siteResourceId").on(table.siteResourceId)
+    ]
+);
+
+export const approvals = pgTable("approvals", {
+    approvalId: serial("approvalId").primaryKey(),
+    timestamp: integer("timestamp").notNull(), // this is EPOCH time in seconds
+    orgId: varchar("orgId")
+        .references(() => orgs.orgId, {
+            onDelete: "cascade"
+        })
+        .notNull(),
+    clientId: integer("clientId").references(() => clients.clientId, {
+        onDelete: "cascade"
+    }), // clients reference user devices (in this case)
+    userId: varchar("userId")
+        .references(() => users.userId, {
+            // optionally tied to a user and in this case delete when the user deletes
+            onDelete: "cascade"
+        })
+        .notNull(),
+    decision: varchar("decision")
+        .$type<"approved" | "denied" | "pending">()
+        .default("pending")
+        .notNull(),
+    type: varchar("type")
+        .$type<"user_device" /*| 'proxy' // for later */>()
+        .notNull()
+});
+
+export const bannedEmails = pgTable("bannedEmails", {
+    email: varchar("email", { length: 255 }).primaryKey()
+});
+
+export const bannedIps = pgTable("bannedIps", {
+    ip: varchar("ip", { length: 255 }).primaryKey()
+});
+
+export const siteProvisioningKeys = pgTable("siteProvisioningKeys", {
+    siteProvisioningKeyId: varchar("siteProvisioningKeyId", {
+        length: 255
+    }).primaryKey(),
+    name: varchar("name", { length: 255 }).notNull(),
+    siteProvisioningKeyHash: text("siteProvisioningKeyHash").notNull(),
+    lastChars: varchar("lastChars", { length: 4 }).notNull(),
+    createdAt: varchar("dateCreated", { length: 255 }).notNull(),
+    lastUsed: varchar("lastUsed", { length: 255 }),
+    maxBatchSize: integer("maxBatchSize"), // null = no limit
+    numUsed: integer("numUsed").notNull().default(0),
+    validUntil: varchar("validUntil", { length: 255 })
+});
+
+export const siteProvisioningKeyOrg = pgTable(
+    "siteProvisioningKeyOrg",
+    {
+        siteProvisioningKeyId: varchar("siteProvisioningKeyId", {
+            length: 255
+        })
+            .notNull()
+            .references(() => siteProvisioningKeys.siteProvisioningKeyId, {
+                onDelete: "cascade"
+            }),
+        orgId: varchar("orgId", { length: 255 })
+            .notNull()
+            .references(() => orgs.orgId, { onDelete: "cascade" })
+    },
+    (table) => [
+        primaryKey({
+            columns: [table.siteProvisioningKeyId, table.orgId]
+        })
+    ]
+);
+
+export type Approval = InferSelectModel<typeof approvals>;
 export type Limit = InferSelectModel<typeof limits>;
 export type Account = InferSelectModel<typeof account>;
 export type Certificate = InferSelectModel<typeof certificates>;
@@ -283,5 +434,7 @@ export type RemoteExitNodeSession = InferSelectModel<
 >;
 export type ExitNodeOrg = InferSelectModel<typeof exitNodeOrgs>;
 export type LoginPage = InferSelectModel<typeof loginPage>;
+export type LoginPageBranding = InferSelectModel<typeof loginPageBranding>;
 export type ActionAuditLog = InferSelectModel<typeof actionAuditLog>;
 export type AccessAuditLog = InferSelectModel<typeof accessAuditLog>;
+export type ConnectionAuditLog = InferSelectModel<typeof connectionAuditLog>;

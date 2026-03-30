@@ -24,7 +24,9 @@ const bodySchema = z.strictObject({
     emailPath: z.string().optional(),
     namePath: z.string().optional(),
     scopes: z.string().nonempty(),
-    autoProvision: z.boolean().optional()
+    autoProvision: z.boolean().optional(),
+    tags: z.string().optional(),
+    variant: z.enum(["oidc", "google", "azure"]).optional().default("oidc")
 });
 
 export type CreateIdpResponse = {
@@ -36,7 +38,7 @@ registry.registerPath({
     method: "put",
     path: "/idp/oidc",
     description: "Create an OIDC IdP.",
-    tags: [OpenAPITags.Idp],
+    tags: [OpenAPITags.GlobalIdp],
     request: {
         body: {
             content: {
@@ -75,8 +77,21 @@ export async function createOidcIdp(
             emailPath,
             namePath,
             name,
-            autoProvision
+            autoProvision,
+            tags,
+            variant
         } = parsedBody.data;
+
+        if (
+            process.env.IDENTITY_PROVIDER_MODE === "org"
+        ) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "Global IdP creation is not allowed in the current identity provider mode. Set app.identity_provider_mode to 'global' in the private configuration to enable this feature."
+                )
+            );
+        }
 
         const key = config.getRawConfig().server.secret!;
 
@@ -90,7 +105,10 @@ export async function createOidcIdp(
                 .values({
                     name,
                     autoProvision,
-                    type: "oidc"
+                    type: "oidc",
+                    tags,
+                    defaultOrgMapping: `'{{orgId}}'`,
+                    defaultRoleMapping: `'Member'`
                 })
                 .returning();
 
@@ -105,7 +123,8 @@ export async function createOidcIdp(
                 scopes,
                 identifierPath,
                 emailPath,
-                namePath
+                namePath,
+                variant
             });
         });
 

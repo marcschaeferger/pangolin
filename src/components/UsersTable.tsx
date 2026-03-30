@@ -11,7 +11,7 @@ import {
 import { Button } from "@app/components/ui/button";
 import { ArrowRight, ArrowUpDown, Crown, MoreHorizontal } from "lucide-react";
 import { UsersDataTable } from "@app/components/UsersDataTable";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
 import { useOrgContext } from "@app/hooks/useOrgContext";
 import { toast } from "@app/hooks/useToast";
@@ -19,10 +19,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatAxiosError } from "@app/lib/api";
 import { createApiClient } from "@app/lib/api";
+import { getUserDisplayName } from "@app/lib/getUserDisplayName";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useUserContext } from "@app/hooks/useUserContext";
 import { useTranslations } from "next-intl";
 import IdpTypeBadge from "./IdpTypeBadge";
+import UserRoleBadges from "./UserRoleBadges";
 
 export type UserRow = {
     id: string;
@@ -35,7 +37,7 @@ export type UserRow = {
     type: string;
     idpVariant: string | null;
     status: string;
-    role: string;
+    roleLabels: string[];
     isOwner: boolean;
 };
 
@@ -53,6 +55,11 @@ export default function UsersTable({ users: u }: UsersTableProps) {
     const { org } = useOrgContext();
     const t = useTranslations();
     const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Update local state when props change (e.g., after refresh)
+    useEffect(() => {
+        setUsers(u);
+    }, [u]);
 
     const refreshData = async () => {
         console.log("Data refreshed");
@@ -118,7 +125,8 @@ export default function UsersTable({ users: u }: UsersTableProps) {
             }
         },
         {
-            accessorKey: "role",
+            id: "role",
+            accessorFn: (row) => row.roleLabels.join(", "),
             friendlyName: t("role"),
             header: ({ column }) => {
                 return (
@@ -134,13 +142,7 @@ export default function UsersTable({ users: u }: UsersTableProps) {
                 );
             },
             cell: ({ row }) => {
-                const userRow = row.original;
-
-                return (
-                    <div className="flex flex-row items-center gap-2">
-                        <span>{userRow.role}</span>
-                    </div>
-                );
+                return <UserRoleBadges roleLabels={row.original.roleLabels} />;
             }
         },
         {
@@ -149,62 +151,72 @@ export default function UsersTable({ users: u }: UsersTableProps) {
             header: () => <span className="p-3"></span>,
             cell: ({ row }) => {
                 const userRow = row.original;
+                const isCurrentUser =
+                    `${userRow.username}-${userRow.idpId}` ===
+                    `${user?.username}-${user?.idpId}`;
+                const isDisabled = userRow.isOwner || isCurrentUser;
                 return (
                     <div className="flex items-center justify-end">
                         <div>
-                            {!userRow.isOwner && (
-                                <>
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button
-                                                variant="ghost"
-                                                className="h-8 w-8 p-0"
-                                            >
-                                                <span className="sr-only">
-                                                    {t("openMenu")}
-                                                </span>
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <Link
-                                                href={`/${org?.org.orgId}/settings/access/users/${userRow.id}`}
-                                                className="block w-full"
-                                            >
-                                                <DropdownMenuItem>
-                                                    {t("accessUsersManage")}
-                                                </DropdownMenuItem>
-                                            </Link>
-                                            {`${userRow.username}-${userRow.idpId}` !==
-                                                `${user?.username}-${user?.idpId}` && (
-                                                <DropdownMenuItem
-                                                    onClick={() => {
-                                                        setIsDeleteModalOpen(
-                                                            true
-                                                        );
-                                                        setSelectedUser(
-                                                            userRow
-                                                        );
-                                                    }}
-                                                >
-                                                    <span className="text-red-500">
-                                                        {t("accessUserRemove")}
-                                                    </span>
-                                                </DropdownMenuItem>
-                                            )}
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </>
-                            )}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        className="h-8 w-8 p-0"
+                                        disabled={isDisabled}
+                                    >
+                                        <span className="sr-only">
+                                            {t("openMenu")}
+                                        </span>
+                                        <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <Link
+                                        href={`/${org?.org.orgId}/settings/access/users/${userRow.id}`}
+                                        className="block w-full"
+                                        aria-disabled={isDisabled}
+                                        onClick={(e) =>
+                                            isDisabled && e.preventDefault()
+                                        }
+                                    >
+                                        <DropdownMenuItem
+                                            disabled={isDisabled}
+                                        >
+                                            {t("accessUsersManage")}
+                                        </DropdownMenuItem>
+                                    </Link>
+                                    {!isDisabled && (
+                                        <DropdownMenuItem
+                                            onClick={() => {
+                                                setIsDeleteModalOpen(true);
+                                                setSelectedUser(userRow);
+                                            }}
+                                        >
+                                            <span className="text-red-500">
+                                                {t("accessUserRemove")}
+                                            </span>
+                                        </DropdownMenuItem>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                         </div>
-                        {!userRow.isOwner && (
+                        {isDisabled ? (
+                            <Button
+                                variant={"outline"}
+                                className="ml-2"
+                                disabled
+                            >
+                                {t("manage")}
+                                <ArrowRight className="ml-2 w-4 h-4" />
+                            </Button>
+                        ) : (
                             <Link
                                 href={`/${org?.org.orgId}/settings/access/users/${userRow.id}`}
                             >
                                 <Button
                                     variant={"outline"}
                                     className="ml-2"
-                                    disabled={userRow.isOwner}
                                 >
                                     {t("manage")}
                                     <ArrowRight className="ml-2 w-4 h-4" />
@@ -266,10 +278,13 @@ export default function UsersTable({ users: u }: UsersTableProps) {
                 buttonText={t("userRemoveOrgConfirm")}
                 onConfirm={removeUser}
                 string={
-                    selectedUser?.email ||
-                    selectedUser?.name ||
-                    selectedUser?.username ||
-                    ""
+                    selectedUser
+                        ? getUserDisplayName({
+                              email: selectedUser.email,
+                              name: selectedUser.name,
+                              username: selectedUser.username
+                          })
+                        : ""
                 }
                 title={t("userRemoveOrg")}
             />

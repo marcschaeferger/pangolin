@@ -44,7 +44,7 @@ export default async function AuthLayout({ children }: AuthLayoutProps) {
 
     return (
         <div className="h-full flex flex-col">
-            <div className="flex justify-end items-center p-3 space-x-2">
+            <div className="hidden md:flex justify-end items-center p-3 space-x-2">
                 <ThemeSwitcher />
             </div>
 
@@ -113,7 +113,7 @@ export default async function AuthLayout({ children }: AuthLayoutProps) {
                                     aria-label="GitHub"
                                     className="flex items-center space-x-2 whitespace-nowrap"
                                 >
-                                    <span>{t("terms")}</span>
+                                    <span>{t("termsOfService")}</span>
                                 </a>
                                 <Separator orientation="vertical" />
                                 <a
@@ -123,30 +123,10 @@ export default async function AuthLayout({ children }: AuthLayoutProps) {
                                     aria-label="GitHub"
                                     className="flex items-center space-x-2 whitespace-nowrap"
                                 >
-                                    <span>{t("privacy")}</span>
+                                    <span>{t("privacyPolicy")}</span>
                                 </a>
                             </>
                         )}
-                        <Separator orientation="vertical" />
-                        <a
-                            href="https://docs.pangolin.net"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label="Built by Fossorial"
-                            className="flex items-center space-x-2 whitespace-nowrap"
-                        >
-                            <span>{t("docs")}</span>
-                        </a>
-                        <Separator orientation="vertical" />
-                        <a
-                            href="https://github.com/fosrl/pangolin"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label="GitHub"
-                            className="flex items-center space-x-2 whitespace-nowrap"
-                        >
-                            <span>{t("github")}</span>
-                        </a>
                     </div>
                 </footer>
             )}

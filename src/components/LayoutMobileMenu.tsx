@@ -5,13 +5,11 @@ import { SidebarNav } from "@app/components/SidebarNav";
 import { OrgSelector } from "@app/components/OrgSelector";
 import { cn } from "@app/lib/cn";
 import { ListUserOrgsResponse } from "@server/routers/org";
-import SupporterStatus from "@app/components/SupporterStatus";
 import { Button } from "@app/components/ui/button";
-import { ExternalLink, Menu, Server } from "lucide-react";
+import { ArrowRight, Menu, Server } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUserContext } from "@app/hooks/useUserContext";
-import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useTranslations } from "next-intl";
 import ProfileIcon from "@app/components/ProfileIcon";
 import ThemeSwitcher from "@app/components/ThemeSwitcher";
@@ -44,12 +42,11 @@ export function LayoutMobileMenu({
     const pathname = usePathname();
     const isAdminPage = pathname?.startsWith("/admin");
     const { user } = useUserContext();
-    const { env } = useEnvContext();
     const t = useTranslations();
 
     return (
-        <div className="shrink-0 md:hidden">
-            <div className="h-16 flex items-center px-4">
+        <div className="shrink-0 md:hidden sticky top-0 z-50">
+            <div className="h-16 flex items-center px-2">
                 <div className="flex items-center gap-4">
                     {showSidebar && (
                         <div>
@@ -72,17 +69,19 @@ export function LayoutMobileMenu({
                                     <SheetDescription className="sr-only">
                                         {t("navbarDescription")}
                                     </SheetDescription>
-                                    <div className="flex-1 overflow-y-auto">
-                                        <div className="p-4">
+                                    <div className="w-full border-b border-border">
+                                        <div className="px-1 shrink-0">
                                             <OrgSelector
                                                 orgId={orgId}
                                                 orgs={orgs}
                                             />
                                         </div>
-                                        <div className="px-4">
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto relative">
+                                        <div className="px-3">
                                             {!isAdminPage &&
                                                 user.serverAdmin && (
-                                                    <div className="pb-3">
+                                                    <div className="mb-1">
                                                         <Link
                                                             href="/admin"
                                                             className={cn(
@@ -94,14 +93,15 @@ export function LayoutMobileMenu({
                                                                 )
                                                             }
                                                         >
-                                                            <span className="flex-shrink-0 mr-2">
+                                                            <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-muted-foreground mr-3">
                                                                 <Server className="h-4 w-4" />
                                                             </span>
-                                                            <span>
+                                                            <span className="flex-1">
                                                                 {t(
                                                                     "serverAdmin"
                                                                 )}
                                                             </span>
+                                                            <ArrowRight className="h-4 w-4 shrink-0 ml-auto opacity-70" />
                                                         </Link>
                                                     </div>
                                                 )}
@@ -112,22 +112,7 @@ export function LayoutMobileMenu({
                                                 }
                                             />
                                         </div>
-                                    </div>
-                                    <div className="p-4 space-y-4 border-t shrink-0">
-                                        <SupporterStatus />
-                                        {env?.app?.version && (
-                                            <div className="text-xs text-muted-foreground text-center">
-                                                <Link
-                                                    href={`https://github.com/fosrl/pangolin/releases/tag/${env.app.version}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center justify-center gap-1"
-                                                >
-                                                    v{env.app.version}
-                                                    <ExternalLink size={12} />
-                                                </Link>
-                                            </div>
-                                        )}
+                                        <div className="sticky bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-card to-transparent" />
                                     </div>
                                 </SheetContent>
                             </Sheet>

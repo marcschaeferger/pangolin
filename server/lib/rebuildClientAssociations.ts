@@ -14,6 +14,7 @@ import {
     siteResources,
     sites,
     Transaction,
+    userOrgRoles,
     userOrgs,
     userSiteResources
 } from "@server/db";
@@ -32,7 +33,7 @@ import logger from "@server/logger";
 import {
     generateAliasConfig,
     generateRemoteSubnets,
-    generateSubnetProxyTargets,
+    generateSubnetProxyTargetV2,
     parseEndpoint,
     formatEndpoint
 } from "@server/lib/ip";
@@ -77,10 +78,10 @@ export async function getClientSiteResourceAccess(
     // get all of the users in these roles
     const userIdsFromRoles = await trx
         .select({
-            userId: userOrgs.userId
+            userId: userOrgRoles.userId
         })
-        .from(userOrgs)
-        .where(inArray(userOrgs.roleId, roleIds))
+        .from(userOrgRoles)
+        .where(inArray(userOrgRoles.roleId, roleIds))
         .then((rows) => rows.map((row) => row.userId));
 
     const newAllUserIds = Array.from(
@@ -477,6 +478,7 @@ async function handleMessagesForSiteClients(
         }
 
         if (isAdd) {
+            // TODO: if we are in jit mode here should we really be sending this?
             await initPeerAddHandshake(
                 // this will kick off the add peer process for the client
                 client.clientId,
@@ -571,7 +573,7 @@ export async function updateClientSiteDestinations(
                 destinations: [
                     {
                         destinationIP: site.sites.subnet.split("/")[0],
-                        destinationPort: site.sites.listenPort || 0
+                        destinationPort: site.sites.listenPort || 1 // this satisfies gerbil for now but should be reevaluated
                     }
                 ]
             };
@@ -579,7 +581,7 @@ export async function updateClientSiteDestinations(
             // add to the existing destinations
             destinations.destinations.push({
                 destinationIP: site.sites.subnet.split("/")[0],
-                destinationPort: site.sites.listenPort || 0
+                destinationPort: site.sites.listenPort || 1 // this satisfies gerbil for now but should be reevaluated
             });
         }
 
@@ -659,17 +661,18 @@ async function handleSubnetProxyTargetUpdates(
         );
 
         if (addedClients.length > 0) {
-            const targetsToAdd = generateSubnetProxyTargets(
+            const targetToAdd = generateSubnetProxyTargetV2(
                 siteResource,
                 addedClients
             );
 
-            if (targetsToAdd.length > 0) {
-                logger.info(
-                    `Adding ${targetsToAdd.length} subnet proxy targets for siteResource ${siteResource.siteResourceId}`
-                );
+            if (targetToAdd) {
                 proxyJobs.push(
-                    addSubnetProxyTargets(newt.newtId, targetsToAdd)
+                    addSubnetProxyTargets(
+                        newt.newtId,
+                        [targetToAdd],
+                        newt.version
+                    )
                 );
             }
 
@@ -695,17 +698,18 @@ async function handleSubnetProxyTargetUpdates(
         );
 
         if (removedClients.length > 0) {
-            const targetsToRemove = generateSubnetProxyTargets(
+            const targetToRemove = generateSubnetProxyTargetV2(
                 siteResource,
                 removedClients
             );
 
-            if (targetsToRemove.length > 0) {
-                logger.info(
-                    `Removing ${targetsToRemove.length} subnet proxy targets for siteResource ${siteResource.siteResourceId}`
-                );
+            if (targetToRemove) {
                 proxyJobs.push(
-                    removeSubnetProxyTargets(newt.newtId, targetsToRemove)
+                    removeSubnetProxyTargets(
+                        newt.newtId,
+                        [targetToRemove],
+                        newt.version
+                    )
                 );
             }
 
@@ -811,12 +815,12 @@ export async function rebuildClientAssociationsFromClient(
 
         // Role-based access
         const roleIds = await trx
-            .select({ roleId: userOrgs.roleId })
-            .from(userOrgs)
+            .select({ roleId: userOrgRoles.roleId })
+            .from(userOrgRoles)
             .where(
                 and(
-                    eq(userOrgs.userId, client.userId),
-                    eq(userOrgs.orgId, client.orgId)
+                    eq(userOrgRoles.userId, client.userId),
+                    eq(userOrgRoles.orgId, client.orgId)
                 )
             ) // this needs to be locked onto this org or else cross-org access could happen
             .then((rows) => rows.map((row) => row.roleId));
@@ -1080,6 +1084,7 @@ async function handleMessagesForClientSites(
                 continue;
             }
 
+            // TODO: if we are in jit mode here should we really be sending this?
             await initPeerAddHandshake(
                 // this will kick off the add peer process for the client
                 client.clientId,
@@ -1146,7 +1151,7 @@ async function handleMessagesForClientResources(
         // Add subnet proxy targets for each site
         for (const [siteId, resources] of addedBySite.entries()) {
             const [newt] = await trx
-                .select({ newtId: newts.newtId })
+                .select({ newtId: newts.newtId, version: newts.version })
                 .from(newts)
                 .where(eq(newts.siteId, siteId))
                 .limit(1);
@@ -1159,7 +1164,7 @@ async function handleMessagesForClientResources(
             }
 
             for (const resource of resources) {
-                const targets = generateSubnetProxyTargets(resource, [
+                const target = generateSubnetProxyTargetV2(resource, [
                     {
                         clientId: client.clientId,
                         pubKey: client.pubKey,
@@ -1167,8 +1172,14 @@ async function handleMessagesForClientResources(
                     }
                 ]);
 
-                if (targets.length > 0) {
-                    proxyJobs.push(addSubnetProxyTargets(newt.newtId, targets));
+                if (target) {
+                    proxyJobs.push(
+                        addSubnetProxyTargets(
+                            newt.newtId,
+                            [target],
+                            newt.version
+                        )
+                    );
                 }
 
                 try {
@@ -1217,7 +1228,7 @@ async function handleMessagesForClientResources(
         // Remove subnet proxy targets for each site
         for (const [siteId, resources] of removedBySite.entries()) {
             const [newt] = await trx
-                .select({ newtId: newts.newtId })
+                .select({ newtId: newts.newtId, version: newts.version })
                 .from(newts)
                 .where(eq(newts.siteId, siteId))
                 .limit(1);
@@ -1230,7 +1241,7 @@ async function handleMessagesForClientResources(
             }
 
             for (const resource of resources) {
-                const targets = generateSubnetProxyTargets(resource, [
+                const target = generateSubnetProxyTargetV2(resource, [
                     {
                         clientId: client.clientId,
                         pubKey: client.pubKey,
@@ -1238,9 +1249,13 @@ async function handleMessagesForClientResources(
                     }
                 ]);
 
-                if (targets.length > 0) {
+                if (target) {
                     proxyJobs.push(
-                        removeSubnetProxyTargets(newt.newtId, targets)
+                        removeSubnetProxyTargets(
+                            newt.newtId,
+                            [target],
+                            newt.version
+                        )
                     );
                 }
 

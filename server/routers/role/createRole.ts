@@ -10,14 +10,25 @@ import { fromError } from "zod-validation-error";
 import { ActionsEnum } from "@server/auth/actions";
 import { eq, and } from "drizzle-orm";
 import { OpenAPITags, registry } from "@server/openApi";
+import { build } from "@server/build";
+import { isLicensedOrSubscribed } from "#dynamic/lib/isLicencedOrSubscribed";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 
 const createRoleParamsSchema = z.strictObject({
     orgId: z.string()
 });
 
+const sshSudoModeSchema = z.enum(["none", "full", "commands"]);
+
 const createRoleSchema = z.strictObject({
     name: z.string().min(1).max(255),
-    description: z.string().optional()
+    description: z.string().optional(),
+    requireDeviceApproval: z.boolean().optional(),
+    allowSsh: z.boolean().optional(),
+    sshSudoMode: sshSudoModeSchema.optional(),
+    sshSudoCommands: z.array(z.string()).optional(),
+    sshCreateHomeDir: z.boolean().optional(),
+    sshUnixGroups: z.array(z.string()).optional()
 });
 
 export const defaultRoleAllowedActions: ActionsEnum[] = [
@@ -34,7 +45,7 @@ registry.registerPath({
     method: "put",
     path: "/org/{orgId}/role",
     description: "Create a role.",
-    tags: [OpenAPITags.Org, OpenAPITags.Role],
+    tags: [OpenAPITags.Role],
     request: {
         params: createRoleParamsSchema,
         body: {
@@ -97,19 +108,40 @@ export async function createRole(
             );
         }
 
+        const isLicensedDeviceApprovals = await isLicensedOrSubscribed(orgId, tierMatrix.deviceApprovals);
+        if (!isLicensedDeviceApprovals) {
+            roleData.requireDeviceApproval = undefined;
+        }
+
+        const isLicensedSshPam = await isLicensedOrSubscribed(orgId, tierMatrix.sshPam);
+        const roleInsertValues: Record<string, unknown> = {
+            name: roleData.name,
+            orgId
+        };
+        if (roleData.description !== undefined) roleInsertValues.description = roleData.description;
+        if (roleData.requireDeviceApproval !== undefined) roleInsertValues.requireDeviceApproval = roleData.requireDeviceApproval;
+        if (isLicensedSshPam) {
+            if (roleData.sshSudoMode !== undefined) roleInsertValues.sshSudoMode = roleData.sshSudoMode;
+            if (roleData.sshSudoCommands !== undefined) roleInsertValues.sshSudoCommands = JSON.stringify(roleData.sshSudoCommands);
+            if (roleData.sshCreateHomeDir !== undefined) roleInsertValues.sshCreateHomeDir = roleData.sshCreateHomeDir;
+            if (roleData.sshUnixGroups !== undefined) roleInsertValues.sshUnixGroups = JSON.stringify(roleData.sshUnixGroups);
+        }
+
         await db.transaction(async (trx) => {
             const newRole = await trx
                 .insert(roles)
-                .values({
-                    ...roleData,
-                    orgId
-                })
+                .values(roleInsertValues as typeof roles.$inferInsert)
                 .returning();
+
+            const actionsToInsert = [...defaultRoleAllowedActions];
+            if (roleData.allowSsh) {
+                actionsToInsert.push(ActionsEnum.signSshKey);
+            }
 
             await trx
                 .insert(roleActions)
                 .values(
-                    defaultRoleAllowedActions.map((action) => ({
+                    actionsToInsert.map((action) => ({
                         roleId: newRole[0].roleId,
                         actionId: action,
                         orgId

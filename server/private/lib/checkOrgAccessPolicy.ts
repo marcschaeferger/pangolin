@@ -13,8 +13,6 @@
 
 import { build } from "@server/build";
 import { db, Org, orgs, ResourceSession, sessions, users } from "@server/db";
-import { getOrgTierData } from "#private/lib/billing";
-import { TierId } from "@server/lib/billing/tiers";
 import license from "#private/license/license";
 import { eq } from "drizzle-orm";
 import {
@@ -23,10 +21,10 @@ import {
 } from "@server/lib/checkOrgAccessPolicy";
 import { UserType } from "@server/types/UserTypes";
 
-export async function enforceResourceSessionLength(
+export function enforceResourceSessionLength(
     resourceSession: ResourceSession,
     org: Org
-): Promise<{ valid: boolean; error?: string }> {
+): { valid: boolean; error?: string } {
     if (org.maxSessionLengthHours) {
         const sessionIssuedAt = resourceSession.issuedAt; // may be null
         const maxSessionLengthHours = org.maxSessionLengthHours;
@@ -79,6 +77,8 @@ export async function checkOrgAccessPolicy(
             return { allowed: true };
         }
     }
+
+    // TODO: check that the org is subscribed
 
     // get the needed data
 

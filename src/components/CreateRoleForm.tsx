@@ -1,21 +1,5 @@
 "use client";
 
-import { Button } from "@app/components/ui/button";
-import {
-    Form,
-    FormControl,
-    FormField,
-    FormItem,
-    FormLabel,
-    FormMessage
-} from "@app/components/ui/form";
-import { Input } from "@app/components/ui/input";
-import { toast } from "@app/hooks/useToast";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { AxiosResponse } from "axios";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
 import {
     Credenza,
     CredenzaBody,
@@ -26,17 +10,26 @@ import {
     CredenzaHeader,
     CredenzaTitle
 } from "@app/components/Credenza";
-import { useOrgContext } from "@app/hooks/useOrgContext";
-import { CreateRoleBody, CreateRoleResponse } from "@server/routers/role";
-import { formatAxiosError } from "@app/lib/api";
-import { createApiClient } from "@app/lib/api";
+import { Button } from "@app/components/ui/button";
 import { useEnvContext } from "@app/hooks/useEnvContext";
+import { useOrgContext } from "@app/hooks/useOrgContext";
+import { usePaidStatus } from "@app/hooks/usePaidStatus";
+import { toast } from "@app/hooks/useToast";
+import { createApiClient, formatAxiosError } from "@app/lib/api";
+import type {
+    CreateRoleBody,
+    CreateRoleResponse
+} from "@server/routers/role";
+import { AxiosResponse } from "axios";
 import { useTranslations } from "next-intl";
+import { useTransition } from "react";
+import { RoleForm, type RoleFormValues } from "./RoleForm";
+import { tierMatrix } from "@server/lib/billing/tierMatrix";
 
 type CreateRoleFormProps = {
     open: boolean;
     setOpen: (open: boolean) => void;
-    afterCreate?: (res: CreateRoleResponse) => Promise<void>;
+    afterCreate?: (res: CreateRoleResponse) => void;
 };
 
 export default function CreateRoleForm({
@@ -46,34 +39,39 @@ export default function CreateRoleForm({
 }: CreateRoleFormProps) {
     const { org } = useOrgContext();
     const t = useTranslations();
-
-    const formSchema = z.object({
-        name: z.string({ message: t("nameRequired") }).max(32),
-        description: z.string().max(255).optional()
-    });
-
-    const [loading, setLoading] = useState(false);
-
+    const { isPaidUser } = usePaidStatus();
     const api = createApiClient(useEnvContext());
+    const [loading, startTransition] = useTransition();
 
-    const form = useForm<z.infer<typeof formSchema>>({
-        resolver: zodResolver(formSchema),
-        defaultValues: {
-            name: "",
-            description: ""
+    async function onSubmit(values: RoleFormValues) {
+        const payload: CreateRoleBody = {
+            name: values.name,
+            description: values.description || undefined,
+            requireDeviceApproval: values.requireDeviceApproval,
+            allowSsh: values.allowSsh
+        };
+        if (isPaidUser(tierMatrix.sshPam)) {
+            payload.sshSudoMode = values.sshSudoMode;
+            payload.sshCreateHomeDir = values.sshCreateHomeDir;
+            payload.sshSudoCommands =
+                values.sshSudoMode === "commands" &&
+                values.sshSudoCommands?.trim()
+                    ? values.sshSudoCommands
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter(Boolean)
+                    : [];
+            if (values.sshUnixGroups?.trim()) {
+                payload.sshUnixGroups = values.sshUnixGroups
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+            }
         }
-    });
-
-    async function onSubmit(values: z.infer<typeof formSchema>) {
-        setLoading(true);
-
         const res = await api
             .put<AxiosResponse<CreateRoleResponse>>(
                 `/org/${org?.org.orgId}/role`,
-                {
-                    name: values.name,
-                    description: values.description
-                } as CreateRoleBody
+                payload
             )
             .catch((e) => {
                 toast({
@@ -92,91 +90,42 @@ export default function CreateRoleForm({
                 title: t("accessRoleCreated"),
                 description: t("accessRoleCreatedDescription")
             });
-
-            if (open) {
-                setOpen(false);
-            }
-
-            if (afterCreate) {
-                afterCreate(res.data.data);
-            }
+            if (open) setOpen(false);
+            afterCreate?.(res.data.data);
         }
-
-        setLoading(false);
     }
 
     return (
-        <>
-            <Credenza
-                open={open}
-                onOpenChange={(val) => {
-                    setOpen(val);
-                    setLoading(false);
-                    form.reset();
-                }}
-            >
-                <CredenzaContent>
-                    <CredenzaHeader>
-                        <CredenzaTitle>{t("accessRoleCreate")}</CredenzaTitle>
-                        <CredenzaDescription>
-                            {t("accessRoleCreateDescription")}
-                        </CredenzaDescription>
-                    </CredenzaHeader>
-                    <CredenzaBody>
-                        <Form {...form}>
-                            <form
-                                onSubmit={form.handleSubmit(onSubmit)}
-                                className="space-y-4"
-                                id="create-role-form"
-                            >
-                                <FormField
-                                    control={form.control}
-                                    name="name"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                {t("accessRoleName")}
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="description"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                {t("description")}
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                            </form>
-                        </Form>
-                    </CredenzaBody>
-                    <CredenzaFooter>
-                        <CredenzaClose asChild>
-                            <Button variant="outline">{t("close")}</Button>
-                        </CredenzaClose>
-                        <Button
-                            type="submit"
-                            form="create-role-form"
-                            loading={loading}
-                            disabled={loading}
-                        >
-                            {t("accessRoleCreateSubmit")}
-                        </Button>
-                    </CredenzaFooter>
-                </CredenzaContent>
-            </Credenza>
-        </>
+        <Credenza open={open} onOpenChange={setOpen}>
+            <CredenzaContent>
+                <CredenzaHeader>
+                    <CredenzaTitle>{t("accessRoleCreate")}</CredenzaTitle>
+                    <CredenzaDescription>
+                        {t("accessRoleCreateDescription")}
+                    </CredenzaDescription>
+                </CredenzaHeader>
+                <CredenzaBody>
+                    <RoleForm
+                        variant="create"
+                        onSubmit={(values) =>
+                            startTransition(() => onSubmit(values))
+                        }
+                    />
+                </CredenzaBody>
+                <CredenzaFooter>
+                    <CredenzaClose asChild>
+                        <Button variant="outline">{t("close")}</Button>
+                    </CredenzaClose>
+                    <Button
+                        type="submit"
+                        form="create-role-form"
+                        loading={loading}
+                        disabled={loading}
+                    >
+                        {t("accessRoleCreateSubmit")}
+                    </Button>
+                </CredenzaFooter>
+            </CredenzaContent>
+        </Credenza>
     );
 }

@@ -39,7 +39,7 @@ registry.registerPath({
     method: "post",
     path: "/resource/{resourceId}/rule/{ruleId}",
     description: "Update a resource rule.",
-    tags: [OpenAPITags.Resource, OpenAPITags.Rule],
+    tags: [OpenAPITags.PublicResource, OpenAPITags.Rule],
     request: {
         params: updateResourceRuleParamsSchema,
         body: {

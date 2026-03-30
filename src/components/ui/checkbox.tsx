@@ -14,13 +14,13 @@ const checkboxVariants = cva(
         variants: {
             variant: {
                 outlinePrimary:
-                    "border rounded-sm border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+                    "border rounded-[5px] border-input data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
                 outline:
-                    "border rounded-sm border-input data-[state=checked]:bg-muted data-[state=checked]:text-accent-foreground",
+                    "border rounded-[5px] border-input data-[state=checked]:border-primary data-[state=checked]:bg-muted data-[state=checked]:text-accent-foreground",
                 outlinePrimarySquare:
-                    "border rounded-[20%] border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+                    "border rounded-[5px] border-input data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
                 outlineSquare:
-                    "border rounded-[20%] border-input data-[state=checked]:bg-muted data-[state=checked]:text-accent-foreground"
+                    "border rounded-[5px] border-input data-[state=checked]:border-primary data-[state=checked]:bg-muted data-[state=checked]:text-accent-foreground"
             }
         },
         defaultVariants: {
@@ -57,11 +57,11 @@ interface CheckboxWithLabelProps extends React.ComponentPropsWithoutRef<
 }
 
 const CheckboxWithLabel = React.forwardRef<
-    React.ElementRef<typeof Checkbox>,
+    React.ComponentRef<typeof Checkbox>,
     CheckboxWithLabelProps
 >(({ className, label, id, ...props }, ref) => {
     return (
-        <div className={cn("flex items-center space-x-2", className)}>
+        <div className={cn("flex items-center gap-x-2", className)}>
             <Checkbox id={id} ref={ref} {...props} />
             <label
                 htmlFor={id}
