@@ -31,6 +31,8 @@ import { Checkbox } from "@app/components/ui/checkbox";
 import { Globe, Plus, X } from "lucide-react";
 import { AxiosResponse } from "axios";
 import { build } from "@server/build";
+import Image from "next/image";
+import { StrategySelect, StrategyOption } from "@app/components/StrategySelect";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -260,6 +262,97 @@ function AddDestinationCard({
                 <span className="text-sm font-medium">Add Destination</span>
             </div>
         </button>
+    );
+}
+
+// ── Destination type picker ────────────────────────────────────────────────────
+
+type DestinationType = "http" | "s3" | "datadog";
+
+const destinationTypeOptions: ReadonlyArray<StrategyOption<DestinationType>> = [
+    {
+        id: "http",
+        title: "HTTP Webhook",
+        description:
+            "Send events to any HTTP endpoint with flexible authentication and templating.",
+        icon: <Globe className="h-6 w-6" />
+    },
+    {
+        id: "s3",
+        title: "Amazon S3",
+        description: "Stream events to an S3-compatible object storage bucket. Coming soon.",
+        disabled: true,
+        icon: (
+            <Image
+                src="/third-party/s3.png"
+                alt="Amazon S3"
+                width={24}
+                height={24}
+                className="rounded-sm"
+            />
+        )
+    },
+    {
+        id: "datadog",
+        title: "Datadog",
+        description: "Forward events directly to your Datadog account. Coming soon.",
+        disabled: true,
+        icon: (
+            <Image
+                src="/third-party/dd.png"
+                alt="Datadog"
+                width={24}
+                height={24}
+                className="rounded-sm"
+            />
+        )
+    }
+];
+
+interface DestinationTypePickerProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    onSelect: (type: DestinationType) => void;
+}
+
+function DestinationTypePicker({
+    open,
+    onOpenChange,
+    onSelect
+}: DestinationTypePickerProps) {
+    const [selected, setSelected] = useState<DestinationType>("http");
+
+    useEffect(() => {
+        if (open) setSelected("http");
+    }, [open]);
+
+    return (
+        <Credenza open={open} onOpenChange={onOpenChange}>
+            <CredenzaContent className="sm:max-w-lg">
+                <CredenzaHeader>
+                    <CredenzaTitle>Add Destination</CredenzaTitle>
+                    <CredenzaDescription>
+                        Choose a destination type to get started.
+                    </CredenzaDescription>
+                </CredenzaHeader>
+                <CredenzaBody>
+                    <StrategySelect
+                        options={destinationTypeOptions}
+                        value={selected}
+                        onChange={setSelected}
+                        cols={1}
+                    />
+                </CredenzaBody>
+                <CredenzaFooter>
+                    <CredenzaClose asChild>
+                        <Button variant="outline">Cancel</Button>
+                    </CredenzaClose>
+                    <Button onClick={() => onSelect(selected)}>
+                        Continue
+                    </Button>
+                </CredenzaFooter>
+            </CredenzaContent>
+        </Credenza>
     );
 }
 
@@ -898,6 +991,7 @@ export default function StreamingDestinationsPage() {
     const [destinations, setDestinations] = useState<Destination[]>([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
+    const [typePickerOpen, setTypePickerOpen] = useState(false);
     const [editingDestination, setEditingDestination] =
         useState<Destination | null>(null);
     const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
@@ -972,6 +1066,11 @@ export default function StreamingDestinationsPage() {
     };
 
     const openCreate = () => {
+        setTypePickerOpen(true);
+    };
+
+    const handleTypePicked = (_type: DestinationType) => {
+        setTypePickerOpen(false);
         setEditingDestination(null);
         setModalOpen(true);
     };
@@ -1017,6 +1116,12 @@ export default function StreamingDestinationsPage() {
                     />
                 </div>
             )}
+
+            <DestinationTypePicker
+                open={typePickerOpen}
+                onOpenChange={setTypePickerOpen}
+                onSelect={handleTypePicked}
+            />
 
             <DestinationModal
                 open={modalOpen}
