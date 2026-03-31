@@ -437,6 +437,27 @@ export const eventStreamingDestinations = pgTable(
     }
 );
 
+export const eventStreamingCursors = pgTable(
+    "eventStreamingCursors",
+    {
+        cursorId: serial("cursorId").primaryKey(),
+        destinationId: integer("destinationId")
+            .notNull()
+            .references(() => eventStreamingDestinations.destinationId, {
+                onDelete: "cascade"
+            }),
+        logType: varchar("logType", { length: 50 }).notNull(), // "request" | "action" | "access" | "connection"
+        lastSentId: bigint("lastSentId", { mode: "number" }).notNull().default(0),
+        lastSentAt: bigint("lastSentAt", { mode: "number" }) // epoch milliseconds, null if never sent
+    },
+    (table) => [
+        uniqueIndex("idx_eventStreamingCursors_dest_type").on(
+            table.destinationId,
+            table.logType
+        )
+    ]
+);
+
 export type Approval = InferSelectModel<typeof approvals>;
 export type Limit = InferSelectModel<typeof limits>;
 export type Account = InferSelectModel<typeof account>;
@@ -471,28 +492,6 @@ export type SiteProvisioningKeyOrg = InferSelectModel<
 export type EventStreamingDestination = InferSelectModel<
     typeof eventStreamingDestinations
 >;
-
-export const eventStreamingCursors = pgTable(
-    "eventStreamingCursors",
-    {
-        cursorId: serial("cursorId").primaryKey(),
-        destinationId: integer("destinationId")
-            .notNull()
-            .references(() => eventStreamingDestinations.destinationId, {
-                onDelete: "cascade"
-            }),
-        logType: varchar("logType", { length: 50 }).notNull(), // "request" | "action" | "access" | "connection"
-        lastSentId: bigint("lastSentId", { mode: "number" }).notNull().default(0),
-        lastSentAt: bigint("lastSentAt", { mode: "number" }) // epoch milliseconds, null if never sent
-    },
-    (table) => [
-        uniqueIndex("idx_eventStreamingCursors_dest_type").on(
-            table.destinationId,
-            table.logType
-        )
-    ]
-);
-
 export type EventStreamingCursor = InferSelectModel<
     typeof eventStreamingCursors
 >;
