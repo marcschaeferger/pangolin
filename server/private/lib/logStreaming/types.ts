@@ -57,6 +57,18 @@ export interface LogBatch {
 
 export type AuthType = "none" | "bearer" | "basic" | "custom";
 
+/**
+ * Controls how the batch of events is serialised into the HTTP request body.
+ *
+ * - `json_array`   – `[{…}, {…}]`  — default; one POST per batch wrapped in a
+ *                    JSON array.  Works with most generic webhooks and Datadog.
+ * - `ndjson`       – `{…}\n{…}`    — newline-delimited JSON, one object per
+ *                    line.  Required by Splunk HEC, Elastic/OpenSearch, Loki.
+ * - `json_single`  – one HTTP POST per event, body is a plain JSON object.
+ *                    Use only for endpoints that cannot handle batches at all.
+ */
+export type PayloadFormat = "json_array" | "ndjson" | "json_single";
+
 export interface HttpConfig {
     /** Human-readable label for the destination */
     name: string;
@@ -75,6 +87,11 @@ export interface HttpConfig {
     /** Additional static headers appended to every request */
     headers: Array<{ key: string; value: string }>;
     /** Whether to render a custom body template instead of the default shape */
+    /**
+     * How events are serialised into the request body.
+     * Defaults to `"json_array"` when absent.
+     */
+    format?: PayloadFormat;
     useBodyTemplate: boolean;
     /**
      * Handlebars-style template for the JSON body of each event.

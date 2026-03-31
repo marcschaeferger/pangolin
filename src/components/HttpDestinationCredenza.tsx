@@ -29,6 +29,8 @@ import { build } from "@server/build";
 
 export type AuthType = "none" | "bearer" | "basic" | "custom";
 
+export type PayloadFormat = "json_array" | "ndjson" | "json_single";
+
 export interface HttpConfig {
     name: string;
     url: string;
@@ -38,6 +40,7 @@ export interface HttpConfig {
     customHeaderName?: string;
     customHeaderValue?: string;
     headers: Array<{ key: string; value: string }>;
+    format: PayloadFormat;
     useBodyTemplate: boolean;
     bodyTemplate?: string;
 }
@@ -67,6 +70,7 @@ export const defaultHttpConfig = (): HttpConfig => ({
     customHeaderName: "",
     customHeaderValue: "",
     headers: [],
+    format: "json_array",
     useBodyTemplate: false,
     bodyTemplate: ""
 });
@@ -278,7 +282,7 @@ export function HttpDestinationCredenza({
                         items={[
                             { title: "Settings", href: "" },
                             { title: "Headers", href: "" },
-                            { title: "Body Template", href: "" },
+                            { title: "Body", href: "" },
                             { title: "Logs", href: "" }
                         ]}
                     >
@@ -539,7 +543,7 @@ export function HttpDestinationCredenza({
                             />
                         </div>
 
-                        {/* ── Body Template tab ─────────────────────────── */}
+                        {/* ── Body tab ─────────────────────────── */}
                         <div className="space-y-6 mt-4 p-1">
                             <div>
                                 <label className="font-medium block">
@@ -592,6 +596,107 @@ export function HttpDestinationCredenza({
                                     </p>
                                 </div>
                             )}
+
+                            {/* Payload Format */}
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="font-medium block">
+                                        Payload Format
+                                    </label>
+                                    <p className="text-sm text-muted-foreground mt-0.5">
+                                        How events are serialised into each
+                                        request body.
+                                    </p>
+                                </div>
+
+                                <RadioGroup
+                                    value={cfg.format ?? "json_array"}
+                                    onValueChange={(v) =>
+                                        update({
+                                            format: v as PayloadFormat
+                                        })
+                                    }
+                                    className="gap-2"
+                                >
+                                    {/* JSON Array */}
+                                    <div className="flex items-start gap-3 rounded-md border p-3 transition-colors">
+                                        <RadioGroupItem
+                                            value="json_array"
+                                            id="fmt-json-array"
+                                            className="mt-0.5"
+                                        />
+                                        <div>
+                                            <Label
+                                                htmlFor="fmt-json-array"
+                                                className="cursor-pointer font-medium"
+                                            >
+                                                JSON Array
+                                            </Label>
+                                            <p className="text-xs text-muted-foreground mt-0.5">
+                                                One request per batch, body is
+                                                a JSON array{" "}
+                                                <code className="bg-muted px-1 py-0.5 rounded text-xs">
+                                                    [{"{...}"}, {"{...}"}]
+                                                </code>
+                                                . Compatible with most generic
+                                                webhooks and Datadog.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* NDJSON */}
+                                    <div className="flex items-start gap-3 rounded-md border p-3 transition-colors">
+                                        <RadioGroupItem
+                                            value="ndjson"
+                                            id="fmt-ndjson"
+                                            className="mt-0.5"
+                                        />
+                                        <div>
+                                            <Label
+                                                htmlFor="fmt-ndjson"
+                                                className="cursor-pointer font-medium"
+                                            >
+                                                NDJSON
+                                            </Label>
+                                            <p className="text-xs text-muted-foreground mt-0.5">
+                                                One request per batch, body is
+                                                newline-delimited JSON — one
+                                                object per line, no outer
+                                                array. Required by{" "}
+                                                <strong>Splunk HEC</strong>,{" "}
+                                                <strong>
+                                                    Elastic / OpenSearch
+                                                </strong>
+                                                , and{" "}
+                                                <strong>Grafana Loki</strong>.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Single event per request */}
+                                    <div className="flex items-start gap-3 rounded-md border p-3 transition-colors">
+                                        <RadioGroupItem
+                                            value="json_single"
+                                            id="fmt-json-single"
+                                            className="mt-0.5"
+                                        />
+                                        <div>
+                                            <Label
+                                                htmlFor="fmt-json-single"
+                                                className="cursor-pointer font-medium"
+                                            >
+                                                One Event Per Request
+                                            </Label>
+                                            <p className="text-xs text-muted-foreground mt-0.5">
+                                                Sends a separate HTTP POST for
+                                                each individual event. Use only
+                                                for endpoints that cannot
+                                                handle batches.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </RadioGroup>
+                            </div>
                         </div>
 
                         {/* ── Logs tab ──────────────────────────────────── */}
