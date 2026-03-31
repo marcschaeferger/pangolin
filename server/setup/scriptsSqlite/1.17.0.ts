@@ -24,6 +24,17 @@ export default async function migration() {
             `Found ${existingUserOrgRoles.length} existing userOrgs role assignment(s) to migrate`
         );
 
+        // Query existing roleId data from userInvites before the transaction destroys it
+        const existingUserInviteRoles = db
+            .prepare(
+                `SELECT "inviteId", "roleId" FROM 'userInvites' WHERE "roleId" IS NOT NULL`
+            )
+            .all() as { inviteId: string; roleId: number }[];
+
+        console.log(
+            `Found ${existingUserInviteRoles.length} existing userInvites role assignment(s) to migrate`
+        );
+
         db.transaction(() => {
             db.prepare(
                 `
@@ -183,6 +194,25 @@ export default async function migration() {
         })();
 
         db.pragma("foreign_keys = ON");
+
+        // Re-insert the preserved invite role assignments into the new userInviteRoles table
+        if (existingUserInviteRoles.length > 0) {
+            const insertUserInviteRole = db.prepare(
+                `INSERT OR IGNORE INTO 'userInviteRoles' ("inviteId", "roleId") VALUES (?, ?)`
+            );
+
+            const insertAll = db.transaction(() => {
+                for (const row of existingUserInviteRoles) {
+                    insertUserInviteRole.run(row.inviteId, row.roleId);
+                }
+            });
+
+            insertAll();
+
+            console.log(
+                `Migrated ${existingUserInviteRoles.length} role assignment(s) into userInviteRoles`
+            );
+        }
 
         // Re-insert the preserved role assignments into the new userOrgRoles table
         if (existingUserOrgRoles.length > 0) {

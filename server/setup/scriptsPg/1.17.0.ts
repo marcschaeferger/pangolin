@@ -20,6 +20,19 @@ export default async function migration() {
         `Found ${existingUserOrgRoles.length} existing userOrgs role assignment(s) to migrate`
     );
 
+    // Query existing roleId data from userInvites before the transaction destroys it
+    const existingInviteRolesQuery = await db.execute(
+        sql`SELECT "inviteId", "roleId" FROM "userInvites" WHERE "roleId" IS NOT NULL`
+    );
+    const existingUserInviteRoles = existingInviteRolesQuery.rows as {
+        inviteId: string;
+        roleId: number;
+    }[];
+
+    console.log(
+        `Found ${existingUserInviteRoles.length} existing userInvites role assignment(s) to migrate`
+    );
+
     try {
         await db.execute(sql`BEGIN`);
 
@@ -172,6 +185,29 @@ export default async function migration() {
         console.log("Unable to migrate database");
         console.log(e);
         throw e;
+    }
+
+    // Re-insert the preserved invite role assignments into the new userInviteRoles table
+    if (existingUserInviteRoles.length > 0) {
+        try {
+            for (const row of existingUserInviteRoles) {
+                await db.execute(sql`
+                    INSERT INTO "userInviteRoles" ("inviteId", "roleId")
+                    VALUES (${row.inviteId}, ${row.roleId})
+                    ON CONFLICT DO NOTHING
+                `);
+            }
+
+            console.log(
+                `Migrated ${existingUserInviteRoles.length} role assignment(s) into userInviteRoles`
+            );
+        } catch (e) {
+            console.error(
+                "Error while migrating role assignments into userInviteRoles:",
+                e
+            );
+            throw e;
+        }
     }
 
     // Re-insert the preserved role assignments into the new userOrgRoles table
