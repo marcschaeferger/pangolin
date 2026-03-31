@@ -112,7 +112,6 @@ function DestinationCard({
             <div className="mt-auto pt-5 flex gap-2">
                 <Button
                     variant="outline"
-                    size="sm"
                     onClick={() => onEdit(destination)}
                     disabled={disabled}
                     className="flex-1"
@@ -238,12 +237,6 @@ function DestinationTypePicker({
                     </CredenzaDescription>
                 </CredenzaHeader>
                 <CredenzaBody>
-                    {isPaywalled && (
-                        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
-                            Upgrade to an enterprise plan to configure event
-                            streaming destinations.
-                        </div>
-                    )}
                     <div className={isPaywalled ? "pointer-events-none opacity-50" : ""}>
                         <StrategySelect
                             options={destinationTypeOptions}
