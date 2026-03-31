@@ -2460,6 +2460,7 @@
     "connectionLogs": "Connection Logs",
     "connectionLogsDescription": "View connection logs for tunnels in this organization",
     "sidebarLogsConnection": "Connection Logs",
+    "sidebarLogsStreaming": "Streaming",
     "sourceAddress": "Source Address",
     "destinationAddress": "Destination Address",
     "duration": "Duration",

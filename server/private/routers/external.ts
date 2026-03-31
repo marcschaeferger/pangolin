@@ -648,7 +648,6 @@ authenticated.delete(
 
 authenticated.get(
     "/org/:orgId/event-streaming-destinations",
-    verifyValidLicense,
     verifyOrgAccess,
     verifyUserHasAction(ActionsEnum.listEventStreamingDestinations),
     eventStreamingDestination.listEventStreamingDestinations
