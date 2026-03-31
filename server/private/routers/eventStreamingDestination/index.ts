@@ -11,4 +11,7 @@
  * This file is not licensed under the AGPLv3.
  */
 
-export * from "./handleConnectionLogMessage";
+export * from "./createEventStreamingDestination";
+export * from "./updateEventStreamingDestination";
+export * from "./deleteEventStreamingDestination";
+export * from "./listEventStreamingDestinations";

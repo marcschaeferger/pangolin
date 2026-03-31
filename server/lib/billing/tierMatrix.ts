@@ -18,7 +18,8 @@ export enum TierFeature {
     AutoProvisioning = "autoProvisioning", // handle downgrade by disabling auto provisioning
     SshPam = "sshPam",
     FullRbac = "fullRbac",
-    SiteProvisioningKeys = "siteProvisioningKeys" // handle downgrade by revoking keys if needed
+    SiteProvisioningKeys = "siteProvisioningKeys", // handle downgrade by revoking keys if needed
+    SIEM = "siem" // handle downgrade by disabling SIEM integrations
 }
 
 export const tierMatrix: Record<TierFeature, Tier[]> = {
@@ -54,5 +55,6 @@ export const tierMatrix: Record<TierFeature, Tier[]> = {
     [TierFeature.AutoProvisioning]: ["tier1", "tier3", "enterprise"],
     [TierFeature.SshPam]: ["tier1", "tier3", "enterprise"],
     [TierFeature.FullRbac]: ["tier1", "tier2", "tier3", "enterprise"],
-    [TierFeature.SiteProvisioningKeys]: ["enterprise"]
+    [TierFeature.SiteProvisioningKeys]: ["tier3", "enterprise"],
+    [TierFeature.SIEM]: ["enterprise"]
 };
