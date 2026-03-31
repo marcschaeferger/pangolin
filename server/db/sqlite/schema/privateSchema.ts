@@ -5,7 +5,8 @@ import {
     primaryKey,
     real,
     sqliteTable,
-    text
+    text,
+    uniqueIndex
 } from "drizzle-orm/sqlite-core";
 import {
     clients,
@@ -433,6 +434,27 @@ export const eventStreamingDestinations = sqliteTable(
     }
 );
 
+export const eventStreamingCursors = sqliteTable(
+    "eventStreamingCursors",
+    {
+        cursorId: integer("cursorId").primaryKey({ autoIncrement: true }),
+        destinationId: integer("destinationId")
+            .notNull()
+            .references(() => eventStreamingDestinations.destinationId, {
+                onDelete: "cascade"
+            }),
+        logType: text("logType").notNull(), // "request" | "action" | "access" | "connection"
+        lastSentId: integer("lastSentId").notNull().default(0),
+        lastSentAt: integer("lastSentAt") // epoch milliseconds, null if never sent
+    },
+    (table) => [
+        uniqueIndex("idx_eventStreamingCursors_dest_type").on(
+            table.destinationId,
+            table.logType
+        )
+    ]
+);
+
 export type Approval = InferSelectModel<typeof approvals>;
 export type Limit = InferSelectModel<typeof limits>;
 export type Account = InferSelectModel<typeof account>;
@@ -460,4 +482,7 @@ export type BannedIp = InferSelectModel<typeof bannedIps>;
 export type SiteProvisioningKey = InferSelectModel<typeof siteProvisioningKeys>;
 export type EventStreamingDestination = InferSelectModel<
     typeof eventStreamingDestinations
+>;
+export type EventStreamingCursor = InferSelectModel<
+    typeof eventStreamingCursors
 >;

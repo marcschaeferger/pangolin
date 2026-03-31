@@ -8,7 +8,8 @@ import {
     real,
     text,
     index,
-    primaryKey
+    primaryKey,
+    uniqueIndex
 } from "drizzle-orm/pg-core";
 import { InferSelectModel } from "drizzle-orm";
 import {
@@ -469,4 +470,29 @@ export type SiteProvisioningKeyOrg = InferSelectModel<
 >;
 export type EventStreamingDestination = InferSelectModel<
     typeof eventStreamingDestinations
+>;
+
+export const eventStreamingCursors = pgTable(
+    "eventStreamingCursors",
+    {
+        cursorId: serial("cursorId").primaryKey(),
+        destinationId: integer("destinationId")
+            .notNull()
+            .references(() => eventStreamingDestinations.destinationId, {
+                onDelete: "cascade"
+            }),
+        logType: varchar("logType", { length: 50 }).notNull(), // "request" | "action" | "access" | "connection"
+        lastSentId: bigint("lastSentId", { mode: "number" }).notNull().default(0),
+        lastSentAt: bigint("lastSentAt", { mode: "number" }) // epoch milliseconds, null if never sent
+    },
+    (table) => [
+        uniqueIndex("idx_eventStreamingCursors_dest_type").on(
+            table.destinationId,
+            table.logType
+        )
+    ]
+);
+
+export type EventStreamingCursor = InferSelectModel<
+    typeof eventStreamingCursors
 >;

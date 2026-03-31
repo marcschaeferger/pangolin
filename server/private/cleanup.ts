@@ -12,6 +12,7 @@
  */
 
 import { rateLimitService } from "#private/lib/rateLimit";
+import { logStreamingManager } from "#private/lib/logStreaming";
 import { cleanup as wsCleanup } from "#private/routers/ws";
 import { flushBandwidthToDb } from "@server/routers/newt/handleReceiveBandwidthMessage";
 import { flushConnectionLogToDb } from "#private/routers/newt";
@@ -25,6 +26,7 @@ async function cleanup() {
     await flushSiteBandwidthToDb();
     await rateLimitService.cleanup();
     await wsCleanup();
+    await logStreamingManager.shutdown();
 
     process.exit(0);
 }
