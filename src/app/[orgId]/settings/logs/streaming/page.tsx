@@ -38,6 +38,7 @@ import {
     HttpDestinationCredenza,
     parseHttpConfig
 } from "@app/components/HttpDestinationCredenza";
+import { useTranslations } from "next-intl";
 
 // ── Re-export Destination so the rest of the file can use it ──────────────────
 
@@ -69,6 +70,7 @@ function DestinationCard({
     isToggling,
     disabled = false
 }: DestinationCardProps) {
+    const t = useTranslations();
     const cfg = parseHttpConfig(destination.config);
 
     return (
@@ -84,7 +86,7 @@ function DestinationCard({
                     </div>
                     <div className="min-w-0">
                         <p className="font-semibold text-sm leading-tight truncate">
-                            {cfg.name || "Unnamed destination"}
+                            {cfg.name || t("streamingUnnamedDestination")}
                         </p>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
                             HTTP
@@ -104,7 +106,7 @@ function DestinationCard({
             {/* URL preview */}
             <p className="text-xs text-muted-foreground truncate">
                 {cfg.url || (
-                    <span className="italic">No URL configured</span>
+                    <span className="italic">{t("streamingNoUrlConfigured")}</span>
                 )}
             </p>
 
@@ -116,7 +118,7 @@ function DestinationCard({
                     disabled={disabled}
                     className="flex-1"
                 >
-                    Edit
+                    {t("edit")}
                 </Button>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -134,7 +136,7 @@ function DestinationCard({
                             className="text-destructive focus:text-destructive"
                             onClick={() => onDelete(destination)}
                         >
-                            Delete
+                            {t("delete")}
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
@@ -146,6 +148,8 @@ function DestinationCard({
 // ── Add destination card ───────────────────────────────────────────────────────
 
 function AddDestinationCard({ onClick }: { onClick: () => void }) {
+    const t = useTranslations();
+
     return (
         <button
             type="button"
@@ -156,7 +160,7 @@ function AddDestinationCard({ onClick }: { onClick: () => void }) {
                 <div className="flex items-center justify-center w-9 h-9 rounded-md border-2 border-dashed border-current">
                     <Plus className="h-4 w-4" />
                 </div>
-                <span className="text-sm font-medium">Add Destination</span>
+                <span className="text-sm font-medium">{t("streamingAddDestination")}</span>
             </div>
         </button>
     );
@@ -165,48 +169,6 @@ function AddDestinationCard({ onClick }: { onClick: () => void }) {
 // ── Destination type picker ────────────────────────────────────────────────────
 
 type DestinationType = "http" | "s3" | "datadog";
-
-const destinationTypeOptions: ReadonlyArray<StrategyOption<DestinationType>> = [
-    {
-        id: "http",
-        title: "HTTP Webhook",
-        description:
-            "Send events to any HTTP endpoint with flexible authentication and templating.",
-        icon: <Globe className="h-6 w-6" />
-    },
-    {
-        id: "s3",
-        title: "Amazon S3",
-        description:
-            "Stream events to an S3-compatible object storage bucket. Coming soon.",
-        disabled: true,
-        icon: (
-            <Image
-                src="/third-party/s3.png"
-                alt="Amazon S3"
-                width={24}
-                height={24}
-                className="rounded-sm"
-            />
-        )
-    },
-    {
-        id: "datadog",
-        title: "Datadog",
-        description:
-            "Forward events directly to your Datadog account. Coming soon.",
-        disabled: true,
-        icon: (
-            <Image
-                src="/third-party/dd.png"
-                alt="Datadog"
-                width={24}
-                height={24}
-                className="rounded-sm"
-            />
-        )
-    }
-];
 
 interface DestinationTypePickerProps {
     open: boolean;
@@ -221,7 +183,47 @@ function DestinationTypePicker({
     onSelect,
     isPaywalled = false
 }: DestinationTypePickerProps) {
+    const t = useTranslations();
     const [selected, setSelected] = useState<DestinationType>("http");
+
+    const destinationTypeOptions: ReadonlyArray<StrategyOption<DestinationType>> = [
+        {
+            id: "http",
+            title: t("streamingHttpWebhookTitle"),
+            description: t("streamingHttpWebhookDescription"),
+            icon: <Globe className="h-6 w-6" />
+        },
+        {
+            id: "s3",
+            title: t("streamingS3Title"),
+            description: t("streamingS3Description"),
+            disabled: true,
+            icon: (
+                <Image
+                    src="/third-party/s3.png"
+                    alt={t("streamingS3Title")}
+                    width={24}
+                    height={24}
+                    className="rounded-sm"
+                />
+            )
+        },
+        {
+            id: "datadog",
+            title: t("streamingDatadogTitle"),
+            description: t("streamingDatadogDescription"),
+            disabled: true,
+            icon: (
+                <Image
+                    src="/third-party/dd.png"
+                    alt={t("streamingDatadogTitle")}
+                    width={24}
+                    height={24}
+                    className="rounded-sm"
+                />
+            )
+        }
+    ];
 
     useEffect(() => {
         if (open) setSelected("http");
@@ -231,9 +233,9 @@ function DestinationTypePicker({
         <Credenza open={open} onOpenChange={onOpenChange}>
             <CredenzaContent className="sm:max-w-lg">
                 <CredenzaHeader>
-                    <CredenzaTitle>Add Destination</CredenzaTitle>
+                    <CredenzaTitle>{t("streamingAddDestination")}</CredenzaTitle>
                     <CredenzaDescription>
-                        Choose a destination type to get started.
+                        {t("streamingTypePickerDescription")}
                     </CredenzaDescription>
                 </CredenzaHeader>
                 <CredenzaBody>
@@ -248,13 +250,13 @@ function DestinationTypePicker({
                 </CredenzaBody>
                 <CredenzaFooter>
                     <CredenzaClose asChild>
-                        <Button variant="outline">Cancel</Button>
+                        <Button variant="outline">{t("cancel")}</Button>
                     </CredenzaClose>
                     <Button
                         onClick={() => onSelect(selected)}
                         disabled={isPaywalled}
                     >
-                        Continue
+                        {t("continue")}
                     </Button>
                 </CredenzaFooter>
             </CredenzaContent>
@@ -269,6 +271,7 @@ export default function StreamingDestinationsPage() {
     const api = createApiClient(useEnvContext());
     const { isPaidUser } = usePaidStatus();
     const isEnterprise = isPaidUser(tierMatrix[TierFeature.SIEM]);
+    const t = useTranslations();
 
     const [destinations, setDestinations] = useState<Destination[]>([]);
     const [loading, setLoading] = useState(true);
@@ -297,10 +300,10 @@ export default function StreamingDestinationsPage() {
         } catch (e) {
             toast({
                 variant: "destructive",
-                title: "Failed to load destinations",
+                title: t("streamingFailedToLoad"),
                 description: formatAxiosError(
                     e,
-                    "An unexpected error occurred."
+                    t("streamingUnexpectedError")
                 )
             });
         } finally {
@@ -337,10 +340,10 @@ export default function StreamingDestinationsPage() {
             );
             toast({
                 variant: "destructive",
-                title: "Failed to update destination",
+                title: t("streamingFailedToUpdate"),
                 description: formatAxiosError(
                     e,
-                    "An unexpected error occurred."
+                    t("streamingUnexpectedError")
                 )
             });
         } finally {
@@ -364,17 +367,17 @@ export default function StreamingDestinationsPage() {
             await api.delete(
                 `/org/${orgId}/event-streaming-destination/${deleteTarget.destinationId}`
             );
-            toast({ title: "Destination deleted successfully" });
+            toast({ title: t("streamingDeletedSuccess") });
             setDeleteDialogOpen(false);
             setDeleteTarget(null);
             loadDestinations();
         } catch (e) {
             toast({
                 variant: "destructive",
-                title: "Failed to delete destination",
+                title: t("streamingFailedToDelete"),
                 description: formatAxiosError(
                     e,
-                    "An unexpected error occurred."
+                    t("streamingUnexpectedError")
                 )
             });
         } finally {
@@ -400,8 +403,8 @@ export default function StreamingDestinationsPage() {
     return (
         <>
             <SettingsSectionTitle
-                title="Event Streaming"
-                description="Stream events from your organization to external destinations in real time."
+                title={t("streamingTitle")}
+                description={t("streamingDescription")}
             />
 
             <PaidFeaturesAlert tiers={tierMatrix[TierFeature.SIEM]} />
@@ -456,20 +459,20 @@ export default function StreamingDestinationsPage() {
                         if (!v) setDeleteTarget(null);
                     }}
                     string={
-                        parseHttpConfig(deleteTarget.config).name || "delete"
+                        parseHttpConfig(deleteTarget.config).name || t("streamingDeleteDialogThisDestination")
                     }
-                    title="Delete Destination"
+                    title={t("streamingDeleteTitle")}
                     dialog={
                         <p className="text-sm text-muted-foreground">
-                            Are you sure you want to delete{" "}
+                            {t("streamingDeleteDialogAreYouSure")}{" "}
                             <span className="font-semibold text-foreground">
                                 {parseHttpConfig(deleteTarget.config).name ||
-                                    "this destination"}
+                                    t("streamingDeleteDialogThisDestination")}
                             </span>
-                            ? All configuration will be permanently removed.
+                            {t("streamingDeleteDialogPermanentlyRemoved")}
                         </p>
                     }
-                    buttonText="Delete Destination"
+                    buttonText={t("streamingDeleteButtonText")}
                     onConfirm={handleDeleteConfirm}
                 />
             )}

@@ -24,6 +24,7 @@ import { createApiClient, formatAxiosError } from "@app/lib/api";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { toast } from "@app/hooks/useToast";
 import { build } from "@server/build";
+import { useTranslations } from "next-intl";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,8 @@ interface HeadersEditorProps {
 }
 
 function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
+    const t = useTranslations();
+
     const addRow = () => onChange([...headers, { key: "", value: "" }]);
 
     const removeRow = (i: number) =>
@@ -106,8 +109,7 @@ function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
         <div className="space-y-3">
             {headers.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                    No custom headers configured. Click "Add Header" to add
-                    one.
+                    {t("httpDestNoHeadersConfigured")}
                 </p>
             )}
             {headers.map((h, i) => (
@@ -115,7 +117,7 @@ function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
                     <Input
                         value={h.key}
                         onChange={(e) => updateRow(i, "key", e.target.value)}
-                        placeholder="Header name"
+                        placeholder={t("httpDestHeaderNamePlaceholder")}
                         className="flex-1"
                     />
                     <Input
@@ -123,7 +125,7 @@ function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
                         onChange={(e) =>
                             updateRow(i, "value", e.target.value)
                         }
-                        placeholder="Value"
+                        placeholder={t("httpDestHeaderValuePlaceholder")}
                         className="flex-1"
                     />
                     <Button
@@ -145,7 +147,7 @@ function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
                 className="gap-1.5"
             >
                 <Plus className="h-3.5 w-3.5" />
-                Add Header
+                {t("httpDestAddHeader")}
             </Button>
         </div>
     );
@@ -169,6 +171,7 @@ export function HttpDestinationCredenza({
     onSaved
 }: HttpDestinationCredenzaProps) {
     const api = createApiClient(useEnvContext());
+    const t = useTranslations();
 
     const [saving, setSaving] = useState(false);
     const [cfg, setCfg] = useState<HttpConfig>(defaultHttpConfig());
@@ -201,14 +204,14 @@ export function HttpDestinationCredenza({
                 parsed.protocol !== "http:" &&
                 parsed.protocol !== "https:"
             ) {
-                return "URL must use http or https";
+                return t("httpDestUrlErrorHttpRequired");
             }
             if (build === "saas" && parsed.protocol !== "https:") {
-                return "HTTPS is required on cloud deployments";
+                return t("httpDestUrlErrorHttpsRequired");
             }
             return null;
         } catch {
-            return "Enter a valid URL (e.g. https://example.com/webhook)";
+            return t("httpDestUrlErrorInvalid");
         }
     })();
 
@@ -234,13 +237,13 @@ export function HttpDestinationCredenza({
                     `/org/${orgId}/event-streaming-destination/${editing.destinationId}`,
                     payload
                 );
-                toast({ title: "Destination updated successfully" });
+                toast({ title: t("httpDestUpdatedSuccess") });
             } else {
                 await api.put(
                     `/org/${orgId}/event-streaming-destination`,
                     payload
                 );
-                toast({ title: "Destination created successfully" });
+                toast({ title: t("httpDestCreatedSuccess") });
             }
             onSaved();
             onOpenChange(false);
@@ -248,11 +251,11 @@ export function HttpDestinationCredenza({
             toast({
                 variant: "destructive",
                 title: editing
-                    ? "Failed to update destination"
-                    : "Failed to create destination",
+                    ? t("httpDestUpdateFailed")
+                    : t("httpDestCreateFailed"),
                 description: formatAxiosError(
                     e,
-                    "An unexpected error occurred."
+                    t("streamingUnexpectedError")
                 )
             });
         } finally {
@@ -266,13 +269,13 @@ export function HttpDestinationCredenza({
                 <CredenzaHeader>
                     <CredenzaTitle>
                         {editing
-                            ? "Edit Destination"
-                            : "Add HTTP Destination"}
+                            ? t("httpDestEditTitle")
+                            : t("httpDestAddTitle")}
                     </CredenzaTitle>
                     <CredenzaDescription>
                         {editing
-                            ? "Update the configuration for this HTTP event streaming destination."
-                            : "Configure a new HTTP endpoint to receive your organization's events."}
+                            ? t("httpDestEditDescription")
+                            : t("httpDestAddDescription")}
                     </CredenzaDescription>
                 </CredenzaHeader>
 
@@ -280,20 +283,20 @@ export function HttpDestinationCredenza({
                     <HorizontalTabs
                         clientSide
                         items={[
-                            { title: "Settings", href: "" },
-                            { title: "Headers", href: "" },
-                            { title: "Body", href: "" },
-                            { title: "Logs", href: "" }
+                            { title: t("httpDestTabSettings"), href: "" },
+                            { title: t("httpDestTabHeaders"), href: "" },
+                            { title: t("httpDestTabBody"), href: "" },
+                            { title: t("httpDestTabLogs"), href: "" }
                         ]}
                     >
                         {/* ── Settings tab ────────────────────────────── */}
                         <div className="space-y-6 mt-4 p-1">
                             {/* Name */}
                             <div className="space-y-2">
-                                <Label htmlFor="dest-name">Name</Label>
+                                <Label htmlFor="dest-name">{t("name")}</Label>
                                 <Input
                                     id="dest-name"
-                                    placeholder="My HTTP destination"
+                                    placeholder={t("httpDestNamePlaceholder")}
                                     value={cfg.name}
                                     onChange={(e) =>
                                         update({ name: e.target.value })
@@ -304,7 +307,7 @@ export function HttpDestinationCredenza({
                             {/* URL */}
                             <div className="space-y-2">
                                 <Label htmlFor="dest-url">
-                                    Destination URL
+                                    {t("httpDestUrlLabel")}
                                 </Label>
                                 <Input
                                     id="dest-url"
@@ -325,11 +328,10 @@ export function HttpDestinationCredenza({
                             <div className="space-y-3">
                                 <div>
                                     <label className="font-medium block">
-                                        Authentication
+                                        {t("httpDestAuthTitle")}
                                     </label>
                                     <p className="text-sm text-muted-foreground mt-0.5">
-                                        Choose how requests to your endpoint
-                                        are authenticated.
+                                        {t("httpDestAuthDescription")}
                                     </p>
                                 </div>
 
@@ -352,14 +354,10 @@ export function HttpDestinationCredenza({
                                                 htmlFor="auth-none"
                                                 className="cursor-pointer font-medium"
                                             >
-                                                No Authentication
+                                                {t("httpDestAuthNoneTitle")}
                                             </Label>
                                             <p className="text-xs text-muted-foreground mt-0.5">
-                                                Sends requests without an{" "}
-                                                <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                                    Authorization
-                                                </code>{" "}
-                                                header.
+                                                {t("httpDestAuthNoneDescription")}
                                             </p>
                                         </div>
                                     </div>
@@ -377,20 +375,15 @@ export function HttpDestinationCredenza({
                                                     htmlFor="auth-bearer"
                                                     className="cursor-pointer font-medium"
                                                 >
-                                                    Bearer Token
+                                                    {t("httpDestAuthBearerTitle")}
                                                 </Label>
                                                 <p className="text-xs text-muted-foreground mt-0.5">
-                                                    Adds an{" "}
-                                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                                        Authorization: Bearer
-                                                        &lt;token&gt;
-                                                    </code>{" "}
-                                                    header to each request.
+                                                    {t("httpDestAuthBearerDescription")}
                                                 </p>
                                             </div>
                                             {cfg.authType === "bearer" && (
                                                 <Input
-                                                    placeholder="Your API key or token"
+                                                    placeholder={t("httpDestAuthBearerPlaceholder")}
                                                     value={
                                                         cfg.bearerToken ?? ""
                                                     }
@@ -418,25 +411,15 @@ export function HttpDestinationCredenza({
                                                     htmlFor="auth-basic"
                                                     className="cursor-pointer font-medium"
                                                 >
-                                                    Basic Auth
+                                                    {t("httpDestAuthBasicTitle")}
                                                 </Label>
                                                 <p className="text-xs text-muted-foreground mt-0.5">
-                                                    Adds an{" "}
-                                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                                        Authorization: Basic
-                                                        &lt;credentials&gt;
-                                                    </code>{" "}
-                                                    header. Provide credentials
-                                                    as{" "}
-                                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                                        username:password
-                                                    </code>
-                                                    .
+                                                    {t("httpDestAuthBasicDescription")}
                                                 </p>
                                             </div>
                                             {cfg.authType === "basic" && (
                                                 <Input
-                                                    placeholder="username:password"
+                                                    placeholder={t("httpDestAuthBasicPlaceholder")}
                                                     value={
                                                         cfg.basicCredentials ??
                                                         ""
@@ -465,22 +448,16 @@ export function HttpDestinationCredenza({
                                                     htmlFor="auth-custom"
                                                     className="cursor-pointer font-medium"
                                                 >
-                                                    Custom Header
+                                                    {t("httpDestAuthCustomTitle")}
                                                 </Label>
                                                 <p className="text-xs text-muted-foreground mt-0.5">
-                                                    Specify a custom HTTP
-                                                    header name and value for
-                                                    authentication (e.g.{" "}
-                                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                                        X-API-Key
-                                                    </code>
-                                                    ).
+                                                    {t("httpDestAuthCustomDescription")}
                                                 </p>
                                             </div>
                                             {cfg.authType === "custom" && (
                                                 <div className="flex gap-2">
                                                     <Input
-                                                        placeholder="Header name (e.g. X-API-Key)"
+                                                        placeholder={t("httpDestAuthCustomHeaderNamePlaceholder")}
                                                         value={
                                                             cfg.customHeaderName ??
                                                             ""
@@ -495,7 +472,7 @@ export function HttpDestinationCredenza({
                                                         className="flex-1"
                                                     />
                                                     <Input
-                                                        placeholder="Header value"
+                                                        placeholder={t("httpDestAuthCustomHeaderValuePlaceholder")}
                                                         value={
                                                             cfg.customHeaderValue ??
                                                             ""
@@ -521,20 +498,10 @@ export function HttpDestinationCredenza({
                         <div className="space-y-6 mt-4 p-1">
                             <div>
                                 <label className="font-medium block">
-                                    Custom HTTP Headers
+                                    {t("httpDestCustomHeadersTitle")}
                                 </label>
                                 <p className="text-sm text-muted-foreground mt-0.5">
-                                    Add custom headers to every outgoing
-                                    request. Useful for static tokens or
-                                    custom{" "}
-                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                        Content-Type
-                                    </code>
-                                    . By default,{" "}
-                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                        Content-Type: application/json
-                                    </code>{" "}
-                                    is sent.
+                                    {t("httpDestCustomHeadersDescription")}
                                 </p>
                             </div>
                             <HeadersEditor
@@ -547,12 +514,10 @@ export function HttpDestinationCredenza({
                         <div className="space-y-6 mt-4 p-1">
                             <div>
                                 <label className="font-medium block">
-                                    Custom Body Template
+                                    {t("httpDestBodyTemplateTitle")}
                                 </label>
                                 <p className="text-sm text-muted-foreground mt-0.5">
-                                    Control the JSON payload structure sent to
-                                    your endpoint. If disabled, a default JSON
-                                    object is sent for each event.
+                                    {t("httpDestBodyTemplateDescription")}
                                 </p>
                             </div>
 
@@ -568,14 +533,14 @@ export function HttpDestinationCredenza({
                                     htmlFor="use-body-template"
                                     className="cursor-pointer"
                                 >
-                                    Enable custom body template
+                                    {t("httpDestEnableBodyTemplate")}
                                 </Label>
                             </div>
 
                             {cfg.useBodyTemplate && (
                                 <div className="space-y-2">
                                     <Label htmlFor="body-template">
-                                        Body Template (JSON)
+                                        {t("httpDestBodyTemplateLabel")}
                                     </Label>
                                     <Textarea
                                         id="body-template"
@@ -591,8 +556,7 @@ export function HttpDestinationCredenza({
                                         className="font-mono text-xs min-h-45 resize-y"
                                     />
                                     <p className="text-xs text-muted-foreground">
-                                        Use template variables to reference
-                                        event fields in your payload.
+                                        {t("httpDestBodyTemplateHint")}
                                     </p>
                                 </div>
                             )}
@@ -601,11 +565,10 @@ export function HttpDestinationCredenza({
                             <div className="space-y-3">
                                 <div>
                                     <label className="font-medium block">
-                                        Payload Format
+                                        {t("httpDestPayloadFormatTitle")}
                                     </label>
                                     <p className="text-sm text-muted-foreground mt-0.5">
-                                        How events are serialised into each
-                                        request body.
+                                        {t("httpDestPayloadFormatDescription")}
                                     </p>
                                 </div>
 
@@ -630,16 +593,10 @@ export function HttpDestinationCredenza({
                                                 htmlFor="fmt-json-array"
                                                 className="cursor-pointer font-medium"
                                             >
-                                                JSON Array
+                                                {t("httpDestFormatJsonArrayTitle")}
                                             </Label>
                                             <p className="text-xs text-muted-foreground mt-0.5">
-                                                One request per batch, body is
-                                                a JSON array{" "}
-                                                <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                                    [{"{...}"}, {"{...}"}]
-                                                </code>
-                                                . Compatible with most generic
-                                                webhooks and Datadog.
+                                                {t("httpDestFormatJsonArrayDescription")}
                                             </p>
                                         </div>
                                     </div>
@@ -656,19 +613,10 @@ export function HttpDestinationCredenza({
                                                 htmlFor="fmt-ndjson"
                                                 className="cursor-pointer font-medium"
                                             >
-                                                NDJSON
+                                                {t("httpDestFormatNdjsonTitle")}
                                             </Label>
                                             <p className="text-xs text-muted-foreground mt-0.5">
-                                                One request per batch, body is
-                                                newline-delimited JSON — one
-                                                object per line, no outer
-                                                array. Required by{" "}
-                                                <strong>Splunk HEC</strong>,{" "}
-                                                <strong>
-                                                    Elastic / OpenSearch
-                                                </strong>
-                                                , and{" "}
-                                                <strong>Grafana Loki</strong>.
+                                                {t("httpDestFormatNdjsonDescription")}
                                             </p>
                                         </div>
                                     </div>
@@ -685,13 +633,10 @@ export function HttpDestinationCredenza({
                                                 htmlFor="fmt-json-single"
                                                 className="cursor-pointer font-medium"
                                             >
-                                                One Event Per Request
+                                                {t("httpDestFormatSingleTitle")}
                                             </Label>
                                             <p className="text-xs text-muted-foreground mt-0.5">
-                                                Sends a separate HTTP POST for
-                                                each individual event. Use only
-                                                for endpoints that cannot
-                                                handle batches.
+                                                {t("httpDestFormatSingleDescription")}
                                             </p>
                                         </div>
                                     </div>
@@ -703,12 +648,10 @@ export function HttpDestinationCredenza({
                         <div className="space-y-6 mt-4 p-1">
                             <div>
                                 <label className="font-medium block">
-                                    Log Types
+                                    {t("httpDestLogTypesTitle")}
                                 </label>
                                 <p className="text-sm text-muted-foreground mt-0.5">
-                                    Choose which log types are forwarded to
-                                    this destination. Only enabled log types
-                                    will be streamed.
+                                    {t("httpDestLogTypesDescription")}
                                 </p>
                             </div>
 
@@ -727,11 +670,10 @@ export function HttpDestinationCredenza({
                                             htmlFor="log-access"
                                             className="text-sm font-medium cursor-pointer"
                                         >
-                                            Access Logs
+                                            {t("httpDestAccessLogsTitle")}
                                         </label>
                                         <p className="text-xs text-muted-foreground mt-0.5">
-                                            Resource access attempts, including
-                                            authenticated and denied requests.
+                                            {t("httpDestAccessLogsDescription")}
                                         </p>
                                     </div>
                                 </div>
@@ -750,11 +692,10 @@ export function HttpDestinationCredenza({
                                             htmlFor="log-action"
                                             className="text-sm font-medium cursor-pointer"
                                         >
-                                            Action Logs
+                                            {t("httpDestActionLogsTitle")}
                                         </label>
                                         <p className="text-xs text-muted-foreground mt-0.5">
-                                            Administrative actions performed by
-                                            users within the organization.
+                                            {t("httpDestActionLogsDescription")}
                                         </p>
                                     </div>
                                 </div>
@@ -773,12 +714,10 @@ export function HttpDestinationCredenza({
                                             htmlFor="log-connection"
                                             className="text-sm font-medium cursor-pointer"
                                         >
-                                            Connection Logs
+                                            {t("httpDestConnectionLogsTitle")}
                                         </label>
                                         <p className="text-xs text-muted-foreground mt-0.5">
-                                            Site and tunnel connection events,
-                                            including connects and
-                                            disconnects.
+                                            {t("httpDestConnectionLogsDescription")}
                                         </p>
                                     </div>
                                 </div>
@@ -797,12 +736,10 @@ export function HttpDestinationCredenza({
                                             htmlFor="log-request"
                                             className="text-sm font-medium cursor-pointer"
                                         >
-                                            Request Logs
+                                            {t("httpDestRequestLogsTitle")}
                                         </label>
                                         <p className="text-xs text-muted-foreground mt-0.5">
-                                            HTTP request logs for proxied
-                                            resources, including method, path,
-                                            and response code.
+                                            {t("httpDestRequestLogsDescription")}
                                         </p>
                                     </div>
                                 </div>
@@ -818,7 +755,7 @@ export function HttpDestinationCredenza({
                             variant="outline"
                             disabled={saving}
                         >
-                            Cancel
+                            {t("cancel")}
                         </Button>
                     </CredenzaClose>
                     <Button
@@ -827,7 +764,7 @@ export function HttpDestinationCredenza({
                         loading={saving}
                         disabled={!isValid || saving}
                     >
-                        {editing ? "Save Changes" : "Create Destination"}
+                        {editing ? t("httpDestSaveChanges") : t("httpDestCreateDestination")}
                     </Button>
                 </CredenzaFooter>
             </CredenzaContent>
