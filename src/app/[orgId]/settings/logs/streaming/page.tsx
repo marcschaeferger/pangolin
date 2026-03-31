@@ -37,7 +37,7 @@ import {
     Destination,
     HttpDestinationCredenza,
     parseHttpConfig
-} from "./HttpDestinationCredenza";
+} from "@app/components/HttpDestinationCredenza";
 
 // ── Re-export Destination so the rest of the file can use it ──────────────────
 

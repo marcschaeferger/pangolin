@@ -4,7 +4,7 @@ import { AxiosResponse } from "axios";
 import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
 import SiteProvisioningKeysTable, {
     SiteProvisioningKeyRow
-} from "../../../../../components/SiteProvisioningKeysTable";
+} from "@app/components/SiteProvisioningKeysTable";
 import { ListSiteProvisioningKeysResponse } from "@server/routers/siteProvisioning/types";
 import { getTranslations } from "next-intl/server";
 import { TierFeature, tierMatrix } from "@server/lib/billing/tierMatrix";
