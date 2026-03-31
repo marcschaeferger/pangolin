@@ -6,6 +6,7 @@ import { db, ExitNode, exitNodes, Newt, sites } from "@server/db";
 import { eq } from "drizzle-orm";
 import { sendToExitNode } from "#dynamic/lib/exitNodes";
 import { buildClientConfigurationForNewtClient } from "./buildConfiguration";
+import { convertTargetsIfNessicary } from "../client/targets";
 import { canCompress } from "@server/lib/clientVersionChecks";
 
 export const handleGetConfigMessage: MessageHandler = async (context) => {
@@ -111,13 +112,15 @@ export const handleGetConfigMessage: MessageHandler = async (context) => {
         exitNode
     );
 
+    const targetsToSend = await convertTargetsIfNessicary(newt.newtId, targets);
+
     return {
         message: {
             type: "newt/wg/receive-config",
             data: {
                 ipAddress: site.address,
                 peers,
-                targets,
+                targets: targetsToSend,
                 chainId: chainId
             }
         },

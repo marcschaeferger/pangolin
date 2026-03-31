@@ -135,6 +135,15 @@ const listSitesSchema = z.object({
         .openapi({
             type: "boolean",
             description: "Filter by online status"
+        }),
+    status: z
+        .enum(["pending", "approved"])
+        .optional()
+        .catch(undefined)
+        .openapi({
+            type: "string",
+            enum: ["pending", "approved"],
+            description: "Filter by site status"
         })
 });
 
@@ -156,7 +165,8 @@ function querySitesBase() {
             exitNodeId: sites.exitNodeId,
             exitNodeName: exitNodes.name,
             exitNodeEndpoint: exitNodes.endpoint,
-            remoteExitNodeId: remoteExitNodes.remoteExitNodeId
+            remoteExitNodeId: remoteExitNodes.remoteExitNodeId,
+            status: sites.status
         })
         .from(sites)
         .leftJoin(orgs, eq(sites.orgId, orgs.orgId))
@@ -235,7 +245,7 @@ export async function listSites(
                 .where(
                     or(
                         eq(userSites.userId, req.user!.userId),
-                        eq(roleSites.roleId, req.userOrgRoleId!)
+                        inArray(roleSites.roleId, req.userOrgRoleIds!)
                     )
                 );
         } else {
@@ -245,7 +255,7 @@ export async function listSites(
                 .where(eq(sites.orgId, orgId));
         }
 
-        const { pageSize, page, query, sort_by, order, online } =
+        const { pageSize, page, query, sort_by, order, online, status } =
             parsedQuery.data;
 
         const accessibleSiteIds = accessibleSites.map((site) => site.siteId);
@@ -272,6 +282,9 @@ export async function listSites(
         }
         if (typeof online !== "undefined") {
             conditions.push(eq(sites.online, online));
+        }
+        if (typeof status !== "undefined") {
+            conditions.push(eq(sites.status, status));
         }
 
         const baseQuery = querySitesBase().where(and(...conditions));
