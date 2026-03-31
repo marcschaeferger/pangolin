@@ -192,7 +192,7 @@ export default async function migration() {
             ).run();
             db.prepare(`ALTER TABLE 'user' ADD 'locale' text;`).run();
             db.prepare(`ALTER TABLE 'siteProvisioningKeys' ADD COLUMN 'approveNewSites' integer DEFAULT 1 NOT NULL;`).run();
-            db.prepare(`ALTER TABLE 'sites' ADD COLUMN 'status' text;`).run();
+            db.prepare(`ALTER TABLE 'sites' ADD COLUMN 'status' text DEFAULT 'approved';`).run();
         })();
 
         db.pragma("foreign_keys = ON");

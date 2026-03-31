@@ -101,7 +101,7 @@ export const sites = pgTable("sites", {
     lastHolePunch: bigint("lastHolePunch", { mode: "number" }),
     listenPort: integer("listenPort"),
     dockerSocketEnabled: boolean("dockerSocketEnabled").notNull().default(true),
-    status: varchar("status").$type<"pending" | "approved">()
+    status: varchar("status").$type<"pending" | "approved">().default("approved")
 });
 
 export const resources = pgTable("resources", {

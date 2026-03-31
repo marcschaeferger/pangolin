@@ -178,7 +178,7 @@ export default async function migration() {
         );
         await db.execute(sql`ALTER TABLE "userInvites" DROP COLUMN "roleId";`);
         await db.execute(sql`ALTER TABLE "siteProvisioningKeys" ADD COLUMN "approveNewSites" boolean DEFAULT true NOT NULL;`);
-        await db.execute(sql`ALTER TABLE "sites" ADD COLUMN "status" varchar;`);
+        await db.execute(sql`ALTER TABLE "sites" ADD COLUMN "status" varchar DEFAULT 'approved';`);
 
         await db.execute(sql`COMMIT`);
         console.log("Migrated database");
