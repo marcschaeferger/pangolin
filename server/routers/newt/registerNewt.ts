@@ -30,7 +30,8 @@ import { INSPECT_MAX_BYTES } from "buffer";
 import { v } from "@faker-js/faker/dist/airline-Dz1uGqgJ";
 
 const bodySchema = z.object({
-    provisioningKey: z.string().nonempty()
+    provisioningKey: z.string().nonempty(),
+    name: z.string().optional()
 });
 
 export type RegisterNewtBody = z.infer<typeof bodySchema>;
@@ -56,7 +57,7 @@ export async function registerNewt(
             );
         }
 
-        const { provisioningKey } = parsedBody.data;
+        const { provisioningKey, name } = parsedBody.data;
 
         // Keys are in the format "siteProvisioningKeyId.secret"
         const dotIndex = provisioningKey.indexOf(".");
@@ -194,7 +195,7 @@ export async function registerNewt(
                 .insert(sites)
                 .values({
                     orgId,
-                    name: niceId,
+                    name: name || niceId,
                     niceId,
                     type: "newt",
                     dockerSocketEnabled: true,
