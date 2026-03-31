@@ -15,6 +15,7 @@ import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "@server/db";
 import { eventStreamingDestinations } from "@server/db";
+import { logStreamingManager } from "#private/lib/logStreaming";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
@@ -105,6 +106,19 @@ export async function createEventStreamingDestination(
                 sendRequestLogs: parsedBody.data.sendRequestLogs
             })
             .returning();
+
+        // Seed cursors at the current max row id for every log type so this
+        // destination only receives events written *after* it was created.
+        // Fire-and-forget: a failure here is non-fatal; the manager has a lazy
+        // fallback that will seed at the next poll if these rows are missing.
+        logStreamingManager
+            .initializeCursorsForDestination(destination.destinationId, orgId)
+            .catch((err) =>
+                logger.error(
+                    "createEventStreamingDestination: failed to initialise streaming cursors",
+                    err
+                )
+            );
 
         return response<CreateEventStreamingDestinationResponse>(res, {
             data: {

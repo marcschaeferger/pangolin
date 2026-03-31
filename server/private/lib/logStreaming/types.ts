@@ -112,4 +112,6 @@ export interface DestinationFailureState {
     consecutiveFailures: number;
     /** Date.now() value after which the destination may be retried */
     nextRetryAt: number;
+    /** Date.now() value of the very first failure in the current streak */
+    firstFailedAt: number;
 }
