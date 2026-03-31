@@ -11,6 +11,7 @@
  * This file is not licensed under the AGPLv3.
  */
 
+import { build } from "@server/build";
 import { LogStreamingManager } from "./LogStreamingManager";
 
 /**
@@ -23,7 +24,9 @@ import { LogStreamingManager } from "./LogStreamingManager";
  */
 export const logStreamingManager = new LogStreamingManager();
 
-logStreamingManager.start();
+if (build != "saas") { // this is handled separately in the saas build, so we don't want to start it here
+    logStreamingManager.start();
+}
 
 export { LogStreamingManager } from "./LogStreamingManager";
 export type { LogDestinationProvider } from "./providers/LogDestinationProvider";
