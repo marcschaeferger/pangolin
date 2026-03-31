@@ -7,6 +7,7 @@ import { useEnvContext } from "@app/hooks/useEnvContext";
 import { toast } from "@app/hooks/useToast";
 import { usePaidStatus } from "@app/hooks/usePaidStatus";
 import { PaidFeaturesAlert } from "@app/components/PaidFeaturesAlert";
+import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
 import { tierMatrix, TierFeature } from "@server/lib/billing/tierMatrix";
 import SettingsSectionTitle from "@app/components/SettingsSectionTitle";
 import {
@@ -23,15 +24,10 @@ import { Button } from "@app/components/ui/button";
 import { Input } from "@app/components/ui/input";
 import { Label } from "@app/components/ui/label";
 import { Switch } from "@app/components/ui/switch";
-import {
-    Tabs,
-    TabsContent,
-    TabsList,
-    TabsTrigger
-} from "@app/components/ui/tabs";
+import { HorizontalTabs } from "@app/components/HorizontalTabs";
 import { RadioGroup, RadioGroupItem } from "@app/components/ui/radio-group";
 import { Textarea } from "@app/components/ui/textarea";
-import { Globe, Plus, Pencil, Trash2, X } from "lucide-react";
+import { Globe, Plus, Trash2, X } from "lucide-react";
 import { AxiosResponse } from "axios";
 import { build } from "@server/build";
 
@@ -217,15 +213,14 @@ function DestinationCard({
             </p>
 
             {/* Footer: edit button */}
-            <div className="flex justify-end pt-1 border-t border-border mt-auto">
+            <div className="mt-auto pt-3">
                 <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
                     onClick={() => onEdit(destination)}
                     disabled={disabled}
-                    className="h-7 gap-1.5 text-xs mt-2"
+                    className="w-full"
                 >
-                    <Pencil className="h-3 w-3" />
                     Edit
                 </Button>
             </div>
@@ -286,13 +281,15 @@ function DestinationModal({
 
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
-    const [confirmDelete, setConfirmDelete] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [cfg, setCfg] = useState<HttpConfig>(defaultConfig());
 
     useEffect(() => {
         if (open) {
             setCfg(editing ? parseConfig(editing.config) : defaultConfig());
-            setConfirmDelete(false);
+        }
+        if (!open) {
+            setDeleteDialogOpen(false);
         }
     }, [open, editing]);
 
@@ -343,10 +340,6 @@ function DestinationModal({
 
     async function handleDelete() {
         if (!editing) return;
-        if (!confirmDelete) {
-            setConfirmDelete(true);
-            return;
-        }
         setDeleting(true);
         try {
             await api.delete(
@@ -370,6 +363,7 @@ function DestinationModal({
     }
 
     return (
+        <>
         <Credenza open={open} onOpenChange={onOpenChange}>
             <CredenzaContent className="sm:max-w-2xl">
                 <CredenzaHeader>
@@ -384,15 +378,16 @@ function DestinationModal({
                 </CredenzaHeader>
 
                 <CredenzaBody>
-                    <Tabs defaultValue="settings">
-                        <TabsList>
-                            <TabsTrigger value="settings">Settings</TabsTrigger>
-                            <TabsTrigger value="headers">Headers</TabsTrigger>
-                            <TabsTrigger value="body">Body Template</TabsTrigger>
-                        </TabsList>
-
+                    <HorizontalTabs
+                        clientSide
+                        items={[
+                            { title: "Settings", href: "" },
+                            { title: "Headers", href: "" },
+                            { title: "Body Template", href: "" }
+                        ]}
+                    >
                         {/* ── Settings ─────────────────────────────────── */}
-                        <TabsContent value="settings" className="space-y-5">
+                        <div className="space-y-5">
                             <div className="space-y-1.5">
                                 <Label htmlFor="dest-name">Name</Label>
                                 <Input
@@ -592,10 +587,10 @@ function DestinationModal({
                                     </div>
                                 </RadioGroup>
                             </div>
-                        </TabsContent>
+                        </div>
 
                         {/* ── Headers ───────────────────────────────────── */}
-                        <TabsContent value="headers" className="space-y-4">
+                        <div className="space-y-4">
                             <div>
                                 <p className="text-sm font-medium mb-1">
                                     Custom HTTP Headers
@@ -621,10 +616,10 @@ function DestinationModal({
                                     onChange={(headers) => update({ headers })}
                                 />
                             </div>
-                        </TabsContent>
+                        </div>
 
                         {/* ── Body Template ─────────────────────────────── */}
-                        <TabsContent value="body" className="space-y-4">
+                        <div className="space-y-4">
                             <div>
                                 <p className="text-sm font-medium mb-1">
                                     Custom Body Template
@@ -676,8 +671,8 @@ function DestinationModal({
                                     </p>
                                 </div>
                             )}
-                        </TabsContent>
-                    </Tabs>
+                        </div>
+                    </HorizontalTabs>
                 </CredenzaBody>
 
                 <CredenzaFooter>
@@ -685,13 +680,12 @@ function DestinationModal({
                         <Button
                             type="button"
                             variant="destructive"
-                            onClick={handleDelete}
-                            loading={deleting}
-                            disabled={saving}
+                            onClick={() => setDeleteDialogOpen(true)}
+                            disabled={saving || deleting}
                             className="mr-auto"
                         >
                             <Trash2 className="h-4 w-4 mr-1.5" />
-                            {confirmDelete ? "Confirm Delete" : "Delete"}
+                            Delete
                         </Button>
                     )}
                     <CredenzaClose asChild>
@@ -714,6 +708,27 @@ function DestinationModal({
                 </CredenzaFooter>
             </CredenzaContent>
         </Credenza>
+
+        {editing && (
+            <ConfirmDeleteDialog
+                open={deleteDialogOpen}
+                setOpen={setDeleteDialogOpen}
+                string={parseConfig(editing.config).name || "delete"}
+                title="Delete Destination"
+                dialog={
+                    <p className="text-sm text-muted-foreground">
+                        Are you sure you want to delete the destination{" "}
+                        <span className="font-semibold text-foreground">
+                            {parseConfig(editing.config).name || "this destination"}
+                        </span>
+                        ? All configuration will be permanently removed.
+                    </p>
+                }
+                buttonText="Delete Destination"
+                onConfirm={handleDelete}
+            />
+        )}
+        </>
     );
 }
 
