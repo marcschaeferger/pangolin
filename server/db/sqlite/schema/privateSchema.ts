@@ -7,7 +7,16 @@ import {
     sqliteTable,
     text
 } from "drizzle-orm/sqlite-core";
-import { clients, domains, exitNodes, orgs, sessions, siteResources, sites, users } from "./schema";
+import {
+    clients,
+    domains,
+    exitNodes,
+    orgs,
+    sessions,
+    siteResources,
+    sites,
+    users
+} from "./schema";
 
 export const certificates = sqliteTable("certificates", {
     certId: integer("certId").primaryKey({ autoIncrement: true }),
@@ -401,6 +410,29 @@ export const siteProvisioningKeyOrg = sqliteTable(
     ]
 );
 
+export const eventStreamingDestinations = sqliteTable(
+    "eventStreamingDestinations",
+    {
+        destinationId: integer("destinationId").primaryKey({
+            autoIncrement: true
+        }),
+        orgId: text("orgId")
+            .notNull()
+            .references(() => orgs.orgId, { onDelete: "cascade" }),
+        sendConnectionLogs: integer("sendConnectionLogs", { mode: "boolean" }).notNull().default(false),
+        sendRequestLogs: integer("sendRequestLogs", { mode: "boolean" }).notNull().default(false),
+        sendActionLogs: integer("sendActionLogs", { mode: "boolean" }).notNull().default(false),
+        sendAccessLogs: integer("sendAccessLogs", { mode: "boolean" }).notNull().default(false),
+        type: text("type").notNull(), // e.g. "http", "kafka", etc.
+        config: text("config").notNull(), // JSON string with the configuration for the destination
+        enabled: integer("enabled", { mode: "boolean" })
+            .notNull()
+            .default(true),
+        createdAt: integer("createdAt").notNull(),
+        updatedAt: integer("updatedAt").notNull()
+    }
+);
+
 export type Approval = InferSelectModel<typeof approvals>;
 export type Limit = InferSelectModel<typeof limits>;
 export type Account = InferSelectModel<typeof account>;
@@ -423,3 +455,9 @@ export type LoginPageBranding = InferSelectModel<typeof loginPageBranding>;
 export type ActionAuditLog = InferSelectModel<typeof actionAuditLog>;
 export type AccessAuditLog = InferSelectModel<typeof accessAuditLog>;
 export type ConnectionAuditLog = InferSelectModel<typeof connectionAuditLog>;
+export type BannedEmail = InferSelectModel<typeof bannedEmails>;
+export type BannedIp = InferSelectModel<typeof bannedIps>;
+export type SiteProvisioningKey = InferSelectModel<typeof siteProvisioningKeys>;
+export type EventStreamingDestination = InferSelectModel<
+    typeof eventStreamingDestinations
+>;
