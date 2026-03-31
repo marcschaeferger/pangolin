@@ -27,7 +27,8 @@ import { Switch } from "@app/components/ui/switch";
 import { HorizontalTabs } from "@app/components/HorizontalTabs";
 import { RadioGroup, RadioGroupItem } from "@app/components/ui/radio-group";
 import { Textarea } from "@app/components/ui/textarea";
-import { Globe, Plus, Trash2, X } from "lucide-react";
+import { Checkbox } from "@app/components/ui/checkbox";
+import { Globe, Plus, X } from "lucide-react";
 import { AxiosResponse } from "axios";
 import { build } from "@server/build";
 
@@ -54,6 +55,10 @@ interface Destination {
     type: string;
     config: string;
     enabled: boolean;
+    sendAccessLogs: boolean;
+    sendActionLogs: boolean;
+    sendConnectionLogs: boolean;
+    sendRequestLogs: boolean;
     createdAt: number;
     updatedAt: number;
 }
@@ -215,7 +220,7 @@ function DestinationCard({
             {/* Footer: edit button */}
             <div className="mt-auto pt-3">
                 <Button
-                    variant="secondary"
+                    variant="outline"
                     size="sm"
                     onClick={() => onEdit(destination)}
                     disabled={disabled}
@@ -283,10 +288,18 @@ function DestinationModal({
     const [deleting, setDeleting] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [cfg, setCfg] = useState<HttpConfig>(defaultConfig());
+    const [sendAccessLogs, setSendAccessLogs] = useState(false);
+    const [sendActionLogs, setSendActionLogs] = useState(false);
+    const [sendConnectionLogs, setSendConnectionLogs] = useState(false);
+    const [sendRequestLogs, setSendRequestLogs] = useState(false);
 
     useEffect(() => {
         if (open) {
             setCfg(editing ? parseConfig(editing.config) : defaultConfig());
+            setSendAccessLogs(editing?.sendAccessLogs ?? false);
+            setSendActionLogs(editing?.sendActionLogs ?? false);
+            setSendConnectionLogs(editing?.sendConnectionLogs ?? false);
+            setSendRequestLogs(editing?.sendRequestLogs ?? false);
         }
         if (!open) {
             setDeleteDialogOpen(false);
@@ -296,8 +309,27 @@ function DestinationModal({
     const update = (patch: Partial<HttpConfig>) =>
         setCfg((prev) => ({ ...prev, ...patch }));
 
+    const urlError: string | null = (() => {
+        const raw = cfg.url.trim();
+        if (!raw) return null;
+        try {
+            const parsed = new URL(raw);
+            if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+                return "URL must use http or https";
+            }
+            if (build === "saas" && parsed.protocol !== "https:") {
+                return "HTTPS is required on cloud deployments";
+            }
+            return null;
+        } catch {
+            return "Enter a valid URL (e.g. https://example.com/webhook)";
+        }
+    })();
+
     const isValid =
-        cfg.name.trim() !== "" && cfg.url.trim() !== "";
+        cfg.name.trim() !== "" &&
+        cfg.url.trim() !== "" &&
+        urlError === null;
 
     async function handleSave() {
         if (!isValid) return;
@@ -305,7 +337,11 @@ function DestinationModal({
         try {
             const payload = {
                 type: "http",
-                config: JSON.stringify(cfg)
+                config: JSON.stringify(cfg),
+                sendAccessLogs,
+                sendActionLogs,
+                sendConnectionLogs,
+                sendRequestLogs
             };
             if (editing) {
                 await api.post(
@@ -383,11 +419,12 @@ function DestinationModal({
                         items={[
                             { title: "Settings", href: "" },
                             { title: "Headers", href: "" },
-                            { title: "Body Template", href: "" }
+                            { title: "Body Template", href: "" },
+                            { title: "Logs", href: "" }
                         ]}
                     >
                         {/* ── Settings ─────────────────────────────────── */}
-                        <div className="space-y-5">
+                        <div className="space-y-4 mt-4 p-1">
                             <div className="space-y-1.5">
                                 <Label htmlFor="dest-name">Name</Label>
                                 <Input
@@ -410,10 +447,22 @@ function DestinationModal({
                                         update({ url: e.target.value })
                                     }
                                 />
+                                {urlError && (
+                                    <p className="text-xs text-destructive mt-1">
+                                        {urlError}
+                                    </p>
+                                )}
                             </div>
 
-                            <div className="space-y-2">
-                                <Label>Authentication</Label>
+                            <div>
+                                <div className="mb-4">
+                                    <label className="font-medium block">
+                                        Authentication
+                                    </label>
+                                    <div className="text-sm text-muted-foreground">
+                                        Choose how requests to your endpoint are authenticated.
+                                    </div>
+                                </div>
                                 <RadioGroup
                                     value={cfg.authType}
                                     onValueChange={(v) =>
@@ -590,27 +639,25 @@ function DestinationModal({
                         </div>
 
                         {/* ── Headers ───────────────────────────────────── */}
-                        <div className="space-y-4">
+                        <div className="space-y-4 mt-4 p-1">
                             <div>
-                                <p className="text-sm font-medium mb-1">
-                                    Custom HTTP Headers
-                                </p>
-                                <p className="text-xs text-muted-foreground mb-4">
-                                    Add custom HTTP headers to every outgoing request.
-                                    Useful for passing static tokens, setting a custom{" "}
-                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                        Content-Type
-                                    </code>
-                                    , or other API requirements. By default, the{" "}
-                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                        Content-Type
-                                    </code>{" "}
-                                    is{" "}
-                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                        application/json
-                                    </code>
-                                    .
-                                </p>
+                                <div className="mb-4">
+                                    <label className="font-medium block">
+                                        Custom HTTP Headers
+                                    </label>
+                                    <div className="text-sm text-muted-foreground">
+                                        Add custom headers to every outgoing request.
+                                        Useful for static tokens or custom{" "}
+                                        <code className="bg-muted px-1 py-0.5 rounded text-xs">
+                                            Content-Type
+                                        </code>
+                                        . By default,{" "}
+                                        <code className="bg-muted px-1 py-0.5 rounded text-xs">
+                                            Content-Type: application/json
+                                        </code>{" "}
+                                        is sent.
+                                    </div>
+                                </div>
                                 <HeadersEditor
                                     headers={cfg.headers}
                                     onChange={(headers) => update({ headers })}
@@ -619,19 +666,19 @@ function DestinationModal({
                         </div>
 
                         {/* ── Body Template ─────────────────────────────── */}
-                        <div className="space-y-4">
-                            <div>
-                                <p className="text-sm font-medium mb-1">
+                        <div className="space-y-4 mt-4 p-1">
+                            <div className="mb-4">
+                                <label className="font-medium block">
                                     Custom Body Template
-                                </p>
-                                <p className="text-xs text-muted-foreground mb-4">
-                                    Control the structure of the JSON payload sent to your
-                                    endpoint. If disabled, a default JSON object is sent for
-                                    each event.
-                                </p>
+                                </label>
+                                <div className="text-sm text-muted-foreground">
+                                    Control the JSON payload structure sent to your
+                                    endpoint. If disabled, a default JSON object is sent
+                                    for each event.
+                                </div>
                             </div>
 
-                            <div className="flex items-center gap-3 rounded-md border p-3">
+                            <div className="flex items-center gap-3">
                                 <Switch
                                     id="use-body-template"
                                     checked={cfg.useBodyTemplate}
@@ -672,6 +719,115 @@ function DestinationModal({
                                 </div>
                             )}
                         </div>
+
+                        {/* ── Logs ──────────────────────────────────────── */}
+                        <div className="space-y-4 mt-4 p-1">
+                            <div className="mb-4">
+                                <label className="font-medium block">
+                                    Log Types
+                                </label>
+                                <div className="text-sm text-muted-foreground">
+                                    Choose which log types are forwarded to this
+                                    destination. Only enabled log types will be
+                                    streamed.
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div className="flex items-start gap-3 rounded-md border p-3">
+                                    <Checkbox
+                                        id="log-access"
+                                        checked={sendAccessLogs}
+                                        onCheckedChange={(v) =>
+                                            setSendAccessLogs(v === true)
+                                        }
+                                        className="mt-0.5"
+                                    />
+                                    <div>
+                                        <label
+                                            htmlFor="log-access"
+                                            className="text-sm font-medium cursor-pointer"
+                                        >
+                                            Access Logs
+                                        </label>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            Resource access attempts, including
+                                            authenticated and denied requests.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start gap-3 rounded-md border p-3">
+                                    <Checkbox
+                                        id="log-action"
+                                        checked={sendActionLogs}
+                                        onCheckedChange={(v) =>
+                                            setSendActionLogs(v === true)
+                                        }
+                                        className="mt-0.5"
+                                    />
+                                    <div>
+                                        <label
+                                            htmlFor="log-action"
+                                            className="text-sm font-medium cursor-pointer"
+                                        >
+                                            Action Logs
+                                        </label>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            Administrative actions performed by
+                                            users within the organization.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start gap-3 rounded-md border p-3">
+                                    <Checkbox
+                                        id="log-connection"
+                                        checked={sendConnectionLogs}
+                                        onCheckedChange={(v) =>
+                                            setSendConnectionLogs(v === true)
+                                        }
+                                        className="mt-0.5"
+                                    />
+                                    <div>
+                                        <label
+                                            htmlFor="log-connection"
+                                            className="text-sm font-medium cursor-pointer"
+                                        >
+                                            Connection Logs
+                                        </label>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            Site and tunnel connection events,
+                                            including connects and disconnects.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start gap-3 rounded-md border p-3">
+                                    <Checkbox
+                                        id="log-request"
+                                        checked={sendRequestLogs}
+                                        onCheckedChange={(v) =>
+                                            setSendRequestLogs(v === true)
+                                        }
+                                        className="mt-0.5"
+                                    />
+                                    <div>
+                                        <label
+                                            htmlFor="log-request"
+                                            className="text-sm font-medium cursor-pointer"
+                                        >
+                                            Request Logs
+                                        </label>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            HTTP request logs for proxied
+                                            resources, including method, path,
+                                            and response code.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </HorizontalTabs>
                 </CredenzaBody>
 
@@ -684,7 +840,6 @@ function DestinationModal({
                             disabled={saving || deleting}
                             className="mr-auto"
                         >
-                            <Trash2 className="h-4 w-4 mr-1.5" />
                             Delete
                         </Button>
                     )}

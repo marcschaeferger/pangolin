@@ -22,7 +22,7 @@ import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
 import { OpenAPITags, registry } from "@server/openApi";
 import { and, eq } from "drizzle-orm";
-import { parse } from "zod/v4/core";
+
 
 const paramsSchema = z
     .object({
@@ -35,10 +35,10 @@ const bodySchema = z.strictObject({
     type: z.string().optional(),
     config: z.string().optional(),
     enabled: z.boolean().optional(),
-    sendConnectionLogs: z.boolean().optional().default(false),
-    sendRequestLogs: z.boolean().optional().default(false),
-    sendActionLogs: z.boolean().optional().default(false),
-    sendAccessLogs: z.boolean().optional().default(false)
+    sendConnectionLogs: z.boolean().optional(),
+    sendRequestLogs: z.boolean().optional(),
+    sendActionLogs: z.boolean().optional(),
+    sendAccessLogs: z.boolean().optional()
 });
 
 export type UpdateEventStreamingDestinationResponse = {
@@ -110,7 +110,19 @@ export async function updateEventStreamingDestination(
             );
         }
 
-        const updateData = parsedBody.data;
+        const { type, config, enabled, sendAccessLogs, sendActionLogs, sendConnectionLogs, sendRequestLogs } = parsedBody.data;
+
+        const updateData: Record<string, unknown> = {
+            updatedAt: Date.now()
+        };
+
+        if (type !== undefined) updateData.type = type;
+        if (config !== undefined) updateData.config = config;
+        if (enabled !== undefined) updateData.enabled = enabled;
+        if (sendAccessLogs !== undefined) updateData.sendAccessLogs = sendAccessLogs;
+        if (sendActionLogs !== undefined) updateData.sendActionLogs = sendActionLogs;
+        if (sendConnectionLogs !== undefined) updateData.sendConnectionLogs = sendConnectionLogs;
+        if (sendRequestLogs !== undefined) updateData.sendRequestLogs = sendRequestLogs;
 
         await db
             .update(eventStreamingDestinations)
