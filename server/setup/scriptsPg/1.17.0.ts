@@ -23,12 +23,11 @@ export default async function migration() {
             roleId: number;
         }[];
     } catch (e: any) {
-        if (
-            e?.message?.includes('column "roleId"') ||
-            e?.message?.includes("column roleId") ||
-            e?.code === "42703"
-        ) {
-            // column already removed – nothing to migrate
+        if (e?.code === "42703") {
+            // SQLSTATE 42703: undefined_column – roleId already removed, nothing to migrate
+            console.log(
+                'userOrgs.roleId column not found (SQLSTATE 42703), skipping roleId extraction'
+            );
         } else {
             throw e;
         }
@@ -53,12 +52,11 @@ export default async function migration() {
             roleId: number;
         }[];
     } catch (e: any) {
-        if (
-            e?.message?.includes('column "roleId"') ||
-            e?.message?.includes("column roleId") ||
-            e?.code === "42703"
-        ) {
-            // column already removed – nothing to migrate
+        if (e?.code === "42703") {
+            // SQLSTATE 42703: undefined_column – roleId already removed, nothing to migrate
+            console.log(
+                'userInvites.roleId column not found (SQLSTATE 42703), skipping roleId extraction'
+            );
         } else {
             throw e;
         }
