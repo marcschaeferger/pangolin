@@ -22,8 +22,16 @@ export default async function migration() {
             orgId: string;
             roleId: number;
         }[];
-    } catch {
-        // column already removed – nothing to migrate
+    } catch (e: any) {
+        if (
+            e?.message?.includes('column "roleId"') ||
+            e?.message?.includes("column roleId") ||
+            e?.code === "42703"
+        ) {
+            // column already removed – nothing to migrate
+        } else {
+            throw e;
+        }
     }
 
     console.log(
@@ -44,8 +52,16 @@ export default async function migration() {
             inviteId: string;
             roleId: number;
         }[];
-    } catch {
-        // column already removed – nothing to migrate
+    } catch (e: any) {
+        if (
+            e?.message?.includes('column "roleId"') ||
+            e?.message?.includes("column roleId") ||
+            e?.code === "42703"
+        ) {
+            // column already removed – nothing to migrate
+        } else {
+            throw e;
+        }
     }
 
     console.log(
