@@ -6,28 +6,61 @@ const version = "1.17.0";
 export default async function migration() {
     console.log(`Running setup script ${version}...`);
 
-    // Query existing roleId data from userOrgs before the transaction destroys it
-    const existingRolesQuery = await db.execute(
-        sql`SELECT "userId", "orgId", "roleId" FROM "userOrgs" WHERE "roleId" IS NOT NULL`
-    );
-    const existingUserOrgRoles = existingRolesQuery.rows as {
+    // Query existing roleId data from userOrgs before the transaction destroys it.
+    // Guard against schemas where the column was already removed (e.g. RC upgrades).
+    let existingUserOrgRoles: {
         userId: string;
         orgId: string;
         roleId: number;
-    }[];
+    }[] = [];
+    try {
+        const existingRolesQuery = await db.execute(
+            sql`SELECT "userId", "orgId", "roleId" FROM "userOrgs" WHERE "roleId" IS NOT NULL`
+        );
+        existingUserOrgRoles = existingRolesQuery.rows as {
+            userId: string;
+            orgId: string;
+            roleId: number;
+        }[];
+    } catch (e: any) {
+        if (e?.code === "42703") {
+            // SQLSTATE 42703: undefined_column – roleId already removed, nothing to migrate
+            console.log(
+                'userOrgs.roleId column not found (SQLSTATE 42703), skipping roleId extraction'
+            );
+        } else {
+            throw e;
+        }
+    }
 
     console.log(
         `Found ${existingUserOrgRoles.length} existing userOrgs role assignment(s) to migrate`
     );
 
-    // Query existing roleId data from userInvites before the transaction destroys it
-    const existingInviteRolesQuery = await db.execute(
-        sql`SELECT "inviteId", "roleId" FROM "userInvites" WHERE "roleId" IS NOT NULL`
-    );
-    const existingUserInviteRoles = existingInviteRolesQuery.rows as {
+    // Query existing roleId data from userInvites before the transaction destroys it.
+    // Guard against schemas where the column was already removed (e.g. RC upgrades).
+    let existingUserInviteRoles: {
         inviteId: string;
         roleId: number;
-    }[];
+    }[] = [];
+    try {
+        const existingInviteRolesQuery = await db.execute(
+            sql`SELECT "inviteId", "roleId" FROM "userInvites" WHERE "roleId" IS NOT NULL`
+        );
+        existingUserInviteRoles = existingInviteRolesQuery.rows as {
+            inviteId: string;
+            roleId: number;
+        }[];
+    } catch (e: any) {
+        if (e?.code === "42703") {
+            // SQLSTATE 42703: undefined_column – roleId already removed, nothing to migrate
+            console.log(
+                'userInvites.roleId column not found (SQLSTATE 42703), skipping roleId extraction'
+            );
+        } else {
+            throw e;
+        }
+    }
 
     console.log(
         `Found ${existingUserInviteRoles.length} existing userInvites role assignment(s) to migrate`
@@ -105,7 +138,7 @@ export default async function migration() {
             );
         `);
         await db.execute(
-            sql`ALTER TABLE "userOrgs" DROP CONSTRAINT "userOrgs_roleId_roles_roleId_fk";`
+            sql`ALTER TABLE "userOrgs" DROP CONSTRAINT IF EXISTS "userOrgs_roleId_roles_roleId_fk";`
         );
         await db.execute(
             sql`ALTER TABLE "userOrgRoles" ADD CONSTRAINT "userOrgRoles_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;`
@@ -116,10 +149,10 @@ export default async function migration() {
         await db.execute(
             sql`ALTER TABLE "userOrgRoles" ADD CONSTRAINT "userOrgRoles_roleId_roles_roleId_fk" FOREIGN KEY ("roleId") REFERENCES "public"."roles"("roleId") ON DELETE cascade ON UPDATE no action;`
         );
-        await db.execute(sql`ALTER TABLE "userOrgs" DROP COLUMN "roleId";`);
+        await db.execute(sql`ALTER TABLE "userOrgs" DROP COLUMN IF EXISTS "roleId";`);
 
         await db.execute(
-            sql`ALTER TABLE "userInvites" DROP CONSTRAINT "userInvites_roleId_roles_roleId_fk";`
+            sql`ALTER TABLE "userInvites" DROP CONSTRAINT IF EXISTS "userInvites_roleId_roles_roleId_fk";`
         );
         await db.execute(
             sql`ALTER TABLE "accessAuditLog" ADD COLUMN "siteResourceId" integer;`
@@ -176,7 +209,7 @@ export default async function migration() {
         await db.execute(
             sql`CREATE INDEX "idx_accessAuditLog_siteResourceId" ON "connectionAuditLog" USING btree ("siteResourceId");`
         );
-        await db.execute(sql`ALTER TABLE "userInvites" DROP COLUMN "roleId";`);
+        await db.execute(sql`ALTER TABLE "userInvites" DROP COLUMN IF EXISTS "roleId";`);
         await db.execute(sql`ALTER TABLE "siteProvisioningKeys" ADD COLUMN "approveNewSites" boolean DEFAULT true NOT NULL;`);
         await db.execute(sql`ALTER TABLE "sites" ADD COLUMN "status" varchar DEFAULT 'approved';`);
 

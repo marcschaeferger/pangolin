@@ -13,23 +13,50 @@ export default async function migration() {
     try {
         db.pragma("foreign_keys = OFF");
 
-        // Query existing roleId data from userOrgs before the transaction destroys it
-        const existingUserOrgRoles = db
-            .prepare(
-                `SELECT "userId", "orgId", "roleId" FROM 'userOrgs' WHERE "roleId" IS NOT NULL`
-            )
-            .all() as { userId: string; orgId: string; roleId: number }[];
+        // Check whether the legacy roleId column still exists before querying it.
+        // When upgrading from an RC whose initial schema already omitted roleId the
+        // column will be absent and an unconditional SELECT would crash immediately.
+        const userOrgsColumns = db
+            .prepare(`PRAGMA table_info('userOrgs')`)
+            .all() as { name: string }[];
+        const userOrgsHasRoleId = userOrgsColumns.some(
+            (col) => col.name === "roleId"
+        );
+
+        const existingUserOrgRoles: {
+            userId: string;
+            orgId: string;
+            roleId: number;
+        }[] = userOrgsHasRoleId
+            ? (db
+                  .prepare(
+                      `SELECT "userId", "orgId", "roleId" FROM 'userOrgs' WHERE "roleId" IS NOT NULL`
+                  )
+                  .all() as { userId: string; orgId: string; roleId: number }[])
+            : [];
 
         console.log(
             `Found ${existingUserOrgRoles.length} existing userOrgs role assignment(s) to migrate`
         );
 
+        const userInvitesColumns = db
+            .prepare(`PRAGMA table_info('userInvites')`)
+            .all() as { name: string }[];
+        const userInvitesHasRoleId = userInvitesColumns.some(
+            (col) => col.name === "roleId"
+        );
+
         // Query existing roleId data from userInvites before the transaction destroys it
-        const existingUserInviteRoles = db
-            .prepare(
-                `SELECT "inviteId", "roleId" FROM 'userInvites' WHERE "roleId" IS NOT NULL`
-            )
-            .all() as { inviteId: string; roleId: number }[];
+        const existingUserInviteRoles: {
+            inviteId: string;
+            roleId: number;
+        }[] = userInvitesHasRoleId
+            ? (db
+                  .prepare(
+                      `SELECT "inviteId", "roleId" FROM 'userInvites' WHERE "roleId" IS NOT NULL`
+                  )
+                  .all() as { inviteId: string; roleId: number }[])
+            : [];
 
         console.log(
             `Found ${existingUserInviteRoles.length} existing userInvites role assignment(s) to migrate`
@@ -109,7 +136,7 @@ export default async function migration() {
 
             db.prepare(
                 `
-                CREATE TABLE 'userOrgRoles' (
+                CREATE TABLE IF NOT EXISTS 'userOrgRoles' (
                    	'userId' text NOT NULL,
                    	'orgId' text NOT NULL,
                    	'roleId' integer NOT NULL,
@@ -121,9 +148,10 @@ export default async function migration() {
             ).run();
 
             db.prepare(
-                `CREATE UNIQUE INDEX 'userOrgRoles_userId_orgId_roleId_unique' ON 'userOrgRoles' ('userId','orgId','roleId');`
+                `CREATE UNIQUE INDEX IF NOT EXISTS 'userOrgRoles_userId_orgId_roleId_unique' ON 'userOrgRoles' ('userId','orgId','roleId');`
             ).run();
 
+            db.prepare(`DROP TABLE IF EXISTS '__new_userOrgs';`).run();
             db.prepare(
                 `
                 CREATE TABLE '__new_userOrgs' (
@@ -147,7 +175,7 @@ export default async function migration() {
             ).run();
             db.prepare(
                 `
-                CREATE TABLE 'userInviteRoles' (
+                CREATE TABLE IF NOT EXISTS 'userInviteRoles' (
                    	'inviteId' text NOT NULL,
                    	'roleId' integer NOT NULL,
                    	PRIMARY KEY('inviteId', 'roleId'),
@@ -156,6 +184,7 @@ export default async function migration() {
                 );
             `
             ).run();
+            db.prepare(`DROP TABLE IF EXISTS '__new_userInvites';`).run();
             db.prepare(
                 `
                 CREATE TABLE '__new_userInvites' (
