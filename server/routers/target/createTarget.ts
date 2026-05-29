@@ -18,6 +18,7 @@ import { addTargets } from "../newt/targets";
 import { eq } from "drizzle-orm";
 import { pickPort } from "./helpers";
 import { isTargetValid } from "@server/lib/validators";
+import { canUserAccessSite } from "@server/auth/canUserAccessSite";
 import { OpenAPITags, registry } from "@server/openApi";
 import {
     fireHealthCheckHealthyAlert,
@@ -144,6 +145,33 @@ export async function createTarget(
                     `Site with ID ${siteId} not found`
                 )
             );
+        }
+
+        // Ensure the site belongs to the same organization as the resource
+        if (site.orgId !== resource.orgId) {
+            return next(
+                createHttpError(
+                    HttpCode.FORBIDDEN,
+                    "User does not have access to this site"
+                )
+            );
+        }
+
+        // For user requests, verify the user has access to the site
+        if (req.user) {
+            const siteAccess = await canUserAccessSite({
+                userId: req.user.userId,
+                siteId: site.siteId,
+                roleIds: req.userOrgRoleIds ?? []
+            });
+            if (!siteAccess) {
+                return next(
+                    createHttpError(
+                        HttpCode.FORBIDDEN,
+                        "User does not have access to this site"
+                    )
+                );
+            }
         }
 
         let newTarget: Target[] = [];
