@@ -30,14 +30,19 @@ export default async function Page(props: {
     const getUser = cache(verifySession);
     const user = await getUser({ skipCheckVerifyEmail: true });
 
-    let complete = false;
+    let complete: boolean | null = null; // null means "unknown" (request errored)
     try {
         const setupRes = await internal.get<
             AxiosResponse<InitialSetupCompleteResponse>
         >(`/auth/initial-setup-complete`, await authCookieHeader());
         complete = setupRes.data.data.complete;
-    } catch (e) {}
-    if (!complete) {
+    } catch (e) {
+        // Swallow errors (e.g. 429 rate limit, 500, network failure).
+        // Only redirect to initial-setup when the server *confirms* setup
+        // is incomplete (complete === false). If the request itself failed we
+        // cannot tell, so fall through to the login redirect instead.
+    }
+    if (complete === false) {
         redirect("/auth/initial-setup");
     }
 
