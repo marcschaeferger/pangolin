@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db, logsDb, statusHistory } from "@server/db";
-import { and, eq, gte, lt, asc, desc } from "drizzle-orm";
+import { and, eq, gte, lt, asc, desc, inArray } from "drizzle-orm";
 import { regionalCache as cache } from "#dynamic/lib/cache";
 
 const STATUS_HISTORY_CACHE_TTL = 60; // seconds
@@ -272,4 +272,82 @@ export function computeBuckets(
     }
 
     return { buckets, totalDowntime };
+}
+
+export interface BatchedStatusHistoryResponse {
+    entityType: string;
+    entityIds: number[];
+    days: StatusHistoryDayBucket[];
+    overallUptimePercent: number;
+    totalDowntimeSeconds: number;
+}
+
+export async function getBatchedStatusHistory(
+    entityType: string,
+    entityIds: number[],
+    days: number
+): Promise<BatchedStatusHistoryResponse> {
+    // const cacheKey = statusHistoryCacheKey(entityType, entityId, days);
+    // const cached = await cache.get<StatusHistoryResponse>(cacheKey);
+    // if (cached !== undefined) {
+    //     return cached;
+    // }
+
+    // Anchor to UTC midnight so the query window aligns with stable calendar days
+    const utcToday = new Date();
+    utcToday.setUTCHours(0, 0, 0, 0);
+    const todayMidnightSec = Math.floor(utcToday.getTime() / 1000);
+    const startSec = todayMidnightSec - days * 86400;
+
+    const events = await logsDb
+        .select()
+        .from(statusHistory)
+        .where(
+            and(
+                eq(statusHistory.entityType, entityType),
+                inArray(statusHistory.entityId, entityIds),
+                gte(statusHistory.timestamp, startSec)
+            )
+        )
+        .orderBy(asc(statusHistory.timestamp));
+
+    // Fetch the last known state before the window so that entities that
+    // haven't changed status recently still show the correct status rather
+    // than appearing as "no_data".
+    const [lastKnownEvent] = await logsDb
+        .select()
+        .from(statusHistory)
+        .where(
+            and(
+                eq(statusHistory.entityType, entityType),
+                inArray(statusHistory.entityId, entityIds),
+                lt(statusHistory.timestamp, startSec)
+            )
+        )
+        .orderBy(desc(statusHistory.timestamp))
+        .limit(1);
+
+    const priorStatus = lastKnownEvent?.status ?? null;
+
+    const { buckets, totalDowntime } = computeBuckets(
+        events,
+        days,
+        priorStatus
+    );
+    const totalWindow = days * 86400;
+    const overallUptime =
+        totalWindow > 0
+            ? Math.max(0, ((totalWindow - totalDowntime) / totalWindow) * 100)
+            : 100;
+
+    const result: BatchedStatusHistoryResponse = {
+        entityType,
+        entityIds,
+        days: buckets,
+        overallUptimePercent: Math.round(overallUptime * 100) / 100,
+        totalDowntimeSeconds: totalDowntime
+    };
+
+    // await cache.set(cacheKey, result, STATUS_HISTORY_CACHE_TTL);
+    return result;
 }

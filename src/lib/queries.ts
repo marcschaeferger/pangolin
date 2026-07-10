@@ -640,6 +640,28 @@ export const orgQueries = {
                 };
             }
         }),
+    batchedSiteStatusHistory: ({
+        siteIds,
+        days = 90
+    }: {
+        siteIds: number[];
+        days?: number;
+    }) =>
+        queryOptions({
+            queryKey: [
+                "SITE_STATUS_HISTORY",
+                "BATCHED",
+                siteIds,
+                days
+            ] as const,
+            queryFn: async ({ signal, meta }) => {
+                // TODO
+                // const res = await meta!.api.get<
+                //     AxiosResponse<StatusHistoryResponse>
+                // >(`/site/${siteId}/status-history?days=${days}`, { signal });
+                // return res.data.data;
+            }
+        }),
     siteStatusHistory: ({
         siteId,
         days = 90
