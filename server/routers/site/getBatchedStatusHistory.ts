@@ -11,8 +11,35 @@ import {
     StatusHistoryResponse
 } from "@server/lib/statusHistory";
 
-const siteParamsSchema = z.object({
-    siteId: z.string().transform((v) => parseInt(v, 10))
+const siteIdParamsSchema = z.object({
+    days: z
+        .string()
+        .optional()
+        .transform((v) => (v ? parseInt(v, 10) : 90)),
+    // Minutes to add to UTC to get the requesting client's local time
+    // (e.g. Australia/Sydney standard time is 600). Optional and
+    // defaults to 0 (UTC) so older clients keep the prior behavior.
+    tzOffsetMinutes: z
+        .string()
+        .optional()
+        .transform((v) => (v ? parseInt(v, 10) : 0)),
+    siteIds: z
+        .preprocess((val) => {
+            if (val === undefined || val === null || val === "") {
+                return undefined;
+            }
+            const raw = Array.isArray(val) ? val : [val];
+            const nums = raw
+                .map((v) =>
+                    typeof v === "string" ? parseInt(v, 10) : Number(v)
+                )
+                .filter((n) => Number.isInteger(n) && n > 0);
+            const unique = [...new Set(nums)];
+            return unique.length ? unique : undefined;
+        }, z.array(z.number().int().positive()))
+        .openapi({
+            description: "Filter by siteIds (repeat query param)"
+        })
 });
 
 export async function getBatchedSiteStatusHistory(
@@ -21,16 +48,7 @@ export async function getBatchedSiteStatusHistory(
     next: NextFunction
 ): Promise<any> {
     try {
-        const parsedParams = siteParamsSchema.safeParse(req.params);
-        if (!parsedParams.success) {
-            return next(
-                createHttpError(
-                    HttpCode.BAD_REQUEST,
-                    fromError(parsedParams.error).toString()
-                )
-            );
-        }
-        const parsedQuery = statusHistoryQuerySchema.safeParse(req.query);
+        const parsedQuery = siteIdParamsSchema.safeParse(req.query);
         if (!parsedQuery.success) {
             return next(
                 createHttpError(

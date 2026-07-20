@@ -264,9 +264,7 @@ export function computeBuckets(
 
         // Shift by the client's offset before formatting so the label reflects
         // their local calendar date rather than the UTC date of dayStartSec
-        const dateStr = new Date(
-            (dayStartSec + tzOffsetMinutes * 60) * 1000
-        )
+        const dateStr = new Date((dayStartSec + tzOffsetMinutes * 60) * 1000)
             .toISOString()
             .slice(0, 10);
 
@@ -305,13 +303,10 @@ export function computeBuckets(
     return { buckets, totalDowntime };
 }
 
-export interface BatchedStatusHistoryResponse {
-    entityType: string;
-    entityIds: number[];
-    days: StatusHistoryDayBucket[];
-    overallUptimePercent: number;
-    totalDowntimeSeconds: number;
-}
+export type BatchedStatusHistoryResponse = Record<
+    string,
+    StatusHistoryResponse
+>;
 
 export async function getBatchedStatusHistory(
     entityType: string,
@@ -345,8 +340,8 @@ export async function getBatchedStatusHistory(
     // Fetch the last known state before the window so that entities that
     // haven't changed status recently still show the correct status rather
     // than appearing as "no_data".
-    const [lastKnownEvent] = await logsDb
-        .select()
+    const lastKnownEvents = await logsDb
+        .selectDistinctOn([statusHistory.entityId, statusHistory.timestamp])
         .from(statusHistory)
         .where(
             and(
@@ -355,29 +350,57 @@ export async function getBatchedStatusHistory(
                 lt(statusHistory.timestamp, startSec)
             )
         )
-        .orderBy(desc(statusHistory.timestamp))
-        .limit(1);
+        .orderBy(desc(statusHistory.timestamp));
 
-    const priorStatus = lastKnownEvent?.status ?? null;
+    const eventStatusMap: Record<
+        number,
+        {
+            events: typeof events;
+            lastKnownEvent: (typeof lastKnownEvents)[number] | null;
+        }
+    > = {};
 
-    const { buckets, totalDowntime } = computeBuckets(
-        events,
-        days,
-        priorStatus
-    );
-    const totalWindow = days * 86400;
-    const overallUptime =
-        totalWindow > 0
-            ? Math.max(0, ((totalWindow - totalDowntime) / totalWindow) * 100)
-            : 100;
+    for (const event of events) {
+        if (!eventStatusMap[event.entityId]) {
+            eventStatusMap[event.entityId] = {
+                events: [],
+                lastKnownEvent:
+                    lastKnownEvents.find(
+                        (ev) => ev.entityId === event.entityId
+                    ) ?? null
+            };
+        }
+        eventStatusMap[event.entityId].events.push(event);
+    }
 
-    const result: BatchedStatusHistoryResponse = {
-        entityType,
-        entityIds,
-        days: buckets,
-        overallUptimePercent: Math.round(overallUptime * 100) / 100,
-        totalDowntimeSeconds: totalDowntime
-    };
+    const result: BatchedStatusHistoryResponse = {};
+
+    for (const entityId in eventStatusMap) {
+        const event = eventStatusMap[Number(entityId)];
+        const priorStatus = event.lastKnownEvent?.status ?? null;
+
+        const { buckets, totalDowntime } = computeBuckets(
+            event.events,
+            days,
+            priorStatus
+        );
+        const totalWindow = days * 86400;
+        const overallUptime =
+            totalWindow > 0
+                ? Math.max(
+                      0,
+                      ((totalWindow - totalDowntime) / totalWindow) * 100
+                  )
+                : 100;
+
+        result[entityId] = {
+            entityType,
+            entityId: Number(entityId),
+            days: buckets,
+            overallUptimePercent: Math.round(overallUptime * 100) / 100,
+            totalDowntimeSeconds: totalDowntime
+        };
+    }
 
     // await cache.set(cacheKey, result, STATUS_HISTORY_CACHE_TTL);
     return result;
