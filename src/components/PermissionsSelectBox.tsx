@@ -55,6 +55,7 @@ function getActionsCategories(root: boolean) {
             [t("actionGetSite")]: "getSite",
             [t("actionListSites")]: "listSites",
             [t("actionUpdateSite")]: "updateSite",
+            [t("actionUpdateSiteApprovals")]: "updateSiteApprovals",
             [t("actionListSiteRoles")]: "listSiteRoles"
         },
 
@@ -78,7 +79,8 @@ function getActionsCategories(root: boolean) {
             [t("actionGetSiteResource")]: "getSiteResource",
             [t("actionListSiteResources")]: "listSiteResources",
             [t("actionUpdateSiteResource")]: "updateSiteResource",
-            [t("actionCreateResourceSessionToken")]: "createResourceSessionToken"
+            [t("actionCreateResourceSessionToken")]:
+                "createResourceSessionToken"
         },
 
         Target: {
@@ -141,6 +143,13 @@ function getActionsCategories(root: boolean) {
         Logs: {
             [t("actionExportLogs")]: "exportLogs",
             [t("actionViewLogs")]: "viewLogs"
+        },
+
+        "Site Provisioning Key": {
+            [t("actionCreateSiteProvisioningKey")]: "createSiteProvisioningKey",
+            [t("actionListSiteProvisioningKeys")]: "listSiteProvisioningKeys",
+            [t("actionUpdateSiteProvisioningKey")]: "updateSiteProvisioningKey",
+            [t("actionDeleteSiteProvisioningKey")]: "deleteSiteProvisioningKey"
         }
     };
 

@@ -86,6 +86,15 @@ const listAllSiteResourcesByOrgQuerySchema = z.strictObject({
         description:
             "When set, only site resources associated with this site (via network) are returned"
     }),
+    status: z
+        .enum(["pending", "approved"])
+        .optional()
+        .catch(undefined)
+        .openapi({
+            type: "string",
+            enum: ["pending", "approved"],
+            description: "Filter by site resource status"
+        }),
     labels: z
         .preprocess((val) => {
             if (val === undefined || val === null || val === "") {
@@ -221,6 +230,33 @@ registry.registerPath({
     method: "get",
     path: "/org/{orgId}/site-resources",
     description: "List all site resources for an organization.",
+    tags: [OpenAPITags.PrivateResourceLegacy],
+    request: {
+        params: listAllSiteResourcesByOrgParamsSchema,
+        query: listAllSiteResourcesByOrgQuerySchema
+    },
+    responses: {
+        200: {
+            description: "Successful response",
+            content: {
+                "application/json": {
+                    schema: z.object({
+                        data: z.record(z.string(), z.any()).nullable(),
+                        success: z.boolean(),
+                        error: z.boolean(),
+                        message: z.string(),
+                        status: z.number()
+                    })
+                }
+            }
+        }
+    }
+});
+
+registry.registerPath({
+    method: "get",
+    path: "/org/{orgId}/private-resources",
+    description: "List all site resources for an organization.",
     tags: [OpenAPITags.PrivateResource],
     request: {
         params: listAllSiteResourcesByOrgParamsSchema,
@@ -283,6 +319,7 @@ export async function listAllSiteResourcesByOrg(
             sort_by,
             order,
             siteId,
+            status,
             labels: labelFilter
         } = parsedQuery.data;
 
@@ -313,6 +350,10 @@ export async function listAllSiteResourcesByOrg(
 
         if (mode) {
             conditions.push(eq(siteResources.mode, mode));
+        }
+
+        if (typeof status !== "undefined") {
+            conditions.push(eq(siteResources.status, status));
         }
 
         if (labelFilter && labelFilter.length > 0) {

@@ -107,6 +107,7 @@ export const sites = pgTable(
         lastPing: integer("lastPing"),
         address: varchar("address"),
         endpoint: varchar("endpoint"),
+        localEndpoints: varchar("localEndpoints"), // JSON encoded list of string ips on the local machine to try to connect to
         publicKey: varchar("publicKey"),
         lastHolePunch: bigint("lastHolePunch", { mode: "number" }),
         listenPort: integer("listenPort"),
@@ -200,7 +201,10 @@ export const resources = pgTable(
         authDaemonMode: varchar("authDaemonMode", { length: 32 })
             .$type<"site" | "remote" | "native">()
             .default("site"),
-        authDaemonPort: integer("authDaemonPort").default(22123)
+        authDaemonPort: integer("authDaemonPort").default(22123),
+        status: varchar("status")
+            .$type<"pending" | "approved">()
+            .default("approved")
     },
     (t) => [
         index("idx_resources_fulldomain")
@@ -451,7 +455,10 @@ export const siteResources = pgTable(
             onDelete: "set null"
         }),
         subdomain: varchar("subdomain"),
-        fullDomain: varchar("fullDomain")
+        fullDomain: varchar("fullDomain"),
+        status: varchar("status")
+            .$type<"pending" | "approved">()
+            .default("approved")
     },
     (t) => [index("idx_siteresources_orgid_niceid").on(t.orgId, t.niceId)]
 );
@@ -899,12 +906,16 @@ export const resourceAccessToken = pgTable("resourceAccessToken", {
     resourceId: integer("resourceId")
         .notNull()
         .references(() => resources.resourceId, { onDelete: "cascade" }),
+    userId: varchar("userId").references(() => users.userId, {
+        onDelete: "cascade"
+    }),
     path: varchar("path"),
     tokenHash: varchar("tokenHash").notNull(),
     sessionLength: bigint("sessionLength", { mode: "number" }).notNull(),
     expiresAt: bigint("expiresAt", { mode: "number" }),
     title: varchar("title"),
     description: varchar("description"),
+    persistSession: boolean("persistSession").notNull().default(false),
     createdAt: bigint("createdAt", { mode: "number" }).notNull()
 });
 

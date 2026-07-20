@@ -16,7 +16,7 @@ import {
     generateRemoteSubnets
 } from "@server/lib/ip";
 import logger from "@server/logger";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { addPeer, deletePeer } from "../newt/peers";
 import config from "@server/lib/config";
 
@@ -30,6 +30,7 @@ export async function buildSiteConfigurationForOlmClient(
         siteId: number;
         name?: string;
         endpoint?: string;
+        localEndpoints?: string[];
         publicKey?: string;
         serverIP?: string | null;
         serverPort?: number | null;
@@ -70,7 +71,13 @@ export async function buildSiteConfigurationForOlmClient(
         .innerJoin(networks, eq(siteResources.networkId, networks.networkId))
         .innerJoin(siteNetworks, eq(networks.networkId, siteNetworks.networkId))
         .where(
-            eq(clientSiteResourcesAssociationsCache.clientId, client.clientId)
+            and(
+                eq(
+                    clientSiteResourcesAssociationsCache.clientId,
+                    client.clientId
+                ),
+                eq(siteResources.enabled, true)
+            )
         );
 
     const siteResourcesBySiteId = new Map<number, SiteResource[]>();
@@ -200,6 +207,9 @@ export async function buildSiteConfigurationForOlmClient(
             name: site.name,
             // relayEndpoint: relayEndpoint, // this can be undefined now if not relayed // lets not do this for now because it would conflict with the hole punch testing
             endpoint: site.endpoint,
+            localEndpoints: site.localEndpoints
+                ? JSON.parse(site.localEndpoints)
+                : undefined,
             publicKey: site.publicKey,
             serverIP: site.address,
             serverPort: site.listenPort,
