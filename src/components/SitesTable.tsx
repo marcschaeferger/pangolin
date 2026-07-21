@@ -376,7 +376,7 @@ export default function SitesTable({
                 cell: ({ row }) => {
                     const originalRow = row.original;
 
-                    let updateAvailable = Boolean(
+                    const updateAvailable = Boolean(
                         latestNewtVersion &&
                         originalRow.newtVersion &&
                         semver.valid(originalRow.newtVersion) &&
