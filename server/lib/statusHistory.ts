@@ -37,9 +37,9 @@ export async function getCachedStatusHistory(
         tzOffsetMinutes
     );
     const cached = await cache.get<StatusHistoryResponse>(cacheKey);
-    // if (cached !== undefined) {
-    //     return cached;
-    // }
+    if (cached !== undefined) {
+        return cached;
+    }
 
     console.time(`[getCachedStatusHistory/${entityType}=${entityId}]`);
     // Anchor to local midnight (UTC when tzOffsetMinutes is 0) so the query
@@ -344,10 +344,6 @@ export async function getBatchedStatusHistory(
         )
         .orderBy(asc(statusHistory.timestamp));
 
-    console.log({
-        events
-    });
-
     // Fetch the last known state before the window so that entities that
     // haven't changed status recently still show the correct status rather
     // than appearing as "no_data".
@@ -371,17 +367,12 @@ export async function getBatchedStatusHistory(
         }
     > = {};
 
-    for (const event of events) {
-        if (!eventStatusMap[event.entityId]) {
-            eventStatusMap[event.entityId] = {
-                events: [],
-                lastKnownEvent:
-                    lastKnownEvents.find(
-                        (ev) => ev.entityId === event.entityId
-                    ) ?? null
-            };
-        }
-        eventStatusMap[event.entityId].events.push(event);
+    for (const entityId of entityIds) {
+        eventStatusMap[entityId] = {
+            events: events.filter((ev) => ev.entityId === entityId),
+            lastKnownEvent:
+                lastKnownEvents.find((ev) => ev.entityId === entityId) ?? null
+        };
     }
 
     const result: BatchedStatusHistoryResponse = {};
