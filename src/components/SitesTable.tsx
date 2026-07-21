@@ -1,7 +1,7 @@
 "use client";
 
 import ConfirmDeleteDialog from "@app/components/ConfirmDeleteDialog";
-import UptimeMiniBar from "@app/components/UptimeMiniBar";
+import { UptimeMiniBar } from "@app/components/UptimeMiniBar";
 
 import {
     Credenza,
@@ -56,8 +56,9 @@ import { usePaidStatus } from "@app/hooks/usePaidStatus";
 import { LabelColumnFilterButton } from "./LabelColumnFilterButton";
 import { LabelsTableCell } from "./LabelsTableCell";
 import { useQuery } from "@tanstack/react-query";
-import { productUpdatesQueries } from "@app/lib/queries";
+import { orgQueries, productUpdatesQueries } from "@app/lib/queries";
 import semver from "semver";
+import { durationToMs } from "@app/lib/durationToMs";
 
 export type SiteRow = {
     id: number;
@@ -89,6 +90,8 @@ type SitesTableProps = {
     rowCount: number;
 };
 
+const SITE_STATUS_HISTORY_DAYS = 30;
+
 export default function SitesTable({
     sites,
     orgId,
@@ -112,7 +115,14 @@ export default function SitesTable({
     const [isRefreshing, startTransition] = useTransition();
     const [isNavigatingToAddPage, startNavigation] = useTransition();
 
-    const { isPaidUser } = usePaidStatus();
+    const statusHistoryQuery = useQuery({
+        ...orgQueries.batchedSiteStatusHistory({
+            orgId,
+            siteIds: sites.map((s) => s.id),
+            days: SITE_STATUS_HISTORY_DAYS
+        }),
+        staleTime: durationToMs(5, "seconds")
+    });
 
     const api = createApiClient(useEnvContext());
     const t = useTranslations();
@@ -296,7 +306,14 @@ export default function SitesTable({
                     if (originalRow.type == "local") {
                         return <span>-</span>;
                     }
-                    return <UptimeMiniBar siteId={originalRow.id} days={30} />;
+                    const data = statusHistoryQuery.data?.[row.original.id];
+                    return (
+                        <UptimeMiniBar
+                            isLoading={statusHistoryQuery.isLoading}
+                            data={data}
+                            days={SITE_STATUS_HISTORY_DAYS}
+                        />
+                    );
                 }
             },
             {
@@ -361,12 +378,9 @@ export default function SitesTable({
 
                     let updateAvailable = Boolean(
                         latestNewtVersion &&
-                            originalRow.newtVersion &&
-                            semver.valid(originalRow.newtVersion) &&
-                            semver.lt(
-                                originalRow.newtVersion,
-                                latestNewtVersion
-                            )
+                        originalRow.newtVersion &&
+                        semver.valid(originalRow.newtVersion) &&
+                        semver.lt(originalRow.newtVersion, latestNewtVersion)
                     );
 
                     if (originalRow.type === "newt") {

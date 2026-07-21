@@ -1,15 +1,14 @@
-import { Request, Response, NextFunction } from "express";
-import { z } from "zod";
 import response from "@server/lib/response";
-import HttpCode from "@server/types/HttpCode";
-import createHttpError from "http-errors";
-import logger from "@server/logger";
-import { fromError } from "zod-validation-error";
 import {
-    getCachedStatusHistory,
-    statusHistoryQuerySchema,
-    StatusHistoryResponse
+    getBatchedStatusHistory,
+    type BatchedStatusHistoryResponse
 } from "@server/lib/statusHistory";
+import logger from "@server/logger";
+import HttpCode from "@server/types/HttpCode";
+import { NextFunction, Request, Response } from "express";
+import createHttpError from "http-errors";
+import { z } from "zod";
+import { fromError } from "zod-validation-error";
 
 const siteIdParamsSchema = z.object({
     days: z
@@ -59,12 +58,16 @@ export async function getBatchedSiteStatusHistory(
         }
 
         const entityType = "site";
-        const entityId = parsedParams.data.siteId;
-        const { days } = parsedQuery.data;
+        const { days, siteIds, tzOffsetMinutes } = parsedQuery.data;
 
-        const data = await getCachedStatusHistory(entityType, entityId, days);
+        const data = await getBatchedStatusHistory(
+            entityType,
+            siteIds,
+            days,
+            tzOffsetMinutes
+        );
 
-        return response<StatusHistoryResponse>(res, {
+        return response<BatchedStatusHistoryResponse>(res, {
             data,
             success: true,
             error: false,

@@ -47,7 +47,10 @@ import { remote } from "./api";
 import { durationToMs } from "./durationToMs";
 import type { ListOrgLabelsResponse } from "@server/routers/labels/types";
 import { ListHealthChecksResponse } from "@server/routers/healthChecks/types";
-import { StatusHistoryResponse } from "@server/lib/statusHistory";
+import {
+    StatusHistoryResponse,
+    type BatchedStatusHistoryResponse
+} from "@server/lib/statusHistory";
 import type { ListResourcePoliciesResponse } from "@server/routers/resource/types";
 import type { GetResourcePolicyResponse } from "@server/routers/policy";
 import type {
@@ -642,24 +645,33 @@ export const orgQueries = {
         }),
     batchedSiteStatusHistory: ({
         siteIds,
+        orgId,
         days = 90
     }: {
+        orgId: string;
         siteIds: number[];
         days?: number;
     }) =>
         queryOptions({
             queryKey: [
-                "SITE_STATUS_HISTORY",
-                "BATCHED",
+                "ORG",
+                orgId,
+                "BATCHED_SITE_STATUS_HISTORY",
                 siteIds,
                 days
             ] as const,
             queryFn: async ({ signal, meta }) => {
-                // TODO
-                // const res = await meta!.api.get<
-                //     AxiosResponse<StatusHistoryResponse>
-                // >(`/site/${siteId}/status-history?days=${days}`, { signal });
-                // return res.data.data;
+                const sp = new URLSearchParams([
+                    ["days", days.toString()],
+                    ...siteIds.map((id) => ["siteIds", id.toString()])
+                ]);
+
+                const res = await meta!.api.get<
+                    AxiosResponse<BatchedStatusHistoryResponse>
+                >(`/org/${orgId}/site-status-histories?${sp.toString()}`, {
+                    signal
+                });
+                return res.data.data;
             }
         }),
     siteStatusHistory: ({
@@ -671,6 +683,7 @@ export const orgQueries = {
     }) =>
         queryOptions({
             queryKey: ["SITE_STATUS_HISTORY", siteId, days] as const,
+            staleTime: durationToMs(5, "seconds"),
             queryFn: async ({ signal, meta }) => {
                 const tzOffsetMinutes = -new Date().getTimezoneOffset();
                 const res = await meta!.api.get<
@@ -692,6 +705,7 @@ export const orgQueries = {
     }) =>
         queryOptions({
             queryKey: ["RESOURCE_STATUS_HISTORY", resourceId, days] as const,
+            staleTime: durationToMs(5, "seconds"),
             queryFn: async ({ signal, meta }) => {
                 const tzOffsetMinutes = -new Date().getTimezoneOffset();
                 const res = await meta!.api.get<
@@ -714,6 +728,7 @@ export const orgQueries = {
         days?: number;
     }) =>
         queryOptions({
+            staleTime: durationToMs(5, "seconds"),
             queryKey: [
                 "HC_STATUS_HISTORY",
                 orgId,
