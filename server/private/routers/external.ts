@@ -854,6 +854,14 @@ authenticated.get(
 );
 
 authenticated.get(
+    "/org/:orgId/health-check-status-histories",
+    verifyValidLicense,
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.getTarget),
+    healthChecks.getBatchedHealthCheckStatusHistory
+);
+
+authenticated.get(
     "/client/:clientId/verify-associations-cache",
     verifyClientAccess,
     client.verifyClientAssociationsCache

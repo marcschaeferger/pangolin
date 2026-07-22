@@ -679,6 +679,46 @@ export const orgQueries = {
             },
             staleTime: durationToMs(5, "seconds")
         }),
+    batchedHealthCheckStatusHistory: ({
+        healthCheckIds,
+        orgId,
+        days = 90
+    }: {
+        orgId: string;
+        healthCheckIds: number[];
+        days?: number;
+    }) =>
+        queryOptions({
+            queryKey: [
+                "ORG",
+                orgId,
+                "BATCHED_HEALTH_CHECK_STATUS_HISTORY",
+                healthCheckIds,
+                days
+            ] as const,
+            queryFn: async ({ signal, meta }) => {
+                // Negated because getTimezoneOffset() returns UTC - local,
+                // while the API expects minutes to add to UTC to get local
+                const tzOffsetMinutes = -new Date().getTimezoneOffset();
+                const sp = new URLSearchParams([
+                    ["days", days.toString()],
+                    ["tzOffsetMinutes", tzOffsetMinutes.toString()],
+                    ...healthCheckIds.map((id) => [
+                        "healthCheckIds",
+                        id.toString()
+                    ])
+                ]);
+
+                const res = await meta!.api.get<
+                    AxiosResponse<BatchedStatusHistoryResponse>
+                >(
+                    `/org/${orgId}/health-check-status-histories?${sp.toString()}`,
+                    { signal }
+                );
+                return res.data.data;
+            },
+            staleTime: durationToMs(5, "seconds")
+        }),
     batchedResourceStatusHistory: ({
         resourceIds,
         orgId,
