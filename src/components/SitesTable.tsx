@@ -52,13 +52,12 @@ import {
 } from "./ui/controlled-data-table";
 
 import { useOptimisticLabels } from "@app/hooks/useOptimisticLabels";
-import { usePaidStatus } from "@app/hooks/usePaidStatus";
+import { durationToMs } from "@app/lib/durationToMs";
+import { orgQueries, productUpdatesQueries } from "@app/lib/queries";
+import { useQuery } from "@tanstack/react-query";
+import semver from "semver";
 import { LabelColumnFilterButton } from "./LabelColumnFilterButton";
 import { LabelsTableCell } from "./LabelsTableCell";
-import { useQuery } from "@tanstack/react-query";
-import { orgQueries, productUpdatesQueries } from "@app/lib/queries";
-import semver from "semver";
-import { durationToMs } from "@app/lib/durationToMs";
 
 export type SiteRow = {
     id: number;
