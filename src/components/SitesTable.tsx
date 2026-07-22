@@ -114,13 +114,15 @@ export default function SitesTable({
     const [isRefreshing, startTransition] = useTransition();
     const [isNavigatingToAddPage, startNavigation] = useTransition();
 
+    const siteIds = sites.map((s) => s.id);
+
     const statusHistoryQuery = useQuery({
         ...orgQueries.batchedSiteStatusHistory({
             orgId,
-            siteIds: sites.map((s) => s.id),
+            siteIds,
             days: SITE_STATUS_HISTORY_DAYS
         }),
-        enabled: sites.length > 0
+        enabled: siteIds.length > 0
     });
 
     const api = createApiClient(useEnvContext());
