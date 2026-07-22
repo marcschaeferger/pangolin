@@ -317,12 +317,6 @@ export async function getBatchedStatusHistory(
     days: number,
     tzOffsetMinutes: number = 0
 ): Promise<BatchedStatusHistoryResponse> {
-    // const cacheKey = statusHistoryCacheKey(entityType, entityId, days);
-    // const cached = await cache.get<StatusHistoryResponse>(cacheKey);
-    // if (cached !== undefined) {
-    //     return cached;
-    // }
-
     console.time(
         `[getBatchedStatusHistory/${entityType}=(${entityIds.join(" ,")})]`
     );
@@ -412,7 +406,8 @@ export async function getBatchedStatusHistory(
         const { buckets, totalDowntime } = computeBuckets(
             event.events,
             days,
-            priorStatus
+            priorStatus,
+            tzOffsetMinutes
         );
         const totalWindow = days * 86400;
         const overallUptime =
@@ -436,6 +431,5 @@ export async function getBatchedStatusHistory(
     console.timeEnd(
         `[getBatchedStatusHistory/${entityType}=(${entityIds.join(" ,")})]`
     );
-    // await cache.set(cacheKey, result, STATUS_HISTORY_CACHE_TTL);
     return result;
 }

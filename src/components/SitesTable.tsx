@@ -120,7 +120,7 @@ export default function SitesTable({
             siteIds: sites.map((s) => s.id),
             days: SITE_STATUS_HISTORY_DAYS
         }),
-        staleTime: durationToMs(5, "seconds")
+        enabled: sites.length > 0
     });
 
     const api = createApiClient(useEnvContext());

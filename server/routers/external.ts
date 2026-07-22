@@ -477,6 +477,13 @@ authenticated.get(
 );
 
 authenticated.get(
+    "/org/:orgId/resource-status-histories",
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.listResources),
+    resource.getBatchedResourceStatusHistory
+);
+
+authenticated.get(
     "/org/:orgId/resources",
     verifyOrgAccess,
     verifyUserHasAction(ActionsEnum.listResources),

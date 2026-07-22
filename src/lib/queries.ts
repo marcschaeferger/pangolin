@@ -661,8 +661,12 @@ export const orgQueries = {
                 days
             ] as const,
             queryFn: async ({ signal, meta }) => {
+                // Negated because getTimezoneOffset() returns UTC - local,
+                // while the API expects minutes to add to UTC to get local
+                const tzOffsetMinutes = -new Date().getTimezoneOffset();
                 const sp = new URLSearchParams([
                     ["days", days.toString()],
+                    ["tzOffsetMinutes", tzOffsetMinutes.toString()],
                     ...siteIds.map((id) => ["siteIds", id.toString()])
                 ]);
 
@@ -672,7 +676,44 @@ export const orgQueries = {
                     signal
                 });
                 return res.data.data;
-            }
+            },
+            staleTime: durationToMs(5, "seconds")
+        }),
+    batchedResourceStatusHistory: ({
+        resourceIds,
+        orgId,
+        days = 90
+    }: {
+        orgId: string;
+        resourceIds: number[];
+        days?: number;
+    }) =>
+        queryOptions({
+            queryKey: [
+                "ORG",
+                orgId,
+                "BATCHED_RESOURCE_STATUS_HISTORY",
+                resourceIds,
+                days
+            ] as const,
+            queryFn: async ({ signal, meta }) => {
+                // Negated because getTimezoneOffset() returns UTC - local,
+                // while the API expects minutes to add to UTC to get local
+                const tzOffsetMinutes = -new Date().getTimezoneOffset();
+                const sp = new URLSearchParams([
+                    ["days", days.toString()],
+                    ["tzOffsetMinutes", tzOffsetMinutes.toString()],
+                    ...resourceIds.map((id) => ["resourceIds", id.toString()])
+                ]);
+
+                const res = await meta!.api.get<
+                    AxiosResponse<BatchedStatusHistoryResponse>
+                >(`/org/${orgId}/resource-status-histories?${sp.toString()}`, {
+                    signal
+                });
+                return res.data.data;
+            },
+            staleTime: durationToMs(5, "seconds")
         }),
     siteStatusHistory: ({
         siteId,
