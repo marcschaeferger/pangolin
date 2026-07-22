@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db, logsDb, statusHistory } from "@server/db";
-import { and, eq, gte, lt, asc, desc, inArray } from "drizzle-orm";
+import { and, eq, gte, lt, asc, desc, inArray, max, sql } from "drizzle-orm";
 import { regionalCache as cache } from "#dynamic/lib/cache";
 
 const STATUS_HISTORY_CACHE_TTL = 60; // seconds
@@ -347,8 +347,26 @@ export async function getBatchedStatusHistory(
     // Fetch the last known state before the window so that entities that
     // haven't changed status recently still show the correct status rather
     // than appearing as "no_data".
-    const lastKnownEvents = await logsDb
-        .selectDistinctOn([statusHistory.entityId, statusHistory.timestamp])
+
+    /**
+     * If we used only postgres, we would have used `SELECT DISTINCT ON` to get the
+     * latest event for each `entityId`,
+     * but it doesn't work on SQLite, so instead we use a subquery,
+     * the `ROW_NUMBER() OVER PARTITION` allows to assign a number
+     * to each row ordered by the timestamp, the number 1 is the first one appearing in
+     * the specified order, then the next and more, we only want the highest timestamp,
+     * so we get for `row_number=1`
+     */
+    const lastKnowEventsSub = logsDb
+        .select({
+            entityId: statusHistory.entityId,
+            status: statusHistory.status,
+            timestamp: statusHistory.timestamp,
+            row_number:
+                sql<number>`ROW_NUMBER() OVER (PARTITION BY ${statusHistory.entityId} ORDER BY ${statusHistory.timestamp} DESC)`.as(
+                    "row_number"
+                )
+        })
         .from(statusHistory)
         .where(
             and(
@@ -357,7 +375,16 @@ export async function getBatchedStatusHistory(
                 lt(statusHistory.timestamp, startSec)
             )
         )
-        .orderBy(desc(statusHistory.timestamp));
+        .as("sub");
+
+    const lastKnownEvents = await logsDb
+        .select({
+            entityId: lastKnowEventsSub.entityId,
+            status: lastKnowEventsSub.status,
+            timestamp: lastKnowEventsSub.timestamp
+        })
+        .from(lastKnowEventsSub)
+        .where(eq(lastKnowEventsSub.row_number, 1));
 
     const eventStatusMap: Record<
         number,
