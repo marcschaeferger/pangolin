@@ -22,6 +22,7 @@ type ResourceAccessCertIndicatorProps = {
     orgId: string;
     domainId: string;
     fullDomain: string;
+    initialCertValue?: any;
 };
 
 function getStatusColor(status: string) {

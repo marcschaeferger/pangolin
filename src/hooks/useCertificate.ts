@@ -5,6 +5,8 @@ import { AxiosResponse } from "axios";
 import { GetCertificateResponse } from "@server/routers/certificates/types";
 import { createApiClient } from "@app/lib/api";
 import { useEnvContext } from "@app/hooks/useEnvContext";
+import { useQuery } from "@tanstack/react-query";
+import { domainQueries } from "@app/lib/queries";
 
 type UseCertificateProps = {
     orgId: string;
@@ -13,6 +15,7 @@ type UseCertificateProps = {
     autoFetch?: boolean;
     polling?: boolean;
     pollingInterval?: number;
+    initialCertValue?: GetCertificateResponse | null;
 };
 
 type UseCertificateReturn = {
@@ -22,51 +25,63 @@ type UseCertificateReturn = {
     refreshing: boolean;
     fetchCert: (showLoading?: boolean) => Promise<void>;
     refreshCert: () => Promise<void>;
-    clearCert: () => void;
+    // clearCert: () => void;
 };
 
 export function useCertificate({
     orgId,
     domainId,
     fullDomain,
+    initialCertValue = null,
     autoFetch = true,
     polling = false,
     pollingInterval = 5000
 }: UseCertificateProps): UseCertificateReturn {
     const api = createApiClient(useEnvContext());
 
-    const [cert, setCert] = useState<GetCertificateResponse | null>(null);
-    const [certLoading, setCertLoading] = useState(false);
+    // const [cert, setCert] = useState<GetCertificateResponse | null>(
+    //     initialCertValue
+    // );
+    // const [certLoading, setCertLoading] = useState(false);
     const [certError, setCertError] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
 
-    const fetchCert = useCallback(
-        async (showLoading = true) => {
-            if (!orgId || !domainId || !fullDomain) return;
+    const query = useQuery({
+        ...domainQueries.getCertificate({
+            orgId,
+            domainId,
+            domain: fullDomain
+        }),
+        initialData: initialCertValue
+    });
 
-            if (showLoading) {
-                setCertLoading(true);
-            }
-            try {
-                const res = await api.get<
-                    AxiosResponse<GetCertificateResponse>
-                >(`/org/${orgId}/certificate/${domainId}/${fullDomain}`);
-                const certData = res.data.data;
-                if (certData) {
-                    setCertError(null);
-                    setCert(certData);
-                }
-            } catch (error: any) {
-                console.error("Failed to fetch certificate:", error);
-                setCertError("Failed");
-            } finally {
-                if (showLoading) {
-                    setCertLoading(false);
-                }
-            }
-        },
-        [api, orgId, domainId, fullDomain]
-    );
+    // const fetchCert = useCallback(
+    //     async (showLoading = true) => {
+    //         if (!orgId || !domainId || !fullDomain) return;
+
+    //         if (showLoading) {
+    //             setCertLoading(true);
+    //         }
+    //         try {
+    //             const res = await api.get<
+    //                 AxiosResponse<GetCertificateResponse>
+    //             >(`/org/${orgId}/certificate/${domainId}/${fullDomain}`);
+    //             const certData = res.data.data;
+    //             if (certData) {
+    //                 setCertError(null);
+    //                 setCert(certData);
+    //             }
+    //         } catch (error: any) {
+    //             console.error("Failed to fetch certificate:", error);
+    //             setCertError("Failed");
+    //         } finally {
+    //             if (showLoading) {
+    //                 setCertLoading(false);
+    //             }
+    //         }
+    //     },
+    //     [api, orgId, domainId, fullDomain]
+    // );
 
     const refreshCert = useCallback(async () => {
         if (!cert) return;
@@ -96,11 +111,11 @@ export function useCertificate({
     }, []);
 
     // Auto-fetch on mount if enabled
-    useEffect(() => {
-        if (autoFetch && orgId && domainId && fullDomain) {
-            fetchCert();
-        }
-    }, [autoFetch, orgId, domainId, fullDomain, fetchCert]);
+    // useEffect(() => {
+    //     if (autoFetch && orgId && domainId && fullDomain) {
+    //         fetchCert();
+    //     }
+    // }, [autoFetch, orgId, domainId, fullDomain, fetchCert]);
 
     useEffect(() => {
         if (!polling || !orgId || !domainId || !fullDomain) return;
@@ -132,12 +147,12 @@ export function useCertificate({
     }, [polling, orgId, domainId, fullDomain, pollingInterval, fetchCert]);
 
     return {
-        cert,
-        certLoading,
+        cert: query.data,
+        certLoading: query.isLoading,
         certError,
         refreshing,
-        fetchCert,
-        refreshCert,
-        clearCert
+        fetchCert: query.refetch,
+        refreshCert
+        // clearCert
     };
 }
