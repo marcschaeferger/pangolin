@@ -69,6 +69,7 @@ import type { GetResourceAuthInfoResponse } from "@server/routers/resource/getRe
 import type { GetSiteResourceResponse } from "@server/routers/siteResource/getSiteResource";
 import type { LauncherQueryFilters } from "@app/lib/launcherSearchParams";
 import { buildLauncherSearchParams } from "@app/lib/launcherSearchParams";
+import type { GetCertificateResponse } from "@server/routers/certificates/types";
 
 export type { LauncherQueryFilters } from "@app/lib/launcherSearchParams";
 export { buildLauncherSearchParams } from "@app/lib/launcherSearchParams";
@@ -719,6 +720,31 @@ export const orgQueries = {
             },
             staleTime: durationToMs(5, "seconds")
         }),
+    batchedDomainCertificates: ({
+        domains,
+        orgId
+    }: {
+        orgId: string;
+        domains: string[];
+    }) =>
+        queryOptions({
+            queryKey: ["ORG", orgId, "BATCHED_CERTIFICATES", domains] as const,
+            queryFn: async ({ signal, meta }) => {
+                // Negated because getTimezoneOffset() returns UTC - local,
+                // while the API expects minutes to add to UTC to get local
+                const sp = new URLSearchParams([
+                    ...domains.map((domain) => ["domains", domain.toString()])
+                ]);
+
+                const res = await meta!.api.get<
+                    AxiosResponse<BatchedStatusHistoryResponse>
+                >(`/org/${orgId}/batched-certificates?${sp.toString()}`, {
+                    signal
+                });
+                return res.data.data;
+            },
+            staleTime: durationToMs(5, "seconds")
+        }),
     batchedResourceStatusHistory: ({
         resourceIds,
         orgId,
@@ -1355,6 +1381,34 @@ export const approvalQueries = {
 };
 
 export const domainQueries = {
+    getCertificate: ({
+        orgId,
+        domainId,
+        domain
+    }: {
+        orgId: string;
+        domainId: string;
+        domain: string;
+    }) =>
+        queryOptions({
+            queryKey: [
+                "ORG",
+                orgId,
+                "DOMAIN",
+                domainId,
+                "CERTIFICATE"
+            ] as const,
+            queryFn: async ({ signal, meta }) => {
+                const res = await meta!.api.get<
+                    AxiosResponse<GetCertificateResponse | null>
+                >(`/org/${orgId}/certificate/${domainId}/${domain}`, {
+                    signal
+                });
+                if (res.status === 404) return null;
+                return res.data.data;
+            },
+            staleTime: durationToMs(1, "minutes")
+        }),
     getDomain: ({ orgId, domainId }: { orgId: string; domainId: string }) =>
         queryOptions({
             queryKey: ["ORG", orgId, "DOMAIN", domainId] as const,

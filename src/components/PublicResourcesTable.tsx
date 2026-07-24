@@ -166,6 +166,12 @@ export default function PublicResourcesTable({
         [resources]
     );
 
+    // Domain list
+    const resourceDomains = useMemo(
+        () => resources.map((r) => r.fullDomain).filter(Boolean) as string[],
+        [resources]
+    );
+
     const statusHistoryQuery = useQuery({
         ...orgQueries.batchedResourceStatusHistory({
             orgId,
@@ -173,6 +179,14 @@ export default function PublicResourcesTable({
             days: RESOURCE_STATUS_HISTORY_DAYS
         }),
         enabled: statusHistoryResourceIds.length > 0
+    });
+
+    const domainCertificatesQuery = useQuery({
+        ...orgQueries.batchedDomainCertificates({
+            orgId,
+            domains: resourceDomains
+        }),
+        enabled: resourceDomains.length > 0
     });
 
     const refreshData = () => {
