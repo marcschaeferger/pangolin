@@ -10,20 +10,16 @@
  *
  * This file is not licensed under the AGPLv3.
  */
-import { Request, Response, NextFunction } from "express";
-import { z } from "zod";
 import { certificates, db, domains, orgDomains } from "@server/db";
-import { eq, and, or, like, inArray } from "drizzle-orm";
 import response from "@server/lib/response";
-import HttpCode from "@server/types/HttpCode";
-import createHttpError from "http-errors";
 import logger from "@server/logger";
+import { type GetBatchedCertificateResponse } from "@server/routers/certificates/types";
+import HttpCode from "@server/types/HttpCode";
+import { and, eq, inArray, or } from "drizzle-orm";
+import { NextFunction, Request, Response } from "express";
+import createHttpError from "http-errors";
+import { z } from "zod";
 import { fromError } from "zod-validation-error";
-import { registry } from "@server/openApi";
-import {
-    GetCertificateResponse,
-    type GetBatchedCertificateResponse
-} from "@server/routers/certificates/types";
 
 const getCertificateParamSchema = z.strictObject({
     orgId: z.string()
@@ -48,80 +44,6 @@ const getCertificateQuerySchema = z.object({
     )
 });
 
-async function query1(domainId: string, domain: string) {
-    const [domainRecord] = await db
-        .select()
-        .from(domains)
-        .where(eq(domains.domainId, domainId))
-        .limit(1);
-
-    if (!domainRecord) {
-        throw new Error(`Domain with ID ${domainId} not found`);
-    }
-
-    const domainType = domainRecord.type;
-
-    let existing: any[] = [];
-    if (domainRecord.type == "ns" || domainRecord.type == "wildcard") {
-        const domainLevelDown = domain.split(".").slice(1).join(".");
-        const wildcardPrefixed = `*.${domainLevelDown}`;
-
-        existing = await db
-            .select({
-                certId: certificates.certId,
-                domain: certificates.domain,
-                wildcard: certificates.wildcard,
-                status: certificates.status,
-                expiresAt: certificates.expiresAt,
-                lastRenewalAttempt: certificates.lastRenewalAttempt,
-                createdAt: certificates.createdAt,
-                updatedAt: certificates.updatedAt,
-                errorMessage: certificates.errorMessage,
-                renewalCount: certificates.renewalCount
-            })
-            .from(certificates)
-            .where(
-                and(
-                    eq(certificates.domainId, domainId),
-                    or(
-                        eq(certificates.domain, domain),
-                        and(
-                            eq(certificates.wildcard, true),
-                            or(
-                                eq(certificates.domain, domainLevelDown),
-                                eq(certificates.domain, wildcardPrefixed)
-                            )
-                        )
-                    )
-                )
-            );
-    } else {
-        // For non-NS domains, we only match exact domain names
-        existing = await db
-            .select({
-                certId: certificates.certId,
-                domain: certificates.domain,
-                wildcard: certificates.wildcard,
-                status: certificates.status,
-                expiresAt: certificates.expiresAt,
-                lastRenewalAttempt: certificates.lastRenewalAttempt,
-                createdAt: certificates.createdAt,
-                updatedAt: certificates.updatedAt,
-                errorMessage: certificates.errorMessage,
-                renewalCount: certificates.renewalCount
-            })
-            .from(certificates)
-            .where(
-                and(
-                    eq(certificates.domainId, domainId),
-                    eq(certificates.domain, domain) // exact match for non-NS domains
-                )
-            );
-    }
-
-    return existing.length > 0 ? { ...existing[0], domainType } : null;
-}
-
 async function query(orgId: string, domainList: string[]) {
     // Try to get CNAME certificates first
     let existingCertificates = await db
@@ -136,6 +58,7 @@ async function query(orgId: string, domainList: string[]) {
             updatedAt: certificates.updatedAt,
             errorMessage: certificates.errorMessage,
             renewalCount: certificates.renewalCount,
+            domainId: domains.domainId,
             domainType: domains.type
         })
         .from(certificates)
@@ -179,6 +102,7 @@ async function query(orgId: string, domainList: string[]) {
                 updatedAt: certificates.updatedAt,
                 errorMessage: certificates.errorMessage,
                 renewalCount: certificates.renewalCount,
+                domainId: domains.domainId,
                 domainType: domains.type
             })
             .from(certificates)
