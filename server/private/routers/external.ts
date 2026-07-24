@@ -175,6 +175,13 @@ authenticated.get(
     certificates.getCertificate
 );
 
+authenticated.get(
+    "/org/:orgId/batched-certificates",
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.getCertificate),
+    certificates.getBatchedCertificates
+);
+
 authenticated.post(
     "/org/:orgId/certificate/:certId/restart",
     verifyValidLicense,

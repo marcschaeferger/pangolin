@@ -12,7 +12,7 @@
  */
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { certificates, db, domains } from "@server/db";
+import { certificates, db, domains, orgDomains } from "@server/db";
 import { eq, and, or, like, inArray } from "drizzle-orm";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
@@ -20,9 +20,16 @@ import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
 import { registry } from "@server/openApi";
-import { GetCertificateResponse } from "@server/routers/certificates/types";
+import {
+    GetCertificateResponse,
+    type GetBatchedCertificateResponse
+} from "@server/routers/certificates/types";
 
-const getCertificateSchema = z.strictObject({
+const getCertificateParamSchema = z.strictObject({
+    orgId: z.string()
+});
+
+const getCertificateQuerySchema = z.object({
     domains: z.preprocess(
         (val) => {
             if (val === undefined || val === null || val === "") {
@@ -38,11 +45,10 @@ const getCertificateSchema = z.strictObject({
             return undefined;
         },
         z.array(z.string().min(1).max(255))
-    ),
-    orgId: z.string()
+    )
 });
 
-async function query(domainId: string, domain: string) {
+async function query1(domainId: string, domain: string) {
     const [domainRecord] = await db
         .select()
         .from(domains)
@@ -116,7 +122,7 @@ async function query(domainId: string, domain: string) {
     return existing.length > 0 ? { ...existing[0], domainType } : null;
 }
 
-async function query2(domainList: string[]) {
+async function query(orgId: string, domainList: string[]) {
     // Try to get CNAME certificates first
     let existingCertificates = await db
         .select({
@@ -129,31 +135,39 @@ async function query2(domainList: string[]) {
             createdAt: certificates.createdAt,
             updatedAt: certificates.updatedAt,
             errorMessage: certificates.errorMessage,
-            renewalCount: certificates.renewalCount
+            renewalCount: certificates.renewalCount,
+            domainType: domains.type
         })
         .from(certificates)
         .innerJoin(domains, eq(certificates.domainId, domains.domainId))
+        .innerJoin(
+            orgDomains,
+            and(
+                eq(domains.domainId, orgDomains.domainId),
+                eq(orgDomains.orgId, orgId)
+            )
+        )
         .where(and(inArray(certificates.domain, domainList)));
 
-    // All non resolved domain certificates might be `ns` or `wildcard`
+    // All non resolved domain certificates might be `ns` or `wildcard`,
+    // which means exact domain certificates do not
     const nonAvailableCertificates = existingCertificates
         .filter((cert) => !domainList.includes(cert.domain))
         .map((cert) => cert.domain);
 
     if (nonAvailableCertificates.length > 0) {
-        const wildcardPrefixedDomains = nonAvailableCertificates.map(
-            (domain) => {
-                const domainLevelDown = domain.split(".").slice(1).join(".");
-                const wildcardPrefixed = `*.${domainLevelDown}`;
-                return {
-                    domainLevelDown,
-                    wildcardPrefixed
-                };
-            }
-        );
+        const domainLevelDownSet = new Set<string>();
+        const wildcardDomainSet = new Set<string>();
+
+        for (const domain of nonAvailableCertificates) {
+            const domainLevelDown = domain.split(".").slice(1).join(".");
+            const wildcardPrefixed = `*.${domainLevelDown}`;
+            domainLevelDownSet.add(domainLevelDown);
+            wildcardDomainSet.add(wildcardPrefixed);
+        }
 
         // Need to map the certificates to each domain
-        await db
+        const wildcardCertificates = await db
             .select({
                 certId: certificates.certId,
                 domain: certificates.domain,
@@ -164,33 +178,54 @@ async function query2(domainList: string[]) {
                 createdAt: certificates.createdAt,
                 updatedAt: certificates.updatedAt,
                 errorMessage: certificates.errorMessage,
-                renewalCount: certificates.renewalCount
+                renewalCount: certificates.renewalCount,
+                domainType: domains.type
             })
             .from(certificates)
+            .innerJoin(domains, eq(certificates.domainId, domains.domainId))
+            .innerJoin(
+                orgDomains,
+                and(
+                    eq(domains.domainId, orgDomains.domainId),
+                    eq(orgDomains.orgId, orgId)
+                )
+            )
             .where(
-                or(
-                    eq(certificates.domain, domain),
-                    and(
-                        eq(certificates.wildcard, true),
-                        or(
-                            eq(certificates.domain, domainLevelDown),
-                            eq(certificates.domain, wildcardPrefixed)
-                        )
+                and(
+                    eq(certificates.wildcard, true),
+                    or(
+                        inArray(certificates.domain, [...domainLevelDownSet]),
+                        inArray(certificates.domain, [...wildcardDomainSet])
                     )
                 )
             );
+
+        existingCertificates.push(...wildcardCertificates);
     }
 
-    return;
+    const certificateMap: Record<string, any> = {};
+    for (const domain of domainList) {
+        const domainLevelDown = domain.split(".").slice(1).join(".");
+        const wildcardPrefixed = `*.${domainLevelDown}`;
+        certificateMap[domain] =
+            existingCertificates.find(
+                (cert) =>
+                    cert.domain === domain ||
+                    cert.domain === domainLevelDown ||
+                    cert.domain === wildcardPrefixed
+            ) ?? null;
+    }
+
+    return certificateMap;
 }
 
-export async function getBatchedCertificate(
+export async function getBatchedCertificates(
     req: Request,
     res: Response,
     next: NextFunction
 ): Promise<any> {
     try {
-        const parsedParams = getCertificateSchema.safeParse(req.params);
+        const parsedParams = getCertificateParamSchema.safeParse(req.params);
         if (!parsedParams.success) {
             return next(
                 createHttpError(
@@ -200,11 +235,22 @@ export async function getBatchedCertificate(
             );
         }
 
-        const { domains } = parsedParams.data;
+        const { orgId } = parsedParams.data;
+        const parsedQuery = getCertificateQuerySchema.safeParse(req.query);
+        if (!parsedQuery.success) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    fromError(parsedQuery.error).toString()
+                )
+            );
+        }
 
-        const cert = await query(domains);
+        const { domains } = parsedQuery.data;
 
-        return response<GetCertificateResponse>(res, {
+        const cert = await query(orgId, domains);
+
+        return response<GetBatchedCertificateResponse>(res, {
             data: cert,
             success: true,
             error: false,
