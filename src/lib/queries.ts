@@ -41,7 +41,7 @@ import {
     keepPreviousData,
     queryOptions
 } from "@tanstack/react-query";
-import type { AxiosResponse } from "axios";
+import { isAxiosError, type AxiosResponse } from "axios";
 import z, { meta } from "zod";
 import { remote } from "./api";
 import { durationToMs } from "./durationToMs";
@@ -1396,17 +1396,31 @@ export const domainQueries = {
                 orgId,
                 "DOMAIN",
                 domainId,
-                "CERTIFICATE"
+                "CERTIFICATE",
+                domain
             ] as const,
             queryFn: async ({ signal, meta }) => {
-                const res = await meta!.api.get<
-                    AxiosResponse<GetCertificateResponse | null>
-                >(`/org/${orgId}/certificate/${domainId}/${domain}`, {
-                    signal
-                });
-                if (res.status === 404) return null;
-                return res.data.data;
+                try {
+                    const res = await meta!.api.get<
+                        AxiosResponse<GetCertificateResponse | null>
+                    >(`/org/${orgId}/certificate/${domainId}/${domain}`, {
+                        signal
+                    });
+                    return res.data.data;
+                } catch (error) {
+                    // the endpoint 404s when the domain has no certificate yet
+                    if (isAxiosError(error) && error.response?.status === 404) {
+                        return null;
+                    }
+                    throw error;
+                }
             },
+            retry: (failureCount, error) =>
+                isAxiosError(error) &&
+                error.response != null &&
+                error.response.status < 500
+                    ? false
+                    : failureCount < 2,
             staleTime: durationToMs(1, "minutes")
         }),
     getDomain: ({ orgId, domainId }: { orgId: string; domainId: string }) =>

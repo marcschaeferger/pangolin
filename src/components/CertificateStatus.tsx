@@ -187,7 +187,6 @@ type CertificateStatusProps = {
     orgId: string;
     domainId: string;
     fullDomain: string;
-    autoFetch?: boolean;
     showLabel?: boolean;
     className?: string;
     onRefresh?: () => void;
@@ -199,7 +198,6 @@ export default function CertificateStatus({
     orgId,
     domainId,
     fullDomain,
-    autoFetch = true,
     showLabel = true,
     className = "",
     onRefresh,
@@ -210,7 +208,6 @@ export default function CertificateStatus({
         orgId,
         domainId,
         fullDomain,
-        autoFetch,
         polling,
         pollingInterval
     });

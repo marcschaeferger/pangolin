@@ -7,8 +7,7 @@ import {
     ResourceSitesStatusCell,
     type ResourceSiteRow
 } from "@app/components/ResourceSitesStatusCell";
-import { Selectedsite, SitesSelector } from "@app/components/site-selector";
-import { Badge } from "@app/components/ui/badge";
+import { Selectedsite } from "@app/components/site-selector";
 import { Button } from "@app/components/ui/button";
 import { ExtendedColumnDef } from "@app/components/ui/data-table";
 import {
@@ -18,25 +17,18 @@ import {
     DropdownMenuTrigger
 } from "@app/components/ui/dropdown-menu";
 import { InfoPopup } from "@app/components/ui/info-popup";
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger
-} from "@app/components/ui/popover";
 import { Switch } from "@app/components/ui/switch";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useNavigationContext } from "@app/hooks/useNavigationContext";
+import { useOptimisticLabels } from "@app/hooks/useOptimisticLabels";
 import { usePaidStatus } from "@app/hooks/usePaidStatus";
 import { toast } from "@app/hooks/useToast";
 import { createApiClient, formatAxiosError } from "@app/lib/api";
-import { cn } from "@app/lib/cn";
-import { dataTableFilterPopoverContentClassName } from "@app/lib/dataTableFilterPopover";
-import { durationToMs } from "@app/lib/durationToMs";
 import { orgQueries } from "@app/lib/queries";
 import { getNextSortOrder, getSortDirection } from "@app/lib/sortColumn";
 import { build } from "@server/build";
-import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import { UpdateResourceResponse } from "@server/routers/resource";
+import type { GetBatchedCertificateResponse } from "@server/routers/certificates/types";
 import { useQuery } from "@tanstack/react-query";
 import type { PaginationState } from "@tanstack/react-table";
 import { AxiosResponse } from "axios";
@@ -48,9 +40,7 @@ import {
     ChevronDown,
     ChevronsUpDownIcon,
     Clock,
-    Funnel,
     MoreHorizontal,
-    PlusIcon,
     ShieldCheck,
     ShieldOff,
     XCircle
@@ -60,7 +50,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
     startTransition,
-    useEffect,
     useMemo,
     useOptimistic,
     useRef,
@@ -71,15 +60,11 @@ import {
 import { useDebouncedCallback } from "use-debounce";
 import z from "zod";
 import { ColumnFilterButton } from "./ColumnFilterButton";
+import { LabelColumnFilterButton } from "./LabelColumnFilterButton";
+import { LabelsTableCell } from "./LabelsTableCell";
+import { SitesColumnFilterButton } from "./SitesColumnFilterButton";
 import { ControlledDataTable } from "./ui/controlled-data-table";
 import { UptimeMiniBar } from "./UptimeMiniBar";
-import { type SelectedLabel } from "./labels-selector";
-import { LabelColumnFilterButton } from "./LabelColumnFilterButton";
-import { useLocalLabels } from "@app/hooks/useLocalLabels";
-import { LabelsTableCell } from "./LabelsTableCell";
-import { useOptimisticLabels } from "@app/hooks/useOptimisticLabels";
-import { refresh } from "next/cache";
-import { SitesColumnFilterButton } from "./SitesColumnFilterButton";
 
 export type TargetHealth = {
     targetId: number;
@@ -123,6 +108,8 @@ type ProxyResourcesTableProps = {
     pagination: PaginationState;
     rowCount: number;
     initialFilterSite?: Selectedsite | null;
+    /** Certificates prefetched on the server, keyed by full domain. */
+    initialCertificates?: GetBatchedCertificateResponse;
 };
 
 const booleanSearchFilterSchema = z
@@ -137,7 +124,7 @@ export default function PublicResourcesTable({
     orgId,
     pagination,
     rowCount,
-    initialFilterSite = null
+    initialCertificates
 }: ProxyResourcesTableProps) {
     const router = useRouter();
     const {
@@ -166,12 +153,6 @@ export default function PublicResourcesTable({
         [resources]
     );
 
-    // Domain list
-    const resourceDomains = useMemo(
-        () => resources.map((r) => r.fullDomain).filter(Boolean) as string[],
-        [resources]
-    );
-
     const statusHistoryQuery = useQuery({
         ...orgQueries.batchedResourceStatusHistory({
             orgId,
@@ -179,14 +160,6 @@ export default function PublicResourcesTable({
             days: RESOURCE_STATUS_HISTORY_DAYS
         }),
         enabled: statusHistoryResourceIds.length > 0
-    });
-
-    const domainCertificatesQuery = useQuery({
-        ...orgQueries.batchedDomainCertificates({
-            orgId,
-            domains: resourceDomains
-        }),
-        enabled: resourceDomains.length > 0
     });
 
     const refreshData = () => {
@@ -499,6 +472,9 @@ export default function PublicResourcesTable({
                                     orgId={resourceRow.orgId}
                                     domainId={domainId}
                                     fullDomain={certHostname}
+                                    initialCertValue={
+                                        initialCertificates?.[certHostname]
+                                    }
                                 />
                             ) : null}
                             <div className="">
@@ -668,7 +644,8 @@ export default function PublicResourcesTable({
         t,
         searchParams,
         statusHistoryQuery.data,
-        statusHistoryQuery.isLoading
+        statusHistoryQuery.isLoading,
+        initialCertificates
     ]);
 
     function handleFilterChange(
