@@ -142,8 +142,6 @@ export default function PublicResourcesTable({
     const [selectedResource, setSelectedResource] =
         useState<ResourceRow | null>();
 
-    const { isPaidUser } = usePaidStatus();
-
     const [isRefreshing, startTransition] = useTransition();
     const [isNavigatingToAddPage, startNavigation] = useTransition();
 

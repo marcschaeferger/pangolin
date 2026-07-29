@@ -5,6 +5,7 @@ import { FileBadge, RotateCw } from "lucide-react";
 import { useCertificate } from "@app/hooks/useCertificate";
 import type { GetCertificateResponse } from "@server/routers/certificates/types";
 import { useTranslations } from "next-intl";
+import { durationToMs } from "@app/lib/durationToMs";
 
 export type CertificateStatusContentProps = {
     cert: GetCertificateResponse | null;
@@ -32,8 +33,7 @@ export function CertificateStatusContent({
 
     const labelClass =
         "inline-flex shrink-0 items-center self-center text-sm font-medium leading-normal";
-    const valueClass =
-        "inline-flex items-center gap-2 text-sm leading-normal";
+    const valueClass = "inline-flex items-center gap-2 text-sm leading-normal";
 
     const handleRefresh = async () => {
         await refreshCert();
@@ -202,7 +202,7 @@ export default function CertificateStatus({
     className = "",
     onRefresh,
     polling = false,
-    pollingInterval = 5000
+    pollingInterval = durationToMs(5, "seconds")
 }: CertificateStatusProps) {
     const hook = useCertificate({
         orgId,

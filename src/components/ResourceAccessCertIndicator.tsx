@@ -18,6 +18,7 @@ import {
     useState,
     type ReactNode
 } from "react";
+import { durationToMs } from "@app/lib/durationToMs";
 
 type ResourceAccessCertIndicatorProps = {
     orgId: string;
@@ -58,7 +59,7 @@ export function ResourceAccessCertIndicator({
         fullDomain,
         initialCertValue,
         polling: open,
-        pollingInterval: 5000
+        pollingInterval: durationToMs(5, "seconds")
     });
 
     const { cert, certLoading, certError, refreshing, fetchCert } = certificate;
