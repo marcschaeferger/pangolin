@@ -1397,6 +1397,12 @@ authenticated.put(
 // Auth routes
 export const authRouter = Router();
 unauthenticated.use("/auth", authRouter);
+
+// Register setup-check BEFORE the global auth rate limiter.
+// This endpoint is called on every dashboard root page load (pure boolean
+// read, no secrets) and must not consume the auth rate-limit budget.
+authRouter.get("/initial-setup-complete", auth.initialSetupComplete);
+
 authRouter.use(
     rateLimit({
         windowMs:
@@ -1701,7 +1707,6 @@ authRouter.post("/idp/:idpId/oidc/generate-url", idp.generateOidcUrl);
 authRouter.post("/idp/:idpId/oidc/validate-callback", idp.validateOidcCallback);
 
 authRouter.put("/set-server-admin", auth.setServerAdmin);
-authRouter.get("/initial-setup-complete", auth.initialSetupComplete);
 authRouter.post("/validate-setup-token", auth.validateSetupToken);
 
 // Security Key routes
