@@ -15,7 +15,7 @@ export const domains = sqliteTable("domains", {
     configManaged: integer("configManaged", { mode: "boolean" })
         .notNull()
         .default(false),
-    type: text("type"), // "ns", "cname", "wildcard"
+    type: text("type").$type<"ns" | "cname" | "wildcard">(),
     verified: integer("verified", { mode: "boolean" }).notNull().default(false),
     failed: integer("failed", { mode: "boolean" }).notNull().default(false),
     tries: integer("tries").notNull().default(0),

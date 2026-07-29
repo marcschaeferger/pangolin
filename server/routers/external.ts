@@ -319,6 +319,13 @@ authenticated.get(
     site.getSiteStatusHistory
 );
 
+authenticated.get(
+    "/org/:orgId/site-status-histories",
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.listSites),
+    site.getBatchedSiteStatusHistory
+);
+
 // Site Resource endpoints
 authenticated.put(
     "/org/:orgId/site-resource",
@@ -467,6 +474,13 @@ authenticated.get(
     verifyResourceAccess,
     verifyUserHasAction(ActionsEnum.getResource),
     resource.getResourceStatusHistory
+);
+
+authenticated.get(
+    "/org/:orgId/resource-status-histories",
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.listResources),
+    resource.getBatchedResourceStatusHistory
 );
 
 authenticated.get(

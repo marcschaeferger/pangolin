@@ -37,6 +37,7 @@ import { getPrivateResourceSettingsHref } from "@app/lib/launcherResourceAdminHr
 import { getNextSortOrder, getSortDirection } from "@app/lib/sortColumn";
 import { build } from "@server/build";
 import { tierMatrix } from "@server/lib/billing/tierMatrix";
+import type { GetBatchedCertificateResponse } from "@server/routers/certificates/types";
 import { UpdateSiteResourceResponse } from "@server/routers/siteResource";
 import type { PaginationState } from "@tanstack/react-table";
 import { AxiosResponse } from "axios";
@@ -136,13 +137,16 @@ type ClientResourcesTableProps = {
     orgId: string;
     pagination: PaginationState;
     rowCount: number;
+    /** Certificates prefetched on the server, keyed by full domain. */
+    initialCertificates?: GetBatchedCertificateResponse;
 };
 
 export default function PrivateResourcesTable({
     internalResources,
     orgId,
     pagination,
-    rowCount
+    rowCount,
+    initialCertificates
 }: ClientResourcesTableProps) {
     const router = useRouter();
     const {
@@ -432,6 +436,9 @@ export default function PrivateResourcesTable({
                                         orgId={resourceRow.orgId}
                                         domainId={domainId}
                                         fullDomain={fullDomain}
+                                        initialCertValue={
+                                            initialCertificates?.[fullDomain]
+                                        }
                                     />
                                 ) : null}
                                 <div className="">
@@ -585,7 +592,7 @@ export default function PrivateResourcesTable({
         ];
 
         return cols;
-    }, [orgId, t, searchParams]);
+    }, [orgId, t, searchParams, initialCertificates]);
 
     function handleFilterChange(
         column: string,

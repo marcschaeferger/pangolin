@@ -7,8 +7,7 @@ import {
     ResourceSitesStatusCell,
     type ResourceSiteRow
 } from "@app/components/ResourceSitesStatusCell";
-import { Selectedsite, SitesSelector } from "@app/components/site-selector";
-import { Badge } from "@app/components/ui/badge";
+import { Selectedsite } from "@app/components/site-selector";
 import { Button } from "@app/components/ui/button";
 import { ExtendedColumnDef } from "@app/components/ui/data-table";
 import {
@@ -18,23 +17,19 @@ import {
     DropdownMenuTrigger
 } from "@app/components/ui/dropdown-menu";
 import { InfoPopup } from "@app/components/ui/info-popup";
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger
-} from "@app/components/ui/popover";
 import { Switch } from "@app/components/ui/switch";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useNavigationContext } from "@app/hooks/useNavigationContext";
+import { useOptimisticLabels } from "@app/hooks/useOptimisticLabels";
 import { usePaidStatus } from "@app/hooks/usePaidStatus";
 import { toast } from "@app/hooks/useToast";
 import { createApiClient, formatAxiosError } from "@app/lib/api";
-import { cn } from "@app/lib/cn";
-import { dataTableFilterPopoverContentClassName } from "@app/lib/dataTableFilterPopover";
+import { orgQueries } from "@app/lib/queries";
 import { getNextSortOrder, getSortDirection } from "@app/lib/sortColumn";
 import { build } from "@server/build";
-import { tierMatrix } from "@server/lib/billing/tierMatrix";
 import { UpdateResourceResponse } from "@server/routers/resource";
+import type { GetBatchedCertificateResponse } from "@server/routers/certificates/types";
+import { useQuery } from "@tanstack/react-query";
 import type { PaginationState } from "@tanstack/react-table";
 import { AxiosResponse } from "axios";
 import {
@@ -45,9 +40,7 @@ import {
     ChevronDown,
     ChevronsUpDownIcon,
     Clock,
-    Funnel,
     MoreHorizontal,
-    PlusIcon,
     ShieldCheck,
     ShieldOff,
     XCircle
@@ -57,7 +50,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
     startTransition,
-    useEffect,
     useMemo,
     useOptimistic,
     useRef,
@@ -68,15 +60,11 @@ import {
 import { useDebouncedCallback } from "use-debounce";
 import z from "zod";
 import { ColumnFilterButton } from "./ColumnFilterButton";
-import { ControlledDataTable } from "./ui/controlled-data-table";
-import UptimeMiniBar from "./UptimeMiniBar";
-import { type SelectedLabel } from "./labels-selector";
 import { LabelColumnFilterButton } from "./LabelColumnFilterButton";
-import { useLocalLabels } from "@app/hooks/useLocalLabels";
 import { LabelsTableCell } from "./LabelsTableCell";
-import { useOptimisticLabels } from "@app/hooks/useOptimisticLabels";
-import { refresh } from "next/cache";
 import { SitesColumnFilterButton } from "./SitesColumnFilterButton";
+import { ControlledDataTable } from "./ui/controlled-data-table";
+import { UptimeMiniBar } from "./UptimeMiniBar";
 
 export type TargetHealth = {
     targetId: number;
@@ -120,6 +108,8 @@ type ProxyResourcesTableProps = {
     pagination: PaginationState;
     rowCount: number;
     initialFilterSite?: Selectedsite | null;
+    /** Certificates prefetched on the server, keyed by full domain. */
+    initialCertificates?: GetBatchedCertificateResponse;
 };
 
 const booleanSearchFilterSchema = z
@@ -127,12 +117,14 @@ const booleanSearchFilterSchema = z
     .optional()
     .catch(undefined);
 
+const RESOURCE_STATUS_HISTORY_DAYS = 30;
+
 export default function PublicResourcesTable({
     resources,
     orgId,
     pagination,
     rowCount,
-    initialFilterSite = null
+    initialCertificates
 }: ProxyResourcesTableProps) {
     const router = useRouter();
     const {
@@ -150,10 +142,23 @@ export default function PublicResourcesTable({
     const [selectedResource, setSelectedResource] =
         useState<ResourceRow | null>();
 
-    const { isPaidUser } = usePaidStatus();
-
     const [isRefreshing, startTransition] = useTransition();
     const [isNavigatingToAddPage, startNavigation] = useTransition();
+
+    // Only http resources show an uptime bar, so don't ask for the others
+    const statusHistoryResourceIds = useMemo(
+        () => resources.filter((r) => r.mode === "http").map((r) => r.id),
+        [resources]
+    );
+
+    const statusHistoryQuery = useQuery({
+        ...orgQueries.batchedResourceStatusHistory({
+            orgId,
+            resourceIds: statusHistoryResourceIds,
+            days: RESOURCE_STATUS_HISTORY_DAYS
+        }),
+        enabled: statusHistoryResourceIds.length > 0
+    });
 
     const refreshData = () => {
         startTransition(() => {
@@ -407,7 +412,11 @@ export default function PublicResourcesTable({
                         return <span>-</span>;
                     }
                     return (
-                        <UptimeMiniBar resourceId={resourceRow.id} days={30} />
+                        <UptimeMiniBar
+                            isLoading={statusHistoryQuery.isLoading}
+                            data={statusHistoryQuery.data?.[resourceRow.id]}
+                            days={RESOURCE_STATUS_HISTORY_DAYS}
+                        />
                     );
                 }
             },
@@ -461,6 +470,9 @@ export default function PublicResourcesTable({
                                     orgId={resourceRow.orgId}
                                     domainId={domainId}
                                     fullDomain={certHostname}
+                                    initialCertValue={
+                                        initialCertificates?.[certHostname]
+                                    }
                                 />
                             ) : null}
                             <div className="">
@@ -625,7 +637,14 @@ export default function PublicResourcesTable({
         ];
 
         return cols;
-    }, [orgId, t, searchParams]);
+    }, [
+        orgId,
+        t,
+        searchParams,
+        statusHistoryQuery.data,
+        statusHistoryQuery.isLoading,
+        initialCertificates
+    ]);
 
     function handleFilterChange(
         column: string,
