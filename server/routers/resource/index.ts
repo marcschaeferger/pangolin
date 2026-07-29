@@ -33,4 +33,5 @@ export * from "./removeUserFromResource";
 export * from "./listAllResourceNames";
 export * from "./removeEmailFromResourceWhitelist";
 export * from "./getStatusHistory";
+export * from "./getBatchedStatusHistory";
 export * from "./getResourcePolicies";

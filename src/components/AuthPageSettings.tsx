@@ -412,7 +412,6 @@ function AuthPageSettings({
                                                 fullDomain={
                                                     loginPage.fullDomain
                                                 }
-                                                autoFetch={true}
                                                 showLabel={true}
                                                 polling={true}
                                             />
