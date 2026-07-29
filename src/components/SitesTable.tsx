@@ -114,7 +114,7 @@ export default function SitesTable({
     const [isRefreshing, startTransition] = useTransition();
     const [isNavigatingToAddPage, startNavigation] = useTransition();
 
-    const siteIds = sites.map((s) => s.id);
+    const siteIds = useMemo(() => sites.map((s) => s.id), [sites]);
 
     const statusHistoryQuery = useQuery({
         ...orgQueries.batchedSiteStatusHistory({
@@ -638,7 +638,14 @@ export default function SitesTable({
         ];
 
         return cols;
-    }, [orgId, t, searchParams, latestNewtVersion]);
+    }, [
+        orgId,
+        t,
+        searchParams,
+        latestNewtVersion,
+        statusHistoryQuery.data,
+        statusHistoryQuery.isLoading
+    ]);
 
     function toggleSort(column: string) {
         const newSearch = getNextSortOrder(column, searchParams);
