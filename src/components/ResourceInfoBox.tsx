@@ -180,7 +180,6 @@ export default function ResourceInfoBox({}: ResourceInfoBoxType) {
                                     orgId={resource.orgId}
                                     domainId={resource.domainId!}
                                     fullDomain={resource.fullDomain!}
-                                    autoFetch={true}
                                     showLabel={false}
                                     polling={true}
                                 />

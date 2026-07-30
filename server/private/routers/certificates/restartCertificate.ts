@@ -11,18 +11,16 @@
  * This file is not licensed under the AGPLv3.
  */
 
-import { Request, Response, NextFunction } from "express";
-import { z } from "zod";
 import { certificates, db } from "@server/db";
-import { sites } from "@server/db";
-import { eq, and } from "drizzle-orm";
 import response from "@server/lib/response";
-import HttpCode from "@server/types/HttpCode";
-import createHttpError from "http-errors";
 import logger from "@server/logger";
-import stoi from "@server/lib/stoi";
+import { registry } from "@server/openApi";
+import HttpCode from "@server/types/HttpCode";
+import { eq } from "drizzle-orm";
+import { NextFunction, Request, Response } from "express";
+import createHttpError from "http-errors";
+import { z } from "zod";
 import { fromError } from "zod-validation-error";
-import { OpenAPITags, registry } from "@server/openApi";
 
 const restartCertificateParamsSchema = z.strictObject({
     certId: z.coerce.number().int().positive(),

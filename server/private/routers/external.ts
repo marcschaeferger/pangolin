@@ -175,6 +175,13 @@ authenticated.get(
     certificates.getCertificate
 );
 
+authenticated.get(
+    "/org/:orgId/batched-certificates",
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.getCertificate),
+    certificates.getBatchedCertificates
+);
+
 authenticated.post(
     "/org/:orgId/certificate/:certId/restart",
     verifyValidLicense,
@@ -851,6 +858,14 @@ authenticated.get(
     verifyOrgAccess,
     verifyUserHasAction(ActionsEnum.getTarget),
     healthChecks.getHealthCheckStatusHistory
+);
+
+authenticated.get(
+    "/org/:orgId/health-check-status-histories",
+    verifyValidLicense,
+    verifyOrgAccess,
+    verifyUserHasAction(ActionsEnum.getTarget),
+    healthChecks.getBatchedHealthCheckStatusHistory
 );
 
 authenticated.get(

@@ -18,7 +18,7 @@ export const domains = pgTable("domains", {
     domainId: varchar("domainId").primaryKey(),
     baseDomain: varchar("baseDomain").notNull(),
     configManaged: boolean("configManaged").notNull().default(false),
-    type: varchar("type"), // "ns", "cname", "wildcard"
+    type: varchar("type").$type<"ns" | "cname" | "wildcard">(),
     verified: boolean("verified").notNull().default(false),
     failed: boolean("failed").notNull().default(false),
     tries: integer("tries").notNull().default(0),

@@ -41,13 +41,16 @@ import {
     keepPreviousData,
     queryOptions
 } from "@tanstack/react-query";
-import type { AxiosResponse } from "axios";
+import { isAxiosError, type AxiosResponse } from "axios";
 import z, { meta } from "zod";
 import { remote } from "./api";
 import { durationToMs } from "./durationToMs";
 import type { ListOrgLabelsResponse } from "@server/routers/labels/types";
 import { ListHealthChecksResponse } from "@server/routers/healthChecks/types";
-import { StatusHistoryResponse } from "@server/lib/statusHistory";
+import {
+    StatusHistoryResponse,
+    type BatchedStatusHistoryResponse
+} from "@server/lib/statusHistory";
 import type { ListResourcePoliciesResponse } from "@server/routers/resource/types";
 import type { GetResourcePolicyResponse } from "@server/routers/policy";
 import type {
@@ -66,6 +69,7 @@ import type { GetResourceAuthInfoResponse } from "@server/routers/resource/getRe
 import type { GetSiteResourceResponse } from "@server/routers/siteResource/getSiteResource";
 import type { LauncherQueryFilters } from "@app/lib/launcherSearchParams";
 import { buildLauncherSearchParams } from "@app/lib/launcherSearchParams";
+import type { GetCertificateResponse } from "@server/routers/certificates/types";
 
 export type { LauncherQueryFilters } from "@app/lib/launcherSearchParams";
 export { buildLauncherSearchParams } from "@app/lib/launcherSearchParams";
@@ -640,6 +644,143 @@ export const orgQueries = {
                 };
             }
         }),
+    batchedSiteStatusHistory: ({
+        siteIds,
+        orgId,
+        days = 90
+    }: {
+        orgId: string;
+        siteIds: number[];
+        days?: number;
+    }) =>
+        queryOptions({
+            queryKey: [
+                "ORG",
+                orgId,
+                "BATCHED_SITE_STATUS_HISTORY",
+                siteIds,
+                days
+            ] as const,
+            queryFn: async ({ signal, meta }) => {
+                // Negated because getTimezoneOffset() returns UTC - local,
+                // while the API expects minutes to add to UTC to get local
+                const tzOffsetMinutes = -new Date().getTimezoneOffset();
+                const sp = new URLSearchParams([
+                    ["days", days.toString()],
+                    ["tzOffsetMinutes", tzOffsetMinutes.toString()],
+                    ...siteIds.map((id) => ["siteIds", id.toString()])
+                ]);
+
+                const res = await meta!.api.get<
+                    AxiosResponse<BatchedStatusHistoryResponse>
+                >(`/org/${orgId}/site-status-histories?${sp.toString()}`, {
+                    signal
+                });
+                return res.data.data;
+            },
+            staleTime: durationToMs(5, "seconds")
+        }),
+    batchedHealthCheckStatusHistory: ({
+        healthCheckIds,
+        orgId,
+        days = 90
+    }: {
+        orgId: string;
+        healthCheckIds: number[];
+        days?: number;
+    }) =>
+        queryOptions({
+            queryKey: [
+                "ORG",
+                orgId,
+                "BATCHED_HEALTH_CHECK_STATUS_HISTORY",
+                healthCheckIds,
+                days
+            ] as const,
+            queryFn: async ({ signal, meta }) => {
+                // Negated because getTimezoneOffset() returns UTC - local,
+                // while the API expects minutes to add to UTC to get local
+                const tzOffsetMinutes = -new Date().getTimezoneOffset();
+                const sp = new URLSearchParams([
+                    ["days", days.toString()],
+                    ["tzOffsetMinutes", tzOffsetMinutes.toString()],
+                    ...healthCheckIds.map((id) => [
+                        "healthCheckIds",
+                        id.toString()
+                    ])
+                ]);
+
+                const res = await meta!.api.get<
+                    AxiosResponse<BatchedStatusHistoryResponse>
+                >(
+                    `/org/${orgId}/health-check-status-histories?${sp.toString()}`,
+                    { signal }
+                );
+                return res.data.data;
+            },
+            staleTime: durationToMs(5, "seconds")
+        }),
+    batchedDomainCertificates: ({
+        domains,
+        orgId
+    }: {
+        orgId: string;
+        domains: string[];
+    }) =>
+        queryOptions({
+            queryKey: ["ORG", orgId, "BATCHED_CERTIFICATES", domains] as const,
+            queryFn: async ({ signal, meta }) => {
+                // Negated because getTimezoneOffset() returns UTC - local,
+                // while the API expects minutes to add to UTC to get local
+                const sp = new URLSearchParams([
+                    ...domains.map((domain) => ["domains", domain.toString()])
+                ]);
+
+                const res = await meta!.api.get<
+                    AxiosResponse<BatchedStatusHistoryResponse>
+                >(`/org/${orgId}/batched-certificates?${sp.toString()}`, {
+                    signal
+                });
+                return res.data.data;
+            },
+            staleTime: durationToMs(5, "seconds")
+        }),
+    batchedResourceStatusHistory: ({
+        resourceIds,
+        orgId,
+        days = 90
+    }: {
+        orgId: string;
+        resourceIds: number[];
+        days?: number;
+    }) =>
+        queryOptions({
+            queryKey: [
+                "ORG",
+                orgId,
+                "BATCHED_RESOURCE_STATUS_HISTORY",
+                resourceIds,
+                days
+            ] as const,
+            queryFn: async ({ signal, meta }) => {
+                // Negated because getTimezoneOffset() returns UTC - local,
+                // while the API expects minutes to add to UTC to get local
+                const tzOffsetMinutes = -new Date().getTimezoneOffset();
+                const sp = new URLSearchParams([
+                    ["days", days.toString()],
+                    ["tzOffsetMinutes", tzOffsetMinutes.toString()],
+                    ...resourceIds.map((id) => ["resourceIds", id.toString()])
+                ]);
+
+                const res = await meta!.api.get<
+                    AxiosResponse<BatchedStatusHistoryResponse>
+                >(`/org/${orgId}/resource-status-histories?${sp.toString()}`, {
+                    signal
+                });
+                return res.data.data;
+            },
+            staleTime: durationToMs(5, "seconds")
+        }),
     siteStatusHistory: ({
         siteId,
         days = 90
@@ -649,6 +790,7 @@ export const orgQueries = {
     }) =>
         queryOptions({
             queryKey: ["SITE_STATUS_HISTORY", siteId, days] as const,
+            staleTime: durationToMs(5, "seconds"),
             queryFn: async ({ signal, meta }) => {
                 const tzOffsetMinutes = -new Date().getTimezoneOffset();
                 const res = await meta!.api.get<
@@ -670,6 +812,7 @@ export const orgQueries = {
     }) =>
         queryOptions({
             queryKey: ["RESOURCE_STATUS_HISTORY", resourceId, days] as const,
+            staleTime: durationToMs(5, "seconds"),
             queryFn: async ({ signal, meta }) => {
                 const tzOffsetMinutes = -new Date().getTimezoneOffset();
                 const res = await meta!.api.get<
@@ -692,6 +835,7 @@ export const orgQueries = {
         days?: number;
     }) =>
         queryOptions({
+            staleTime: durationToMs(5, "seconds"),
             queryKey: [
                 "HC_STATUS_HISTORY",
                 orgId,
@@ -1237,6 +1381,48 @@ export const approvalQueries = {
 };
 
 export const domainQueries = {
+    getCertificate: ({
+        orgId,
+        domainId,
+        domain
+    }: {
+        orgId: string;
+        domainId: string;
+        domain: string;
+    }) =>
+        queryOptions({
+            queryKey: [
+                "ORG",
+                orgId,
+                "DOMAIN",
+                domainId,
+                "CERTIFICATE",
+                domain
+            ] as const,
+            queryFn: async ({ signal, meta }) => {
+                try {
+                    const res = await meta!.api.get<
+                        AxiosResponse<GetCertificateResponse | null>
+                    >(`/org/${orgId}/certificate/${domainId}/${domain}`, {
+                        signal
+                    });
+                    return res.data.data;
+                } catch (error) {
+                    // the endpoint 404s when the domain has no certificate yet
+                    if (isAxiosError(error) && error.response?.status === 404) {
+                        return null;
+                    }
+                    throw error;
+                }
+            },
+            retry: (failureCount, error) =>
+                isAxiosError(error) &&
+                error.response != null &&
+                error.response.status < 500
+                    ? false
+                    : failureCount < 2,
+            staleTime: durationToMs(1, "minutes")
+        }),
     getDomain: ({ orgId, domainId }: { orgId: string; domainId: string }) =>
         queryOptions({
             queryKey: ["ORG", orgId, "DOMAIN", domainId] as const,

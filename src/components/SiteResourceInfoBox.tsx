@@ -182,7 +182,6 @@ export function SiteResourceInfoSections({
                             orgId={siteResource.orgId}
                             domainId={siteResource.domainId!}
                             fullDomain={siteResource.fullDomain!}
-                            autoFetch={true}
                             showLabel={false}
                             polling={true}
                         />
