@@ -73,16 +73,19 @@ async function query(orgId: string, domainList: string[]) {
         .where(and(inArray(certificates.domain, domainList)));
 
     // All non resolved domain certificates might be `ns` or `wildcard`,
-    // which means exact domain certificates do not
-    const nonAvailableCertificates = existingCertificates
-        .filter((cert) => !domainList.includes(cert.domain))
-        .map((cert) => cert.domain);
+    // which means exact domain certificates do not exist
+    const foundDomains = new Set(
+        existingCertificates.map((cert) => cert.domain)
+    );
+    const domainsWithMissingCertificates = domainList.filter(
+        (domain) => !foundDomains.has(domain)
+    );
 
-    if (nonAvailableCertificates.length > 0) {
+    if (domainsWithMissingCertificates.length > 0) {
         const domainLevelDownSet = new Set<string>();
         const wildcardDomainSet = new Set<string>();
 
-        for (const domain of nonAvailableCertificates) {
+        for (const domain of domainsWithMissingCertificates) {
             const domainLevelDown = domain.split(".").slice(1).join(".");
             const wildcardPrefixed = `*.${domainLevelDown}`;
             domainLevelDownSet.add(domainLevelDown);
@@ -131,6 +134,7 @@ async function query(orgId: string, domainList: string[]) {
     for (const domain of domainList) {
         const domainLevelDown = domain.split(".").slice(1).join(".");
         const wildcardPrefixed = `*.${domainLevelDown}`;
+
         certificateMap[domain] =
             existingCertificates.find(
                 (cert) =>
