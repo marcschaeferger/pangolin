@@ -41,7 +41,6 @@ export async function getCachedStatusHistory(
         return cached;
     }
 
-    console.time(`[getCachedStatusHistory/${entityType}=${entityId}]`);
     // Anchor to local midnight (UTC when tzOffsetMinutes is 0) so the query
     // window aligns with stable calendar days for the requesting client
     const todayMidnightSec = localMidnightSec(tzOffsetMinutes);
@@ -77,14 +76,12 @@ export async function getCachedStatusHistory(
 
     const priorStatus = lastKnownEvent?.status ?? null;
 
-    console.time(`[computeBuckets/${entityType}=${entityId}]`);
     const { buckets, totalDowntime } = computeBuckets(
         events,
         days,
         priorStatus,
         tzOffsetMinutes
     );
-    console.timeEnd(`[computeBuckets/${entityType}=${entityId}]`);
     const totalWindow = days * 86400;
     const overallUptime =
         totalWindow > 0
@@ -99,7 +96,6 @@ export async function getCachedStatusHistory(
         totalDowntimeSeconds: totalDowntime
     };
 
-    console.timeEnd(`[getCachedStatusHistory/${entityType}=${entityId}]`);
     await cache.set(cacheKey, result, STATUS_HISTORY_CACHE_TTL);
     return result;
 }
@@ -317,10 +313,6 @@ export async function getBatchedStatusHistory(
     days: number,
     tzOffsetMinutes: number = 0
 ): Promise<BatchedStatusHistoryResponse> {
-    console.time(
-        `[getBatchedStatusHistory/${entityType}=(${entityIds.join(" ,")})]`
-    );
-
     // Anchor to local midnight (UTC when tzOffsetMinutes is 0) so the query
     // window aligns with stable calendar days for the requesting client
     const todayMidnightSec = localMidnightSec(tzOffsetMinutes);
@@ -398,7 +390,6 @@ export async function getBatchedStatusHistory(
 
     const result: BatchedStatusHistoryResponse = {};
 
-    console.time(`[computeBuckets/${entityType}=(${entityIds.join(" ,")})]`);
     for (const entityId in eventStatusMap) {
         const event = eventStatusMap[Number(entityId)];
         const priorStatus = event.lastKnownEvent?.status ?? null;
@@ -426,10 +417,5 @@ export async function getBatchedStatusHistory(
             totalDowntimeSeconds: totalDowntime
         };
     }
-    console.timeEnd(`[computeBuckets/${entityType}=(${entityIds.join(" ,")})]`);
-
-    console.timeEnd(
-        `[getBatchedStatusHistory/${entityType}=(${entityIds.join(" ,")})]`
-    );
     return result;
 }
