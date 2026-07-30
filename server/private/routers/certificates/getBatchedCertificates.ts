@@ -46,7 +46,7 @@ const getCertificateQuerySchema = z.object({
 
 async function query(orgId: string, domainList: string[]) {
     // Try to get CNAME certificates first
-    let existingCertificates = await db
+    const existingCertificates = await db
         .select({
             certId: certificates.certId,
             domain: certificates.domain,
