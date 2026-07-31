@@ -114,59 +114,52 @@ export default function IdpLoginButtons({
 
             <div className="space-y-4">
                 {params.get("gotoapp") ? (
-                    <>
-                        <Button
-                            type="button"
-                            className="w-full"
-                            onClick={() => {
-                                goToApp();
-                            }}
-                        >
-                            {t("continueToApplication")}
-                        </Button>
-                    </>
+                    <Button
+                        type="button"
+                        className="w-full"
+                        onClick={() => {
+                            goToApp();
+                        }}
+                    >
+                        {t("continueToApplication")}
+                    </Button>
                 ) : (
-                    <>
-                        {idps.map((idp) => {
-                            const effectiveType =
-                                idp.variant || idp.name.toLowerCase();
+                    idps.map((idp) => {
+                        const effectiveType =
+                            idp.variant || idp.name.toLowerCase();
 
-                            return (
-                                <div
-                                    className="w-full relative"
+                        return (
+                            <div className="w-full relative" key={idp.idpId}>
+                                <Button
                                     key={idp.idpId}
+                                    type="button"
+                                    variant="outline"
+                                    className="w-full inline-flex items-center space-x-2  after:absolute after:inset-0 after:z-10"
+                                    onClick={() => {
+                                        startTransition(() =>
+                                            loginWithIdp(idp.idpId)
+                                        );
+                                    }}
+                                    disabled={loading}
+                                    loading={loading}
                                 >
-                                    <Button
-                                        key={idp.idpId}
-                                        type="button"
-                                        variant="outline"
-                                        className="w-full inline-flex items-center space-x-2  after:absolute after:inset-0 after:z-10"
-                                        onClick={() => {
-                                            startTransition(() =>
-                                                loginWithIdp(idp.idpId)
-                                            );
-                                        }}
-                                        disabled={loading}
-                                        loading={loading}
-                                    >
-                                        <IdpTypeIcon
-                                            type={effectiveType}
-                                            size={16}
-                                        />
-                                        <span>{idp.name}</span>
-                                    </Button>
+                                    <IdpTypeIcon
+                                        type={effectiveType}
+                                        size={16}
+                                    />
+                                    <span>{idp.name}</span>
+                                </Button>
 
-                                    {idp.lastUsed && (
-                                        <div className="absolute inset-0">
-                                            <span className="absolute top-0 right-0 text-xs bg-primary text-primary-foreground rounded-bl-sm rounded-tr-sm px-2 py-0.5">
-                                                {t("idpLastUsed")}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </>
+                                {idp.lastUsed && (
+                                    <div className="absolute inset-0">
+                                        <span className="absolute top-0 right-0 text-xs bg-primary text-primary-foreground rounded-bl-sm rounded-tr-sm px-2 py-0.5">
+                                            {t("idpLastUsed")}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })
                 )}
             </div>
         </div>
