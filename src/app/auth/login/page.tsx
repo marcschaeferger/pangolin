@@ -91,6 +91,7 @@ export default async function Page(props: {
     let loginIdps: LoginFormIDP[] = [];
     let lastUsedIdpForSmartLogin: (LoginFormIDP & { orgId?: string }) | null =
         null;
+
     if (!useSmartLogin) {
         // Load IdPs for DashboardLoginForm (OSS or org-only IdP mode)
         if (build === "oss" || env.app.identityProviderMode !== "org") {
@@ -117,12 +118,12 @@ export default async function Page(props: {
                     `/idp/${persistedData.idpId}`
                 );
 
-                const idp = idpRes.data.data.idp;
+                const res = idpRes.data.data;
 
                 lastUsedIdpForSmartLogin = {
-                    idpId: idp.idpId,
-                    name: idp.name,
-                    variant: idp.type,
+                    idpId: res.idp.idpId,
+                    name: res.idp.name,
+                    variant: res.idpOidcConfig?.variant ?? res.idp.type,
                     orgId: persistedData.orgId,
                     lastUsed: true
                 };
