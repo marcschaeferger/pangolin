@@ -111,7 +111,8 @@ export function useCertificate({
     let certError: string | null = null;
     if (restartCert.isError) {
         certError = "Failed to restart";
-    } else if (isError) {
+    } else if (isError || initialCertValue === null) {
+        // Null value means failed to get the certificate
         certError = "Failed";
     }
 
