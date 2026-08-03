@@ -266,13 +266,13 @@ export const configSchema = z
                             .positive()
                             .gt(0)
                             .optional()
-                            .default(10),
+                            .default(30),
                         burst: z
                             .number()
                             .positive()
                             .gt(0)
                             .optional()
-                            .default(16)
+                            .default(50)
                     })
                     .optional()
                     .prefault({})
