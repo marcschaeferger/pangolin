@@ -420,6 +420,8 @@ export async function getTraefikConfig(
         // logger.debug(`Valid certs for domains: ${JSON.stringify(validCerts)}`);
     }
 
+    const traefikRateLimit = config.getRawConfig().traefik.rate_limit;
+
     const config_output: any = {
         http: {
             middlewares: {
@@ -437,14 +439,14 @@ export async function getTraefikConfig(
                 },
                 [landingRateLimitMiddlewareName]: {
                     rateLimit: {
-                        average: 3,
-                        burst: 6
+                        average: traefikRateLimit.average,
+                        burst: traefikRateLimit.burst
                     }
                 },
                 [bgRateLimitMiddlewareName]: {
                     rateLimit: {
-                        average: 3,
-                        burst: 6
+                        average: traefikRateLimit.average,
+                        burst: traefikRateLimit.burst
                     }
                 }
             }

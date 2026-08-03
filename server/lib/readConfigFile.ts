@@ -258,7 +258,24 @@ export const configSchema = z
                 pp_transport_prefix: z
                     .string()
                     .optional()
-                    .default("pp-transport-v")
+                    .default("pp-transport-v"),
+                rate_limit: z
+                    .object({
+                        average: z
+                            .number()
+                            .positive()
+                            .gt(0)
+                            .optional()
+                            .default(10),
+                        burst: z
+                            .number()
+                            .positive()
+                            .gt(0)
+                            .optional()
+                            .default(16)
+                    })
+                    .optional()
+                    .prefault({})
             })
             .optional()
             .prefault({}),
