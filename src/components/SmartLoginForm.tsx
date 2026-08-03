@@ -303,6 +303,7 @@ export default function SmartLoginForm({
                             <IdpLoginButtons
                                 idps={[lastUsedIdp]}
                                 orgId={lastUsedIdp.orgId}
+                                passOrgIdToOidcUrl={false}
                                 redirect={redirect}
                             />
                         )}

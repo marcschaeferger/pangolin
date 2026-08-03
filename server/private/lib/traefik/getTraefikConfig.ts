@@ -58,6 +58,8 @@ import { build } from "@server/build";
 const redirectHttpsMiddlewareName = "redirect-to-https";
 const redirectToRootMiddlewareName = "redirect-to-root";
 const badgerMiddlewareName = "badger";
+const landingRateLimitMiddlewareName = "landing-ratelimit";
+const bgRateLimitMiddlewareName = "bg-ratelimit";
 
 // Define extended target type with site information
 type TargetWithSite = Target & {
@@ -431,6 +433,18 @@ export async function getTraefikConfig(
                         regex: "^(https?)://([^/]+)(/.*)?",
                         replacement: "${1}://${2}/auth/org",
                         permanent: false
+                    }
+                },
+                [landingRateLimitMiddlewareName]: {
+                    rateLimit: {
+                        average: 3,
+                        burst: 6
+                    }
+                },
+                [bgRateLimitMiddlewareName]: {
+                    rateLimit: {
+                        average: 3,
+                        burst: 6
                     }
                 }
             }
@@ -1055,6 +1069,7 @@ export async function getTraefikConfig(
                 config.getRawConfig().traefik.additional_middlewares || [];
             const routerMiddlewares = [
                 badgerMiddlewareName,
+                bgRateLimitMiddlewareName,
                 ...additionalMiddlewares
             ];
 
@@ -1539,6 +1554,7 @@ export async function getTraefikConfig(
                     entryPoints: [
                         config.getRawConfig().traefik.https_entrypoint
                     ],
+                    middlewares: [landingRateLimitMiddlewareName],
                     service: "landing-service",
                     rule: `Host(\`${fullDomain}\`) && (PathRegexp(\`^/auth/resource/[^/]+$\`) || PathRegexp(\`^/auth/idp/[0-9]+/oidc/callback\`) || PathPrefix(\`/_next\`) || Path(\`/auth/org\`) || PathRegexp(\`^/__nextjs*\`) || Path(\`/favicon.ico\`))`,
                     priority: 203,
@@ -1557,7 +1573,10 @@ export async function getTraefikConfig(
                     entryPoints: [
                         config.getRawConfig().traefik.https_entrypoint
                     ],
-                    middlewares: [redirectToRootMiddlewareName],
+                    middlewares: [
+                        landingRateLimitMiddlewareName,
+                        redirectToRootMiddlewareName
+                    ],
                     service: "landing-service",
                     rule: `Host(\`${fullDomain}\`)`,
                     priority: 202,

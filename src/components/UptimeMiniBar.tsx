@@ -124,7 +124,9 @@ export function UptimeMiniBar({
 
     if (!data) return null;
 
-    const allNoData = data.days.every((d) => d.status === "no_data");
+    const allNoData = data.days.every(
+        (d) => d.status === "no_data" || d.status === "unknown"
+    );
 
     return (
         <div className="flex items-center gap-2">

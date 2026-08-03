@@ -112,7 +112,9 @@ export async function updateHolePunch(
             destinations: destinations
         });
     } catch (error) {
-        logger.error(error);
+        if (!(error instanceof Error && error.message === "Exit node not allowed")) {
+            logger.error(error);
+        }
         return next(
             createHttpError(
                 HttpCode.INTERNAL_SERVER_ERROR,
