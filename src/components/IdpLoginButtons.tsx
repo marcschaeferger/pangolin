@@ -26,12 +26,14 @@ type IdpLoginButtonsProps = {
     idps: LoginFormIDP[];
     redirect?: string;
     orgId?: string;
+    passOrgIdToOidcUrl?: boolean;
 };
 
 export default function IdpLoginButtons({
     idps,
     redirect,
-    orgId
+    orgId,
+    passOrgIdToOidcUrl = true
 }: IdpLoginButtonsProps) {
     const [error, setError] = useState<string | null>(null);
     const t = useTranslations();
@@ -68,12 +70,13 @@ export default function IdpLoginButtons({
 
         let redirectToUrl: string | undefined;
         try {
-            console.log("generating", idpId, redirect || "/", orgId);
+            const oidcOrgId = passOrgIdToOidcUrl ? orgId : undefined;
+            console.log("generating", idpId, redirect || "/", oidcOrgId);
             const safeRedirect = cleanRedirect(redirect || "/");
             const response = await generateOidcUrlProxy(
                 idpId,
                 safeRedirect,
-                orgId
+                oidcOrgId
             );
 
             if (response.error) {
