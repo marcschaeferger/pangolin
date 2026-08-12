@@ -726,8 +726,8 @@ authenticated.post(
     verifyApiKeyResourcePolicyAccess,
     verifyApiKeyRoleAccess,
     verifyLimits,
-    verifyUserHasAction(ActionsEnum.setResourcePolicyUsers),
-    verifyUserHasAction(ActionsEnum.setResourcePolicyRoles),
+    verifyApiKeyHasAction(ActionsEnum.setResourcePolicyUsers),
+    verifyApiKeyHasAction(ActionsEnum.setResourcePolicyRoles),
     logActionAudit(ActionsEnum.setResourcePolicyUsers),
     logActionAudit(ActionsEnum.setResourcePolicyRoles),
     policy.setResourcePolicyAccessControl
@@ -742,8 +742,8 @@ authenticated.put(
     verifyApiKeyResourcePolicyAccess,
     verifyApiKeyRoleAccess,
     verifyLimits,
-    verifyUserHasAction(ActionsEnum.setResourcePolicyUsers),
-    verifyUserHasAction(ActionsEnum.setResourcePolicyRoles),
+    verifyApiKeyHasAction(ActionsEnum.setResourcePolicyUsers),
+    verifyApiKeyHasAction(ActionsEnum.setResourcePolicyRoles),
     logActionAudit(ActionsEnum.setResourcePolicyUsers),
     logActionAudit(ActionsEnum.setResourcePolicyRoles),
     policy.setResourcePolicyAccessControl
